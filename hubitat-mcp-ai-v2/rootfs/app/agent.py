@@ -14,6 +14,7 @@ import httpx
 
 from mcp import MCPError, MCPContractError, MCPClient, redact, is_tool_catalog
 from interaction import needs_confirmation
+from action_execution import action_receipt_status, safe_action_answer
 from evidence_scope import model_result_with_scope
 from investigation_review import (
     should_review_completion,
@@ -112,7 +113,18 @@ evidence linking those effects. Do not substitute an unverified alternate
 write when a requested command is unavailable or fails.
 After a write, reason separately about command dispatch, accepted operation,
 fresh observed target state, any verified future deadline, and later real-world
-execution. Do not claim this chat will autonomously execute a future command;
+execution. A LOCAL pre-dispatch rejection is not an MCP command submission.
+If a model-proposed ordinary command is rejected for a missing fresh native
+detail before dispatch, obtain the required read and reassess whether a
+FIRST valid submission is authorized. Do not call that correction a retry
+of a native command. Once native MCP has been called, the result may be
+ambiguous: never retry, even on timeout or an upstream domain failure.
+Explicit refusal/approval denial also forbids a substitute command.
+The per-request action_receipt_status is a source-derived description
+of these phases; it is not new evidence of a physical side effect. No
+assistant assertion may override an original preflight failure or a
+server response rejecting the command. Do not say an operation has been
+completed merely because the model drafted or submitted it. Do not claim this chat will autonomously execute a future command;
 only a server/device-owned timer with a verified receipt can be scheduled.
 Use native read-only verification where proportionate; do not blindly retry,
 replace or undo a possibly successful state-changing call.
@@ -870,6 +882,8 @@ class Agent:
         action_continuation_invoked = False
         action_continuation_active = False
         action_continuation_write_attempted = False
+        action_continuation_dispatch_attempted = False
+        action_continuation_preflight_rejections = 0
         action_continuation_receipt_offset = 0
         final_claim_audit_invoked = False
         final_claim_audit_candidate = ""
@@ -897,15 +911,33 @@ class Agent:
             })
 
         def completed_answer(answer: str, audit_status: str) -> dict[str, Any]:
+            # Source-grounded safety only: do not rewrite ordinary reasoning,
+            # choose a new command or attempt a device action. A model saying
+            # "I sent it" cannot override original pre-dispatch failures,
+            # explicit native rejection or absent verification evidence.
+            action_status = action_receipt_status(receipts)
+            final_answer, guarded = (safe_action_answer(answer, action_status)
+                                     if is_explicit_device_action_request(question)
+                                     and any(r.get("name") == "hub_call_device_command"
+                                             for r in receipts)
+                                     else (answer, False))
             return {
-                "success": bool(answer), "prior_receipts_used": prior_receipts,
-                "answer": answer or "The model returned an empty answer.",
+                "success": bool(final_answer), "prior_receipts_used": prior_receipts,
+                "answer": final_answer or "The model returned an empty answer.",
+                "action_receipt_status": action_status,
+                "action_claim_guard_applied": guarded,
                 "leaf_schema_discoveries": leaf_schema_discoveries,
                 "source_review_invoked": source_review_invoked,
                 "source_review_kind": source_review_kind,
                 "action_continuation_invoked": action_continuation_invoked,
                 "action_continuation_write_attempted": (
                     action_continuation_write_attempted
+                ),
+                "action_continuation_dispatch_attempted": (
+                    action_continuation_dispatch_attempted
+                ),
+                "action_continuation_preflight_rejections": (
+                    action_continuation_preflight_rejections
                 ),
                 "final_claim_audit_invoked": final_claim_audit_invoked,
                 "final_claim_audit_status": audit_status,
@@ -1089,7 +1121,14 @@ class Agent:
                             "target/control-surface relationship, obtain a "
                             "NEW hub_get_device command list for the exact "
                             "actuator and choose the correct supported native "
-                            "command. Execute at most one single-device "
+                            "command. If a local PRE-DISPATCH evidence guard "
+                            "rejects a missing detail receipt, obtain the "
+                            "missing read, then you may make the first valid "
+                            "native submission; do not treat that rejection "
+                            "as a sent command. Once a command is handed to "
+                            "native MCP, or an approval is denied, do not "
+                            "retry or use an alternative write. Execute at "
+                            "most one single-device "
                             "hub_call_device_command, with no batch, only if "
                             "ordinary action authorization and safety permit. "
                             "Do not retry a failed or ambiguous write. "
@@ -1154,10 +1193,21 @@ class Agent:
                 args = arguments_of(call) if isinstance(call, dict) else {}
                 started_call = time.monotonic()
                 leaf_def = None  # For error receipts; never authorizes execution.
+                local_preflight_rejected = False
+                approval_preflight_denied = False
+                native_dispatch_started = False
+                native_response_received = False
+                is_continuation_command = (
+                    action_continuation_active
+                    and name == "hub_call_device_command"
+                )
                 try:
                     if deadline - time.monotonic() <= 0:
                         raise MCPError("Request deadline reached before this operation")
                     if "_invalid_arguments" in args:
+                        if is_continuation_command and not action_continuation_write_attempted:
+                            action_continuation_preflight_rejections += 1
+                            local_preflight_rejected = True
                         raise MCPError(args["_invalid_arguments"])
                     if source_review_invoked and not is_read_only_review_tool(name):
                         if not (
@@ -1170,19 +1220,23 @@ class Agent:
                                 "tools only; a device-action continuation allows "
                                 "at most one original command attempt"
                             )
-                        # Mark the attempt BEFORE native execution and
-                        # validation, preventing any automatic second write
-                        # if it fails, times out, or returns ambiguously.
-                        action_continuation_write_attempted = True
+                        if action_continuation_preflight_rejections >= 2:
+                            raise MCPError(
+                                "Late device action local preflight retry limit "
+                                "reached. No native device command was sent."
+                            )
                         if not continuation_command_advertised(
                             receipts[action_continuation_receipt_offset:], args
                         ):
+                            action_continuation_preflight_rejections += 1
+                            local_preflight_rejected = True
                             raise MCPError(
                                 "Late device action requires a successful "
                                 "hub_get_device receipt in this request "
                                 "advertising this exact deviceId and command; "
                                 "critical/ambiguous actuators need separate "
-                                "approval. No write was sent."
+                                "approval. No write was sent. Obtain native "
+                                "device details before the first dispatch."
                             )
                     is_prior = name == _PRIOR_TOOL
                     is_monitor = name == MONITOR_TOOL
@@ -1226,11 +1280,20 @@ class Agent:
                                 leaf_def, args.get("args", {})
                             )
                     if before_call is not None:
-                        await asyncio.wait_for(
-                            before_call(name, args, text),
-                            timeout=max(0.1, deadline - time.monotonic()),
-                        )
+                        try:
+                            await asyncio.wait_for(
+                                before_call(name, args, text),
+                                timeout=max(0.1, deadline - time.monotonic()),
+                            )
+                        except (MCPError, asyncio.TimeoutError):
+                            if is_continuation_command:
+                                approval_preflight_denied = True
+                                action_continuation_write_attempted = True
+                            raise
                     elif needs_confirmation(args):
+                        if is_continuation_command:
+                            approval_preflight_denied = True
+                            action_continuation_write_attempted = True
                         raise MCPError("Explicit user confirmation is required")
                     if is_catalog:
                         result = {"local_mcp_catalog": inspect_native_catalog(
@@ -1250,10 +1313,20 @@ class Agent:
                             )
                         }
                     else:
+                        # LAST safe boundary: after all local evidence, catalog,
+                        # argument and approval checks, immediately before
+                        # handing the command to MCP. A timeout/error after
+                        # this point is outcome-unknown and NEVER retried.
+                        if name == "hub_call_device_command":
+                            native_dispatch_started = True
+                            if is_continuation_command:
+                                action_continuation_write_attempted = True
+                                action_continuation_dispatch_attempted = True
                         result = await asyncio.wait_for(
                             mcp.call(name, args),
                             timeout=max(0.1, deadline - time.monotonic())
                         )
+                        native_response_received = True
                     tool_error = bool(result.get("isError"))
                     record = {
                         "name": name, "arguments": redact(args),
@@ -1262,6 +1335,8 @@ class Agent:
                     }
                     if tool_error:
                         record["error"] = "MCP tool reported isError"
+                    if native_dispatch_started:
+                        record["dispatch_state"] = "native_result"
                     if is_catalog:
                         record["result_kind"] = "local_catalog_read"
                         record["operation_executed"] = False
@@ -1355,6 +1430,29 @@ class Agent:
                         "error": (str(redact(str(exc))) or "Tool deadline exceeded")[:240],
                     }
                     error_payload = {"error": record["error"]}
+                    if name == "hub_call_device_command":
+                        if native_dispatch_started:
+                            record["dispatch_state"] = "outcome_unknown"
+                        elif approval_preflight_denied:
+                            record["dispatch_state"] = "approval_denied"
+                            record["operation_executed"] = False
+                        else:
+                            record["dispatch_state"] = "preflight_rejected"
+                            record["operation_executed"] = False
+                        error_payload["client_dispatch_state"] = record["dispatch_state"]
+                        if local_preflight_rejected:
+                            error_payload["recovery"] = (
+                                "No native device command was sent. Obtain a "
+                                "fresh exact-device native command detail "
+                                "within this continuation before the first "
+                                "valid dispatch; never bypass safety checks."
+                            )
+                        elif native_dispatch_started:
+                            error_payload["recovery"] = (
+                                "Native MCP was called but the outcome is "
+                                "unknown. Do NOT retry the command; inspect "
+                                "read-only state and report uncertainty."
+                            )
                     if isinstance(exc, CatalogToolUnavailable):
                         record["result_kind"] = "unavailable_tool"
                         record["operation_executed"] = False

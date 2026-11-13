@@ -171,7 +171,10 @@ class ContinuationLoopTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await model.close()
         self.assertTrue(res["action_continuation_invoked"])
-        self.assertTrue(res["action_continuation_write_attempted"])
+        self.assertFalse(res["action_continuation_write_attempted"])
+        self.assertFalse(res["action_continuation_dispatch_attempted"])
+        self.assertEqual(res["action_continuation_preflight_rejections"], 1)
+        self.assertEqual(res["tool_calls"][-1]["dispatch_state"], "preflight_rejected")
         self.assertFalse(res["tool_calls"][-1]["success"])
         self.assertIn("requires a successful hub_get_device", res["tool_calls"][-1]["error"])
         self.assertEqual(hub.writes, [])
@@ -209,6 +212,8 @@ class ContinuationLoopTests(unittest.IsolatedAsyncioTestCase):
             await model.close()
         self.assertTrue(res["action_continuation_invoked"])
         self.assertFalse(res["tool_calls"][-1]["success"])
+        self.assertEqual(res["tool_calls"][-1]["dispatch_state"], "preflight_rejected")
+        self.assertFalse(res["action_continuation_write_attempted"])
         self.assertIn("critical/ambiguous", res["tool_calls"][-1]["error"])
         self.assertEqual(hub.writes, [])
 
