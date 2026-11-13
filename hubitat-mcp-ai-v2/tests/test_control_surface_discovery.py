@@ -89,7 +89,7 @@ class DiscoveryLoopTests(unittest.IsolatedAsyncioTestCase):
                          "authorization still need confirmation. No write sent.")},
         ])
         try:
-            reply = await model.answer("Enable Bench Panel in three minutes",
+            reply = await model.answer("Can you enable Bench Panel in three minutes?",
                                        [], hub, 90)
         finally:
             await model.close()
@@ -120,7 +120,7 @@ class DiscoveryLoopTests(unittest.IsolatedAsyncioTestCase):
                          "controller; unexamined external systems are unknown.")},
         ])
         try:
-            reply = await model.answer("Enable Bench Panel in three minutes",
+            reply = await model.answer("Can you enable Bench Panel in three minutes?",
                                        [], hub, 90)
         finally:
             await model.close()
@@ -153,7 +153,7 @@ class DiscoveryLoopTests(unittest.IsolatedAsyncioTestCase):
             {"content": "No write occurred; the review call was rejected."},
         ])
         try:
-            reply = await model.answer("Enable Bench Panel in three minutes",
+            reply = await model.answer("Can you enable Bench Panel in three minutes?",
                                        [], hub, 90)
         finally:
             await model.close()
