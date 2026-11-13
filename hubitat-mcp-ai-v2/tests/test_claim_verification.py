@@ -117,6 +117,25 @@ class EvidencePropertiesTests(unittest.TestCase):
         ):
             self.assertTrue(is_source_verification_question(question), question)
             self.assertEqual(review_kind(question), "source_verification")
+        # Explicit verification can follow the natural "Check whether/if"
+        # wording, not only an initial imperative "Verify".
+        for question in (
+            "Check whether this installed controller supports a typed "
+            "calendar schedule. Verify parent identity and field schema.",
+            "Check if the fictional gateway exposes this capability. "
+            "Confirm installed configuration rather than just its guide.",
+            "Check whether the valve reports a reliable state. "
+            "Show evidence for the native attribute.",
+        ):
+            self.assertTrue(is_source_verification_question(question), question)
+            self.assertEqual(review_kind(question), "source_verification")
+        # Routine quick checks and commands must not incur an extra review.
+        for question in (
+            "Check current room temperature.",
+            "Check whether a room is occupied.",
+            "Set a device to off and verify its state.",
+        ):
+            self.assertFalse(is_source_verification_question(question), question)
         self.assertTrue(is_causal_question(
             "Investigate whether a pump's last change was caused by a timer"
         ))
@@ -142,6 +161,8 @@ class EvidencePropertiesTests(unittest.TestCase):
         ))
         self.assertIn("READ-ONLY", VERIFICATION_REVIEW_PROMPT)
         self.assertIn("An absent", VERIFICATION_REVIEW_PROMPT)
+        self.assertIn("TYPE ID", VERIFICATION_REVIEW_PROMPT)
+        self.assertIn("read-only investigation", VERIFICATION_REVIEW_PROMPT)
         self.assertIn("user's evidence conditions", MEASUREMENT_REVIEW_PROMPT)
         self.assertNotIn("Fictional Scheduler", VERIFICATION_REVIEW_PROMPT)
 
@@ -230,6 +251,39 @@ class VerificationRoundtripTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("verification checkpoint", model.seen[2][-1]["content"])
         self.assertIn("paused=false", reply["answer"])
         self.assertTrue(all(x["success"] for x in reply["tool_calls"]))
+
+    async def test_check_whether_with_verification_can_get_another_safe_read(self):
+        model = ScriptedAgent([
+            {"content": "", "tool_calls": [
+                function_call("hub_get_app_config", {"appId": "801"})]},
+            {"content": "This app's Pause button verifies that it is paused.",
+             "tool_calls": []},
+            {"content": "", "tool_calls": [
+                function_call("hub_get_app_status", {"appId": "801"})]},
+            {"content": ("The native typed status reports paused=false. "
+                         "The earlier configuration button does not establish it."),
+             "tool_calls": []},
+            {"content": ("Typed status paused=false was returned. "
+                         "The display-only Pause button was not proof."),
+             "tool_calls": []},
+        ])
+        mcp = FakeMCP()
+        try:
+            reply = await model.answer(
+                "Check whether this installed controller has a verified paused "
+                "state. Verify its typed status rather than relying on UI controls. "
+                "Do not change anything.", [], mcp, 90,
+            )
+        finally:
+            await model.close()
+        self.assertEqual(reply["source_review_kind"], "source_verification")
+        self.assertTrue(reply["source_review_invoked"])
+        self.assertEqual(reply["final_claim_audit_status"], "completed")
+        self.assertEqual([name for name, _ in mcp.calls],
+                         ["hub_get_app_config", "hub_get_app_status"])
+        self.assertNotIn("hub_manage_apps", model.catalog_seen[2])
+        self.assertIn("paused=false", reply["answer"])
+        self.assertEqual(len(reply["tool_calls"]), 2)
 
     async def test_unknown_can_be_reported_without_forcing_second_read(self):
         model = ScriptedAgent([
