@@ -79,31 +79,54 @@ def _setting_values(value: Any) -> dict[str, Any] | None:
     return None
 
 
-def _attested_read(read: dict, app_id: str, label: str, scheduled_day: str) -> bool:
-    """Require exact native read identity AND persisted dated trigger semantics."""
-    doc = read.get("rule", read.get("app", read.get("document", read)))
-    if not isinstance(doc, dict):
+def _attested_read(
+    document: dict, app_config: dict, app_id: str,
+    label: str, scheduled_day: str, scheduled_clock: str,
+) -> bool:
+    """Require native rule settings AND independently typed installed-child app.
+
+    The native hub_set_rule read returns rule_id/settings but does not
+    necessarily contain an installed app label/type. An app page alone does
+    not establish that the persisted trigger is dated. Both are required.
+    """
+    if str(document.get("rule_id")) != app_id:
         return False
-    if str(doc.get("id", doc.get("appId", doc.get("rule_id")))) != app_id:
+    app = app_config.get("app")
+    if not isinstance(app, dict) or str(app.get("id", app.get("appId"))) != app_id:
         return False
-    if (doc.get("label") or doc.get("name") or doc.get("origLabel")) != label:
+    if (app.get("label") or app.get("name")) != label:
         return False
-    typed = doc.get("appType") or doc.get("type")
-    typed_name = typed.get("name") if isinstance(typed, dict) else typed
-    if typed_name != "Rule Machine":
+    typed = app.get("appType")
+    if (not isinstance(typed, dict)
+            or typed.get("namespace") != "hubitat"
+            or typed.get("name") != "Rule-5.1"):
         return False
-    if isinstance(typed, dict) and typed.get("namespace") not in ("hubitat", None):
-        return False
-    settings = _setting_values(doc.get("settings", read.get("settings")))
+    settings = _setting_values(document.get("settings"))
     if not settings:
         return False
     if (settings.get("tCapab1") != "Certain Time (and optional date)"
             or settings.get("date1") not in (True, "true")
-            or str(settings.get("atDate1")) != scheduled_day):
+            or str(settings.get("atDate1")) != scheduled_day
+            or settings.get("time1") != "A specific time"):
         return False
-    # An undated daily rule or an unrelated rule with an ownership-like
-    # name MUST NOT be removed. Require exactly one native date trigger.
     if any(k.startswith("tCapab") and k != "tCapab1" for k in settings):
+        return False
+    if (settings.get("actType.1") != "switchActs"
+            or settings.get("actSubType.1") != "getOnOffSwitch"
+            or "onOffSwitch.1" not in settings or "onOff.1" not in settings):
+        return False
+    if any(k.startswith("actType.") and k != "actType.1" for k in settings):
+        return False
+    original_time = settings.get("atTime1")
+    if not isinstance(original_time, str):
+        return False
+    try:
+        when = datetime.fromisoformat(original_time)
+    except ValueError:
+        return False
+    if (when.tzinfo is None or when.utcoffset() is None
+            or when.strftime("%Y-%m-%d") != scheduled_day
+            or when.strftime("%H:%M") != scheduled_clock):
         return False
     return True
 
@@ -188,6 +211,9 @@ class OneOffCleanup:
                 "would_delete": [], "deleted": [], "skipped": [],
                 "errors": [], "dry_run": self.dry_run,
             }
+            if not self.enabled:
+                result["errors"].append("Cleanup is disabled; no MCP calls")
+                return result
             try:
                 raw = await self.mcp.call(
                     "hub_read_rules", {"tool": "hub_list_rules", "args": {}}
@@ -208,6 +234,7 @@ class OneOffCleanup:
                 if not item:
                     continue
                 app_id, label, day = item
+                scheduled_clock = OWNED.fullmatch(label).group("hour")
                 result["eligible"] += 1
                 if app_id in self.uncertain_ids:
                     result["skipped"].append({"appId": app_id, "why": "uncertain previous delete"})
@@ -220,9 +247,19 @@ class OneOffCleanup:
                         }},
                     )
                     source = _successful(native)
-                    if source is None or not _attested_read(source, app_id, label, day):
+                    # The actual native document contains persisted settings,
+                    # but not a reliable app class/label. Read the installed
+                    # app identity independently and require a Rule-5.1 child.
+                    config_raw = await self.mcp.call(
+                        "hub_get_app_config", {"appId": int(app_id)}
+                    )
+                    app_identity = _successful(config_raw)
+                    if (source is None or app_identity is None
+                            or not _attested_read(source, app_identity,
+                                                  app_id, label, day,
+                                                  scheduled_clock)):
                         result["skipped"].append({
-                            "appId": app_id, "why": "native dated-rule identity not attested"
+                            "appId": app_id, "why": "native date or installed-child identity unverified"
                         })
                         continue
                     result["confirmed"] += 1
