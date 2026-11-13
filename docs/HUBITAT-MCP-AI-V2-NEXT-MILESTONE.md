@@ -1,5 +1,17 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## 13 November 2026 — CURRENT: Resume original first-answer Gate B after alpha.75
+
+Alpha.75's native command detour reached limited live acceptance: the model submitted one driver-advertised delayed control command with a pending deadline, a later original device log recorded the timed state transition, and a separate immediate reverse command received a same-request native response with the requested live state. This is **not** a general causal reasoning pass or independent physical verification. A field-specific timestamp discrepancy in the immediate action's final explanation remains an example of how a response may mix fresh and older attributes; it does **not** justify an incident-specific fix or rewriting the successful native command path.
+
+**Next work is NOT delayed unblock, extra device-control patches, additional timers, Rule Machine inventions or adding another general scheduler.** Re-enter the standing V1/V2 Gate B from the [capability gap plan](HOMEBRAIN-V1-V2-CAPABILITY-GAP-PLAN-20261111.md) and source-real [first-answer quality charter](HUBITAT-MCP-AI-V2-FIRST-ANSWER-QUALITY.md): >=12 **new**, uncoached read-only original-first-answer captures across >=6 distinct domains, manual review of original native/monitor receipts, source windows/limits, reporter vs initiator, competing causal hypotheses, per-attribute freshness, failures, and outcome/usefulness. A routine everyday Ask/Chat capture is sufficient; optional frozen/paired evaluation is additional, not a mandatory development blocker. Keep a private, uncontaminated prompt set and check zero unauthorized writes. Use 0/1/2 scoring, N/A for genuinely noncausal questions, and publish only privacy-safe aggregate notes.
+
+**Engineering exit:** Look for a repeatable, **cross-domain** missing-source or evidence-contract failure. If one exists, implement ONE general model-led/read-contract improvement in a separately tested PR, without touching the working native timer/control path. If current evidence does not justify a production code change, continue original first-answer evaluation rather than inventing one. No synthetic CI green result or two successful actions establishes overall v2 quality.
+
+See [alpha.75 roadmap reset with PR audit, acceptance domains and explicit boundaries](HOMEBRAIN-V2-ALPHA75-RETURN-TO-ORIGINAL-GATEB-20261113.md). V1 stable, existing Hub & Device Monitor and external Hub Diagnostics, all native upstream permissions and confirmations remain unchanged.
+
+
+
 ## 11 November 2026 — Alpha.53 named overview acceptance (UI-only)
 
 After installing alpha.53 and verifying UI/API versions match, check that **Lights ON** lists only actual named light loads (not generic power plugs or relays), **Motion active** lists each reporting active sensor, and **Low battery** gives the device name and the observed percentage below 20%. Check count-to-name agreement, all names via the card scroll area, and any unclassified ON switches. Compare this classification with installed V1 only after accounting for different source definitions. This single read-only inventory snapshot does not prove any device is freshly reporting, nor does it run V1's scheduled health audit. Record actual mismatch examples privately for a *general* classifier fix; do not add household-specific exceptions.
