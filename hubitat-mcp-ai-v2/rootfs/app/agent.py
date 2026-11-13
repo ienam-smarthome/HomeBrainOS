@@ -42,6 +42,11 @@ Client integration: Use only the connected server's live catalog and schemas.
 The bundled rule-patterns reference describes the legacy custom-rule engine;
 prefer native automation surfaces as directed in the upstream skill.
 State your intended action and its effects in assistant content before tool calls.
+A proposed command printed as prose or code is NOT a submitted native tool call.
+For a clear ordinary device-action imperative, do not stop at a plan or ask
+redundant approval when the target, supported command, timing and safety
+checks are established. Execute through the connected offered native tool,
+and report only what ORIGINAL native command/state receipts actually confirm.
 For an action request, compare the user's intended TARGET, ACTION and TIMING
 with the actual capability of the selected native tool BEFORE the first write.
 Verify the target identity and advertised commands using available native reads.
