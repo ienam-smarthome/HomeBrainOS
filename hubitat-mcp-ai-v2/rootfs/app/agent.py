@@ -650,6 +650,7 @@ class Agent:
         prior_evidence: str = "", prior_receipts: int = 0,
         prior_reader=None, enable_source_review: bool = True,
         device_monitor=None, enable_final_claim_audit: bool = True,
+        enable_action_proposal_review: bool = True,
     ) -> dict[str, Any]:
         started = time.monotonic()
         deadline = started + max(30, int(deadline_seconds))
@@ -845,7 +846,8 @@ class Agent:
             # reconcile its target, physical effect and timing with current
             # source receipts. No tool is preselected or automatically called.
             # No orphaned assistant tool_calls are placed in model history.
-            if (calls and before_call is not None and not source_review_invoked
+            if (enable_action_proposal_review and calls and before_call is not None
+                    and not source_review_invoked
                     and not prewrite_model_review_invoked
                     and deadline - time.monotonic() > 12):
                 proposed_writes = []
@@ -862,8 +864,8 @@ class Agent:
                         })
                 if proposed_writes:
                     prewrite_model_review_invoked = True
-                    if text:
-                        messages.append({"role": "assistant", "content": text})
+                    # Never save an unsent draft as a completed assistant action.
+                    # Only the explicitly unexecuted proposal is shown.
                     messages.append({
                         "role": "user",
                         "content": (
@@ -1086,6 +1088,7 @@ class Agent:
                 leaf_def = None  # For error receipts; never authorizes execution.
                 automation_approval_required = False
                 approval_completed = False
+                missing_current_read = False
                 try:
                     if deadline - time.monotonic() <= 0:
                         raise MCPError("Request deadline reached before this operation")
@@ -1138,10 +1141,12 @@ class Agent:
                     # solely from an old chat or an unsent plan. This is a
                     # minimal current-request evidence floor, not a model
                     # substitute for matching the real target/effect/timing.
-                    if (prewrite_model_review_invoked
+                    if (enable_action_proposal_review
+                            and prewrite_model_review_invoked
                             and is_persistent_construct(name, args)
                             and not has_current_native_evidence(receipts)):
                         prewrite_no_fresh_evidence_rejections += 1
+                        missing_current_read = True
                         raise MCPError(
                             "Persistent automation/helper NOT submitted: no "
                             "successful current-request native domain read. "
@@ -1314,6 +1319,18 @@ class Agent:
                         "error": (str(redact(str(exc))) or "Tool deadline exceeded")[:240],
                     }
                     error_payload = {"error": record["error"]}
+                    if missing_current_read:
+                        record["result_kind"] = "persistent_write_missing_current_evidence"
+                        record["operation_executed"] = False
+                        error_payload.update({
+                            "result_kind": "persistent_write_missing_current_evidence",
+                            "operation_executed": False,
+                            "recovery": (
+                                "Choose live native device/controller reads "
+                                "before creating a persistent automation/helper. "
+                                "An old chat or skill guide is not live state."
+                            ),
+                        })
                     if automation_approval_required and not approval_completed:
                         record["result_kind"] = "native_automation_approval_not_completed"
                         record["operation_executed"] = False

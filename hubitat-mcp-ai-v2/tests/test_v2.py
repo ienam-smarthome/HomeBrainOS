@@ -328,7 +328,8 @@ class InteractionTests(unittest.TestCase):
             mcp = FakeMCP()
             interaction = Interaction()
             task = asyncio.create_task(agent.answer("Create automation", [], mcp, 60,
-                                                   before_call=interaction.before_call))
+                                                   before_call=interaction.before_call,
+                                                   enable_action_proposal_review=False))
             try:
                 while interaction.pending is None:
                     if task.done():
