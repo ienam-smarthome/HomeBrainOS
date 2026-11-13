@@ -550,9 +550,14 @@ class ActionFollowThroughTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(should_follow_through_device_action(
             "Block Demo Screen after 2 minutes", [narrow, broad, detail],
             **kw))
+        # An unfiltered source index is sufficient for ONE model-led
+        # follow-through to fetch missing detailed command evidence.
+        self.assertTrue(should_follow_through_device_action(
+            "Block Demo Screen after 2 minutes", [narrow, broad], **kw))
+        self.assertTrue(should_follow_through_device_action(
+            "Block Demo Screen after 2 minutes",
+            [narrow, broad, {**detail, "success": False}], **kw))
         for receipts, overrides in [
-            ([narrow, broad], {}),
-            ([narrow, broad, {**detail, "success": False}], {}),
             ([narrow, broad, detail], {"already_prompted": True}),
             ([narrow, broad, detail], {"source_review_invoked": True}),
             ([narrow, broad, detail], {"inventory_recovery_invoked": False}),
