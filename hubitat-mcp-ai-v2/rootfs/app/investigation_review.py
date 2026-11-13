@@ -720,7 +720,8 @@ _EXPLICIT_READ_ONLY_ACTION_LIMIT = re.compile(
     r"control|send|trigger|turn|switch|block|unblock|apply|"
     r"touch|alter|make\s+changes?)\b|"
     r"\b(?:read[- ]only|dry[- ]run|simulation\s+only|"
-    r"do\s+nothing|no\s+changes)\b",
+    r"do\s+nothing|no\s+changes)\b|"
+    r"\bwithout\s+(?:making\s+)?(?:any\s+)?changes?\b",
     re.IGNORECASE,
 )
 _REDUNDANT_ACTION_CONFIRMATION = re.compile(
@@ -810,7 +811,7 @@ def continuation_command_advertised(receipts: list[dict], args: dict) -> bool:
             capabilities = set(
                 str(c) for c in detail.get("capabilities", [])
             ) if isinstance(detail.get("capabilities"), list) else set()
-            if capabilities.intersection({
+            if not capabilities or capabilities.intersection({
                 "Lock", "GarageDoorControl", "SecurityKeypad",
                 "SecuritySystem", "Valve",
             }):
