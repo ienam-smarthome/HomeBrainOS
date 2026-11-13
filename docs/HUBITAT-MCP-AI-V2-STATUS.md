@@ -1,5 +1,16 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 13 November 2026 — Alpha.71: pre-dispatch error recovery without double-write or false success
+
+The original alpha.70 installed first-answer capture discovered the correct alternate actuator and its native immediate command. Two command tool attempts then failed **locally** (both 0 ms) because the first lacked a fresh post-continuation `hub_get_device` receipt, while the second encountered the premature one-attempt lock. Hubitat was never called for the action, yet the model replied that the target was unblocked. That is a client action-state and final-grounding defect, not proof the router or Hubitat rejected the command.
+
+Alpha.71 keeps the alpha.70 model-led review/guarded single-device continuation but classifies actual lifecycle boundaries: local preflight rejection (read-only recovery allowed, with bounded corrections); approval denied (no dispatch and no retry); native dispatch and native result (single-attempt rule applies); native timeout (outcome unknown, no retry); and domain-level acceptance separate from any waitFor or native attribute readback. The model still selects any read and the one native command. Original command receipts now carry a `dispatch_state`; Technical JSON exposes source-grounded `action_receipt_status` plus preflight/dispatch counters. A generic final answer guard prevents a model from claiming the command or physical change succeeded when original receipts contradict or cannot support it. Verified native postcondition is still not independent physical/router enforcement.
+
+Fictional tests cover the original preflight/read/correct/dispatch/readback sequence, fail-closed false success reporting, native rejection, accepted-but-unverified state, timeout non-retry, approval denial and nested MCP reply handling. No HomeBrain V1, Hub & Device Monitor or Rule Machine writer changes. **Installed acceptance remains to be validated.** See [alpha.71 development note](HOMEBRAIN-V2-ALPHA71-ACTION-RECEIPTS-20261113.md).
+
+
+
+
 ## 13 November 2026 — Alpha.70: general action-goal completion instead of draft-wording gate
 
 In an original alpha.69 live first-answer test, a clear immediate device-action imperative produced two valid reads of the *media* integration. The model ended by asking if the user meant sound, device connectivity or network controls. It did not investigate the separate controller, issue a command or activate any source review. The existing alpha.69 review trigger recognised unsupported-command denials or permission prompts, not **clarification drafts**. The user goal was therefore left unresolved.
