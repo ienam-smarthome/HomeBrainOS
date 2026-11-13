@@ -1,5 +1,19 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 13 November 2026 — Alpha.75 source-real control acceptance; return to original model-led reasoning Gate B
+
+**Current repository release: V2 `2.0.0-alpha.75`** (merged PR #1628). A private, installed **first-answer** native delayed-control test reported a successful driver-advertised timed command and a pending deadline; subsequent separate original Hubitat logs reported the deadline fired and a resulting blocked state. A following direct immediate reverse-action request submitted one supported native command and returned source-reported allowed state at its contemporaneous attribute timestamp. These are **two useful action successes**, not evidence of independent physical router enforcement or cross-domain autonomous reasoning accuracy.
+
+**Claim-quality nuance from the immediate reverse action:** the native response's **allowed-state field was freshly updated**, while its pending-timer field had an **earlier** timestamp corresponding to the already-completed timer. The final answer correctly stated that no timer was pending, but did not establish that the new command itself cleared the old timer. Per-attribute freshness, action versus evidence and source chronology remain important.
+
+**PR audit:** #1618 established the model-led native action/outcome review. #1619–1624 experiments were superseded by the explicit rollback #1625. #1626–1628 restored generic alternate-controller discovery and direct-action completion on the alpha.65 native path, with a safety preflight against an unrequested event-triggered rule. These fixes remain limited protective affordances, **not** a fixed tool planner, device-specific mapping or new scheduler. Earlier historical PR notes document superseded features, not current runtime. The accidentally activated event-triggered rule from the earlier test was not altered by the repo and its current status is unverified.
+
+**Priority change:** STOP tuning internet-control commands now. Return to the original **12 fresh, read-only first answers across 6+ domains**, explicit V1/V2 Gate B, source-real causal evidence/claim accuracy, per-attribute timestamps, history pagination and Hub & Device Monitor as independently chosen source. Do not count these two device actions as Gate B causal-investigation samples. Compare model reasoning, evidence coverage, unknowns, tool errors, correctness and latency before writing another general fix. Delayed unblock after a future interval remains a distinct, unimplemented request; existing immediate `allowInternet` is working according to its latest native receipt, and `allowForMinutes` is not delayed-onset allow.
+
+The current plan and source-scoped acceptance gates are in [alpha.75 return-to-original-roadmap decision](HOMEBRAIN-V2-ALPHA75-RETURN-TO-ORIGINAL-GATEB-20261113.md). **No runtime changes are required for this milestone.** Keep V1 and external recorder unchanged.
+
+
+
 ## 13 November 2026 — Alpha.75: one-off timer is not an unrelated event-driven rule
 
 Source-real alpha.74 request for a delayed TV internet block recovered the alternate native controller but did not inspect the native timing command; instead it offered a temporary rule. After a bare "yes" it created a first **inactive stored draft** (invalid empty mode trigger and seconds=120) and then revised this to an **activated** rule triggered only when mode changes to Afternoon. The screenshot proves the wrong trigger. The original device-native block timer had previously operated, but these later attempts did not schedule it.
