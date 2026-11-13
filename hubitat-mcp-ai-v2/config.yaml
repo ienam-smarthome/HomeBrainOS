@@ -1,5 +1,5 @@
 name: "Hubitat MCP AI v2 (Preview)"
-version: "2.0.0-alpha.77"
+version: "2.0.0-alpha.78"
 slug: hubitat_mcp_ai_v2
 description: "Clean, model-led Hubitat MCP assistant with external diagnostics recorder"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
@@ -40,6 +40,11 @@ options:
   device_monitor_enabled: false
   device_monitor_api_base: ""
   device_monitor_access_token: ""
+  one_off_cleanup_enabled: false
+  one_off_cleanup_dry_run: true
+  one_off_cleanup_time: "07:00"
+  one_off_cleanup_timezone: "Europe/London"
+  one_off_cleanup_grace_minutes: 15
   ha_tts_enabled: false
   ha_tts_notify_service: ""
   ha_tts_media_stream: ""
@@ -61,6 +66,11 @@ schema:
   device_monitor_enabled: bool
   device_monitor_api_base: str?
   device_monitor_access_token: password?
+  one_off_cleanup_enabled: bool
+  one_off_cleanup_dry_run: bool
+  one_off_cleanup_time: str
+  one_off_cleanup_timezone: str
+  one_off_cleanup_grace_minutes: int(10,1440)
   ha_tts_enabled: bool
   ha_tts_notify_service: str?
   ha_tts_media_stream: str?

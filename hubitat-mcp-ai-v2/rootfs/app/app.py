@@ -29,6 +29,7 @@ from home_overview import OverviewUnavailable, read_overview
 from home_assistant_tts import HomeAssistantTTS, HomeAssistantTTSConfigurationError
 from mcp import MCPError, MCPClient
 from interaction import Interaction
+from one_off_cleanup import OneOffCleanup
 from conversation import ConversationEvidence
 from frozen_evaluation import FrozenEvaluationError, freeze_capture, replay_frozen_capture
 
@@ -51,6 +52,11 @@ DEFAULTS: dict[str, Any] = {
     "device_monitor_enabled": False,
     "device_monitor_api_base": "",
     "device_monitor_access_token": "",
+    "one_off_cleanup_enabled": False,
+    "one_off_cleanup_dry_run": True,
+    "one_off_cleanup_time": "07:00",
+    "one_off_cleanup_timezone": "Europe/London",
+    "one_off_cleanup_grace_minutes": 15,
     "ha_tts_enabled": False,
     "ha_tts_notify_service": "",
     "ha_tts_media_stream": "",
@@ -130,6 +136,16 @@ async def lifecycle(app: FastAPI):
             )
     except (MCPError, ValueError) as exc:
         app.state.configuration_error = str(exc)
+    app.state.one_off_cleanup = OneOffCleanup(
+        app.state.mcp,
+        enabled=bool(options["one_off_cleanup_enabled"]),
+        dry_run=bool(options["one_off_cleanup_dry_run"]),
+        daily_time=str(options["one_off_cleanup_time"]),
+        timezone_name=str(options["one_off_cleanup_timezone"]),
+        grace_minutes=int(options["one_off_cleanup_grace_minutes"]),
+        state_file=Path("/data/homebrain-v2-one-off-cleanup.json"),
+    )
+    app.state.one_off_cleanup.start()
     app.state.recorder = ExternalHubDiagnostics(
         enabled=bool(options["external_hub_diagnostics_enabled"]),
         hub_url=str(options["external_hub_diagnostics_hub_url"]),
@@ -167,6 +183,7 @@ async def lifecycle(app: FastAPI):
                 await app.state.benchmark_task
             except asyncio.CancelledError:
                 pass
+        await app.state.one_off_cleanup.close()
         await app.state.recorder.close()
         if app.state.device_monitor:
             await app.state.device_monitor.close()
@@ -177,7 +194,7 @@ async def lifecycle(app: FastAPI):
             await app.state.model.close()
 
 
-app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.77", lifespan=lifecycle)
+app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.78", lifespan=lifecycle)
 app.include_router(benchmark_router)
 app.include_router(autonomous_router)
 app.include_router(reasoning_router)
@@ -232,6 +249,7 @@ async def status():
             "read_only": True,
         },
         "tts": app.state.tts.status(),
+        "one_off_cleanup": app.state.one_off_cleanup.status(),
     }
 
 
