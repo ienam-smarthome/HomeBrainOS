@@ -81,7 +81,9 @@ ambiguity. Ask clarification rather than create a different frequency.
 For genuine one-off fixed-time rule writing, inspect the live native
 Rule Machine `hub_set_rule` schema and `set_rule_reference`, obtain a
 current typed Rule Machine parent app and exact device command evidence,
-and use an absolute dated Certain Time trigger if supported. Do NOT
+and use an absolute dated Certain Time trigger if supported. Inspect
+the native rule inventory first and reconcile any existing exact same
+one-off name; never silently create a duplicate. Do NOT
 conclude that VRB's repeatable timeOfDay is a one-off, nor mistake a
 verified stored rule for a fired trigger. The old V1 "HB one-shot | ..."
 ownership tag was intentional: the dedicated opt-in cleanup can only

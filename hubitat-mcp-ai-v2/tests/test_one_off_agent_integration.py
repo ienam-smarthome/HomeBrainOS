@@ -18,7 +18,7 @@ class Hub:
         self.calls = []
         self.catalog = [{"name": n, "inputSchema": {"type": "object"}}
                         for n in ("hub_get_app_config", "hub_get_device",
-                                  "hub_manage_rule_machine",
+                                  "hub_list_rules", "hub_manage_rule_machine",
                                   "hub_set_visual_rule")]
 
     async def list_tools(self, refresh=False):
@@ -32,6 +32,8 @@ class Hub:
                 "appType": {"namespace": "hubitat",
                             "name": "Rule Machine"},
             }})
+        if name == "hub_list_rules":
+            return mcp_value({"success": True, "rules": [], "total": 0})
         if name == "hub_get_device":
             return mcp_value({
                 "id": "8899", "label": "Fictional Switch",
@@ -135,6 +137,7 @@ class AgentLoopTests(unittest.IsolatedAsyncioTestCase):
         model = AgentScript([
             call("hub_get_app_config", appId=169),
             call("hub_get_device", deviceId="8899"),
+            call("hub_list_rules"),
             call("hub_manage_rule_machine",
                  tool="hub_set_rule", args=dated_rule()),
             {"content": "Native source accepted a dated one-off rule. Firing remains unverified."},
@@ -154,7 +157,7 @@ class AgentLoopTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response["one_off_rule_preflight_rejections"], 0)
         self.assertEqual([name for name, _ in hub.calls],
                          ["hub_get_app_config", "hub_get_device",
-                          "hub_manage_rule_machine"])
+                          "hub_list_rules", "hub_manage_rule_machine"])
         self.assertEqual(response["automation_confirmation_requests"], 1)
         self.assertEqual(approved[-1][0], "hub_manage_rule_machine")
         self.assertEqual(approved[-1][1]["tool"], "hub_set_rule")

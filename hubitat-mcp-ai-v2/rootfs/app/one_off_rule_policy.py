@@ -143,6 +143,26 @@ def verified_native_parent(receipts: list[dict], parent_id: int) -> bool:
     return False
 
 
+def native_rule_inventory_status(receipts: list[dict], label: str) -> str:
+    """Return clear only for a fresh, authoritative non-paged native rule list."""
+    checked = False
+    for source in _source_read(receipts, {"hub_list_rules"}):
+        rows = source.get("rules")
+        if not isinstance(rows, list) or not all(
+            isinstance(r, dict) for r in rows
+        ):
+            continue
+        if source.get("hasMore") is True or source.get("nextCursor"):
+            return "incomplete"
+        total = source.get("total")
+        if type(total) is int and total > len(rows):
+            return "incomplete"
+        checked = True
+        if any((r.get("name") or r.get("label")) == label for r in rows):
+            return "exists"
+    return "clear" if checked else "missing"
+
+
 def verified_native_switch(receipts: list[dict], device_id: str, command: str) -> bool:
     """The current request must have read the exact device's actual commands."""
     for source in _source_read(receipts, {"hub_get_device"}):
@@ -178,6 +198,13 @@ def validate_one_off_native_switch(
         return "One-off native rule must have an exact HB one-shot ownership name and date"
     if not verified_native_parent(receipts, parent_id):
         return "Native Rule Machine parent identity is unverified by a fresh typed app read"
+    inventory = native_rule_inventory_status(receipts, name)
+    if inventory != "clear":
+        return {
+            "exists": "A native rule with this exact one-off name already exists; inspect it before retrying",
+            "incomplete": "Native rule inventory was paged or incomplete; cannot exclude duplicate",
+            "missing": "No authoritative current native rule inventory was read before creation",
+        }[inventory]
     if not isinstance(changes, list) or len(changes) != 2:
         return "One-off rule must contain exactly one dated trigger and one Switch action"
     try:

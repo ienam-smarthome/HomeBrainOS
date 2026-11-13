@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "rootfs" / "app"))
 from one_off_rule_policy import (
     requested_temporal_scope, rule_pre_dispatch_issue,
     validate_one_off_native_switch, verified_native_parent,
-    decode_mcp_payload, is_native_rule_read,
+    decode_mcp_payload, is_native_rule_read, native_rule_inventory_status,
 )
 from one_off_cleanup import OneOffCleanup, _named_candidate, _attested_read
 
@@ -76,6 +76,9 @@ def fresh_sources():
                 },
             }
         }, {"appId": 169}),
+        source("hub_list_rules", {
+            "success": True, "rules": [], "total": 0
+        }),
         source("hub_get_device", {
             "id": "8899", "label": "Fictional Action Target",
             "commands": [{"name": "on"}, {"name": "off"}],
@@ -134,6 +137,26 @@ class OneOffPolicyTests(unittest.TestCase):
             "hub_manage_rule_machine",
             {"tool": "hub_set_rule", "args": valid},
             fresh_sources(), now=NOW,
+        ))
+
+    def test_native_duplicate_inventory_is_required_and_bounded(self):
+        full = fresh_sources()
+        self.assertEqual(native_rule_inventory_status(full, LABEL), "clear")
+        self.assertIn("inventory", validate_one_off_native_switch(
+            native_document(), full[:1] + full[2:], now=NOW
+        ))
+        duplicate = [source("hub_list_rules", {
+            "success": True, "rules": [{"appId": 5544, "name": LABEL}], "total": 1
+        })]
+        self.assertIn("already exists", validate_one_off_native_switch(
+            native_document(), full[:1] + duplicate + full[2:], now=NOW
+        ))
+        partial = [source("hub_list_rules", {
+            "success": True, "rules": [], "total": 1,
+            "hasMore": True, "nextCursor": "50"
+        })]
+        self.assertIn("incomplete", validate_one_off_native_switch(
+            native_document(), full[:1] + partial + full[2:], now=NOW
         ))
 
     def test_missing_current_native_parent_never_authorizes(self):
