@@ -116,7 +116,7 @@ class ContinuationLoopTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await model.close()
         self.assertTrue(res["success"])
-        self.assertEqual(res["source_review_kind"], "capability_discovery")
+        self.assertEqual(res["source_review_kind"], "action_goal")
         self.assertTrue(res["source_review_invoked"])
         self.assertTrue(res["action_continuation_invoked"])
         self.assertTrue(res["action_continuation_write_attempted"])
@@ -142,7 +142,7 @@ class ContinuationLoopTests(unittest.IsolatedAsyncioTestCase):
             res = await model.answer("Can you enable Bench Panel?", [], hub, 90)
         finally:
             await model.close()
-        self.assertEqual(res["source_review_kind"], "capability_discovery")
+        self.assertEqual(res["source_review_kind"], "action_goal")
         self.assertFalse(res["action_continuation_invoked"])
         self.assertEqual(len(hub.writes), 0)
         self.assertEqual(res["rounds"], 5)
