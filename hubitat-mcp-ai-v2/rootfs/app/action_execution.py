@@ -22,7 +22,7 @@ def _native_objects(value: Any, depth: int = 0):
         return
     if isinstance(value, dict):
         yield value
-        for key in ("mcp_result", "content"):
+        for key in ("mcp_result", "content", "text"):
             if key in value:
                 yield from _native_objects(value[key], depth + 1)
     elif isinstance(value, list):
