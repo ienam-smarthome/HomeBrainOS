@@ -136,22 +136,28 @@ def should_follow_through_device_action(
     inventory_recovery_invoked: bool, already_prompted: bool,
     remaining_seconds: float, source_review_invoked: bool,
     has_native_write_attempt: bool,
+    available_tools: set[str] | None = None,
 ) -> bool:
-    """Offer ONE model-led completion opportunity after source recovery.
+    """Offer ONE model-led completion opportunity for an unfinished action.
 
-    The candidate device is NOT selected by this code. It simply verifies
-    that the model actually obtained a successful detailed source receipt
-    after the broad inventory read, but has not submitted any native write.
-    No automatic native writer or extra control permission is introduced.
+    Either (a) a clear imperative produced NO in-request MCP receipts at all,
+    despite an offered read and ordinary writer, OR (b) an alternate
+    control surface was freshly inspected after a broad inventory recovery.
+    This chooses no device, command or write. Old conversation receipts
+    cannot authorize a fresh action.
     """
     if (
-        not inventory_recovery_invoked
-        or already_prompted
+        already_prompted
         or source_review_invoked
         or has_native_write_attempt
         or remaining_seconds <= 8
         or not is_explicit_device_imperative(question)
     ):
+        return False
+    if not receipts and not inventory_recovery_invoked:
+        return {"hub_list_devices", "hub_get_device",
+                "hub_call_device_command"}.issubset(available_tools or set())
+    if not inventory_recovery_invoked:
         return False
     last_recovery = max(
         (i for i, row in enumerate(receipts)
@@ -169,9 +175,16 @@ def should_follow_through_device_action(
 
 DEVICE_ACTION_FOLLOW_THROUGH_PROMPT = """Original user already gave a direct
 device-control instruction. This is ONE final opportunity to resolve the
-requested action after the original broad inventory and device-detail reads.
-Your previous draft did not execute anything. Recheck the intended TARGET,
-PHYSICAL EFFECT and TIMING against the ORIGINAL successful native receipts.
+requested action. Your previous draft did not execute anything. First
+check whether this request has ANY original native MCP receipts. Previous
+conversation evidence, snippets of commands, and plan prose are historical
+context, not a fresh native reading, execution or source of authorization.
+When fresh in-request reads are missing, use the connected native MCP tools
+to identify and verify the real physical actuator, its current state and
+advertised commands BEFORE you consider executing the ordinary requested
+action. When the broad inventory and device-detail reads already exist,
+use those ORIGINAL current-request receipts. Recheck the intended TARGET,
+PHYSICAL EFFECT and TIMING against actually returned source evidence.
 
 Use ordinary temporal semantics: "after/in N minutes" means the delay
 begins when the supported command is invoked, unless the user specified
