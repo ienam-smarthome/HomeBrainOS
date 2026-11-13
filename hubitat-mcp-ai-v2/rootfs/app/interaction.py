@@ -7,6 +7,7 @@ import json
 import uuid
 
 from mcp import MCPError, redact
+from action_intent_guard import automation_write_requires_confirmation
 
 
 def needs_confirmation(value) -> bool:
@@ -48,10 +49,15 @@ class Interaction:
             "name": name, "arguments": redact(copy.deepcopy(arguments)),
             "explanation": redact(explanation),
         }
-        if not needs_confirmation(arguments):
+        automation_write = automation_write_requires_confirmation(name, arguments)
+        if not (needs_confirmation(arguments) or automation_write):
             return
         self._decision = asyncio.get_running_loop().create_future()
-        self.pending = {"id": str(uuid.uuid4()), **self.current}
+        self.pending = {
+            "id": str(uuid.uuid4()), **self.current,
+            "approval_kind": ("automation_write" if automation_write
+                              else "native_confirmation"),
+        }
         try:
             approved = await self._decision
             if not approved:

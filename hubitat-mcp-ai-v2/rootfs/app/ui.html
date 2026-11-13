@@ -272,7 +272,7 @@ button{transition:border-color .15s ease,background-color .15s ease}button:hover
 </div>
 </div>
 <details class="card" id="conversationHistory" hidden><summary>Earlier in this conversation</summary><div id="turns"></div></details><div class="card" id="activityCard" hidden><h2>Current operation</h2><pre id="activity"></pre>
-<div id="approval" hidden><p>Review this operation and its effects. Approve only if you intend this exact change.</p>
+<div id="approval" hidden><p>Review this operation and its effects. Approve only if you intend this exact change.</p><p id="approvalKind" role="status"></p>
 <button id="approve" class="primary" onclick="decide(true)">Approve operation</button>
 <button id="decline" onclick="decide(false)">Decline</button><p id="approvalError" role="alert"></p></div></div>
 <div class="card answer-card">
@@ -385,7 +385,7 @@ button{transition:border-color .15s ease,background-color .15s ease}button:hover
 </section>
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.75";
+const UI_VERSION="2.0.0-alpha.76";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
@@ -783,6 +783,9 @@ async function pollActivity(){
   byId('activity').textContent=d.current?JSON.stringify(d.current,null,2):'';
   pendingApproval=d.pending;
   byId('approval').hidden=!pendingApproval;
+  byId('approvalKind').textContent=pendingApproval&&pendingApproval.approval_kind==='automation_write'
+   ? 'Persistent automation: review the trigger and actions in Current operation above. A chat “yes” is not approval. Do not approve an invented mode/event trigger for a one-off timer.'
+   : '';
  }catch(e){byId('approvalError').textContent='Unable to refresh operation: '+e.message;}
 }
 async function decide(approved){
