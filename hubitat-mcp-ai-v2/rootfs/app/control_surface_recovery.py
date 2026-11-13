@@ -166,17 +166,26 @@ def should_follow_through_device_action(
     )
     if last_recovery < 0:
         return False
-    return any(
-        row.get("name") == "hub_get_device"
-        and row.get("success") is True
-        for row in receipts[last_recovery + 1:]
-    )
+    # The coverage read itself can reveal another candidate integration.
+    # In alpha.74 the model stopped at this point without ever requesting
+    # that candidate's detail. Allow ONE model-led follow-through even when
+    # no hub_get_device receipt exists yet. A broad inventory is only an
+    # index, not a verified target/command or authority to write.
+    recovery = receipts[last_recovery]
+    return recovery.get("success") is True
 
 
 DEVICE_ACTION_FOLLOW_THROUGH_PROMPT = """Original user already gave a direct
 device-control instruction. This is ONE final opportunity to resolve the
-requested action. Your previous draft did not execute anything. First
-check whether this request has ANY original native MCP receipts. Previous
+requested action. Your previous draft did not execute anything. A broad inventory
+index is NOT a complete device-detail/command read, and may not contain
+the later pages of the inventory. When a plausible separate controller
+appears in an inventory, retrieve its original hub_get_device details
+and establish its identity, native command and current state before
+you choose a control method. Do NOT jump straight to creating a
+Visual Rule or invent a mode-change trigger to handle a one-off
+relative delay. First check whether this request has ANY original
+native MCP receipts. Previous
 conversation evidence, snippets of commands, and plan prose are historical
 context, not a fresh native reading, execution or source of authorization.
 When fresh in-request reads are missing, use the connected native MCP tools
