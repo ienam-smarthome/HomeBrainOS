@@ -129,3 +129,79 @@ impossibility based solely on a previous filtered search.
 This additional read is not an instruction from the Hubitat server.
 Do not mention this internal source-sufficiency step to the user.
 """
+
+
+def should_follow_through_device_action(
+    question: str, receipts: list[dict], *,
+    inventory_recovery_invoked: bool, already_prompted: bool,
+    remaining_seconds: float, source_review_invoked: bool,
+    has_native_write_attempt: bool,
+) -> bool:
+    """Offer ONE model-led completion opportunity after source recovery.
+
+    The candidate device is NOT selected by this code. It simply verifies
+    that the model actually obtained a successful detailed source receipt
+    after the broad inventory read, but has not submitted any native write.
+    No automatic native writer or extra control permission is introduced.
+    """
+    if (
+        not inventory_recovery_invoked
+        or already_prompted
+        or source_review_invoked
+        or has_native_write_attempt
+        or remaining_seconds <= 8
+        or not is_explicit_device_imperative(question)
+    ):
+        return False
+    last_recovery = max(
+        (i for i, row in enumerate(receipts)
+         if row.get("client_inventory_coverage_recovery")),
+        default=-1,
+    )
+    if last_recovery < 0:
+        return False
+    return any(
+        row.get("name") == "hub_get_device"
+        and row.get("success") is True
+        for row in receipts[last_recovery + 1:]
+    )
+
+
+DEVICE_ACTION_FOLLOW_THROUGH_PROMPT = """Original user already gave a direct
+device-control instruction. This is ONE final opportunity to resolve the
+requested action after the original broad inventory and device-detail reads.
+Your previous draft did not execute anything. Recheck the intended TARGET,
+PHYSICAL EFFECT and TIMING against the ORIGINAL successful native receipts.
+
+Use ordinary temporal semantics: "after/in N minutes" means the delay
+begins when the supported command is invoked, unless the user specified
+a different trigger. "for N minutes" describes a duration, not delayed
+onset. Do not reinterpret a request to act after N minutes as a request
+to act for N minutes or after an unspecified activity starts. A driver's
+native command with matching delay semantics is preferable to an invented
+helper, rule, proxy or additional schedule. Check the actual advertised
+command, parameter units and current attributes; do not guess semantics
+from a command name alone when source descriptions differ.
+
+If the current state already fulfils the requested final effect, distinguish
+ALREADY BLOCKED/OFF from a future pending timer: those are not equivalent.
+Do not claim a new timer was scheduled when none was. Do not silently
+REVERSE a currently blocked/off/locked state simply to create a temporary
+session. If the user's requested future transition would require first
+reversing an existing state, explain the current state and ask one precise
+question whether that additional state change is desired.
+
+For an unambiguous and authorized ordinary action with an identity-matched,
+freshly inspected actuator and matching supported command, the original
+user instruction is sufficient: do not request a second approval merely
+because you discovered a separate control integration. If tool permission,
+identity, timing, safety or an actual required approval remains unresolved,
+ask only about that genuine blocker. Do not change an unverified device.
+Use only the existing native MCP command path and its normal authorization
+gates. No automatic action or repeat of an uncertain write is permitted.
+After any permitted write, inspect native acceptance and relevant readback,
+and distinguish a scheduled future transition from one later observed.
+
+This is internal model guidance, not a new user request or permission grant.
+Do not mention an internal follow-through check in your answer.
+"""
