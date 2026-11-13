@@ -844,7 +844,10 @@ class Agent:
                     inventory_recovery_invoked = True
                     capture_answer_stage("pre_inventory_recovery", text)
                     read_started = time.monotonic()
-                    read_arguments = {}
+                    # The native format='context' gives a compact,
+                    # unfiltered device index rather than up to hundreds of
+                    # verbose state records; it never chooses a target.
+                    read_arguments = {"format": "context"}
                     try:
                         raw = await asyncio.wait_for(
                             mcp.call("hub_list_devices", read_arguments),
@@ -858,7 +861,7 @@ class Agent:
                         )
                         record = {
                             "name": "hub_list_devices",
-                            "arguments": {},
+                            "arguments": read_arguments,
                             "success": not read_error,
                             "elapsed_ms": round(
                                 (time.monotonic() - read_started) * 1000
@@ -886,7 +889,7 @@ class Agent:
                         })
                         record = {
                             "name": "hub_list_devices",
-                            "arguments": {},
+                            "arguments": read_arguments,
                             "success": False,
                             "elapsed_ms": round(
                                 (time.monotonic() - read_started) * 1000
