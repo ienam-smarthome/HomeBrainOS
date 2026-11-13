@@ -923,6 +923,7 @@ class Agent:
                     question, receipts,
                     inventory_recovery_invoked=inventory_recovery_invoked,
                     already_prompted=action_follow_through_invoked,
+                    available_tools=native_catalog_names,
                     remaining_seconds=deadline - time.monotonic(),
                     source_review_invoked=source_review_invoked,
                     has_native_write_attempt=(
