@@ -9,6 +9,10 @@ Use the live catalog, exact schemas, gateway discovery and upstream skill/safety
 V1 instructions below continue to apply to v1; they must not silently narrow the independent v2 architecture. Current v2 scope and acceptance: [HUBITAT-MCP-AI-V2-STATUS.md](docs/HUBITAT-MCP-AI-V2-STATUS.md).
 
 
+## v2 automation-authorization boundary (13 November 2026)
+
+Alpha.76 replaces the alpha.75 prompt-regex automation veto with a structured check on the actual selected native rule writer / gateway leaf. Native automation writes require a separate operation-specific UI approval, not conversational "yes". Ordinary native device timers are unchanged. Preserve upstream permissions, backup and confirmation controls. A user must inspect a model-proposed trigger; approval alone does not validate the model's interpretation. Do not use prompt-wording classifiers to grant mutation authority.
+
 ## Standing mandate — do not change direction between chats
 
 **New user direction (6 Nov 2026):** Do not keep adding per-question fixes or require the user to continually train the assistant. Build the autonomous evidence-first architecture in [docs/HOMEBRAIN-AUTONOMOUS-AGENT-ROADMAP.md](docs/HOMEBRAIN-AUTONOMOUS-AGENT-ROADMAP.md): model-selected evidence requirements, verified read-only execution, source-aware continuation, grounded synthesis, and evaluated improvement on unseen questions. Remove arbitrary soft limits on read-only inquiry, **not** operational deadlines, write permissions, user confirmation, privacy or resource safeguards. Phase 1 is only the first increment, not proof of general autonomy.
