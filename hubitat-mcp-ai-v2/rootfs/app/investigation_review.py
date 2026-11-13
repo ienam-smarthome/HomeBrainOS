@@ -268,6 +268,52 @@ this internal checkpoint.
 
 
 
+
+ACTION_GOAL_REVIEW_PROMPT = """Action-goal evidence sufficiency checkpoint (internal, READ-ONLY).
+
+The original user's imperative specifies an intended physical effect and
+target. You have NOT supplied an original device-action attempt for this
+request. Your previous draft is not proof that the action is done, blocked
+or genuinely ambiguous. Before ending with clarification, a proposal or a
+negative capability claim, compare the original goal with the ORIGINAL
+successful MCP receipts: Did you identify the actuator that causes the
+requested effect, not merely the first name-matched integration? Is the
+physical target/controller relationship supported, and have you inspected
+the actual actuator's advertised commands and state? A labelFilter match
+may return only part of the device inventory; absence of one command on a
+media, monitoring, sensor or virtual device does not exclude a separate
+control integration. The same physical item may have distinct functional
+records. Device "online" and "unmuted" do not prove permission or access
+for unrelated physical effects.
+
+If available native READ-ONLY tools could materially resolve missing
+controller identity, operation semantics, active state or permissions,
+independently choose the relevant reads now. Do not follow a hard-coded
+tool sequence, invent aliases, assume that related labels or network
+identifiers by themselves prove the same target, or pretend a different
+control surface can execute the original requested effect. Distinguish
+an immediate operation from a deferred or temporary one. If several
+physical targets or control paths are still plausible, ask about the
+specific genuine ambiguity; if necessary evidence or write capability
+cannot be verified, give a source-bounded limitation.
+
+This review is READ-ONLY. Do not call a writer, modify a device, create
+a rule, send a command or claim to have performed the action. A separate
+bounded native device-action continuation may be offered by the client
+only for a clear imperative and only with current source evidence,
+verified target identity, safe ordinary operation and all upstream
+authorization gates. A user request for investigation only, a question,
+explicit read-only instruction or a sensitive action does not grant
+write permission. Do not tell the user to confirm the same unambiguous
+ordinary command merely because you discovered an alternative verified
+control surface; but do not hide actual ambiguity or a mandatory user
+approval requirement.
+
+Assess what evidence is still needed; decide yourself whether and where
+to read, and answer faithfully if resolution is impossible from permitted
+sources. Do not mention this checkpoint in your user-facing answer.
+"""
+
 CAPABILITY_DISCOVERY_REVIEW_PROMPT = """Capability/control-surface source review (internal).
 The user's desired EFFECT, named physical target, and timing are separate
 questions from which Hubitat device/integration implements the effect.
@@ -626,6 +672,8 @@ def review_prompt(kind: str) -> str:
         return ACTION_OUTCOME_REVIEW_PROMPT
     if kind == "capability_discovery":
         return CAPABILITY_DISCOVERY_REVIEW_PROMPT
+    if kind == "action_goal":
+        return ACTION_GOAL_REVIEW_PROMPT
     if kind == "implementation_feasibility":
         return IMPLEMENTATION_FEASIBILITY_REVIEW_PROMPT
     return SOURCE_REVIEW_PROMPT
@@ -823,7 +871,7 @@ def continuation_command_advertised(receipts: list[dict], args: dict) -> bool:
 def should_review_completion(
     question: str, *, available_tools: bool, already_reviewed: bool,
     remaining_seconds: float, has_action_receipt: bool = False,
-    draft: str = "",
+    draft: str = "", action_attempted: bool = False,
 ) -> bool:
     """One optional model-led review when a claim may need better sources.
 
@@ -840,9 +888,13 @@ def should_review_completion(
             or has_action_receipt
             or is_capability_denial_draft(draft)
             or is_implementation_feasibility_draft(draft)
+            # The original action goal is the specification: when NO
+            # write was attempted, the assistant's phrasing (including a
+            # generic "please clarify") must not suppress safe discovery.
             or (
                 is_explicit_device_action_request(question)
-                and is_redundant_action_confirmation_draft(draft)
+                and not has_action_receipt
+                and not action_attempted
             )
         )
     )
