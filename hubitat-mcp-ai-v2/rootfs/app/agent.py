@@ -870,6 +870,7 @@ class Agent:
         action_continuation_invoked = False
         action_continuation_active = False
         action_continuation_write_attempted = False
+        action_continuation_receipt_offset = 0
         final_claim_audit_invoked = False
         final_claim_audit_candidate = ""
         final_claim_audit_status = "not_invoked"
@@ -993,6 +994,17 @@ class Agent:
                 # The connected model decides whether further read-only
                 # sources are useful; no native tool is selected or invoked
                 # automatically, and no fixed tool sequence is required.
+                # A requested action is unresolved when no native write has
+                # even been attempted, regardless of whether the model ended
+                # with a denial, an unnecessary question or vague advice.
+                # Never trigger a second action attempt after errors/timeouts.
+                original_write_attempted = any(
+                    not is_read_only_review_tool(item.get("name", ""))
+                    and item.get("name") not in (
+                        _CATALOG_TOOL, _PRIOR_TOOL, MONITOR_TOOL
+                    )
+                    for item in receipts
+                )
                 if enable_source_review and should_review_completion(
                     question, available_tools=any(
                         item["function"]["name"] != _CATALOG_TOOL
@@ -1001,6 +1013,7 @@ class Agent:
                     already_reviewed=source_review_invoked,
                     remaining_seconds=deadline - time.monotonic(),
                     has_action_receipt=native_action_receipts_seen > 0,
+                    action_attempted=original_write_attempted,
                     draft=text,
                 ):
                     capture_answer_stage("pre_source_review", text)
@@ -1008,6 +1021,9 @@ class Agent:
                     asked_kind = review_kind(question)
                     source_review_kind = (
                         "action_outcome" if native_action_receipts_seen > 0
+                        else "action_goal"
+                        if is_explicit_device_action_request(question)
+                        and not original_write_attempted
                         else "implementation_feasibility"
                         if is_implementation_feasibility_draft(text)
                         and asked_kind not in ("causal", "historical_measurement")
@@ -1027,11 +1043,12 @@ class Agent:
                 if (
                     enable_source_review
                     and source_review_invoked
-                    and source_review_kind == "capability_discovery"
+                    and source_review_kind in ("capability_discovery", "action_goal")
                     and not action_continuation_invoked
                     and not native_action_receipts_seen
                     and is_explicit_device_action_request(question)
-                    and is_redundant_action_confirmation_draft(text)
+                    # The original imperative—not a particular wording of
+                    # the model's last answer—controls continuation eligibility.
                     and deadline - time.monotonic() > 8
                     and any(
                         item.get("function", {}).get("name") == "hub_call_device_command"
@@ -1051,15 +1068,26 @@ class Agent:
                     capture_answer_stage("pre_action_continuation", text)
                     action_continuation_invoked = True
                     action_continuation_active = True
+                    # Require a NEW detail read after this transition. The
+                    # prior media-device detail cannot silently authorize
+                    # an unrelated controller's command.
+                    action_continuation_receipt_offset = len(receipts)
                     messages.append({
                         "role": "user",
                         "content": (
                             "The original user gave a direct device-action "
                             "instruction, not merely a request for a proposal. "
-                            "Your permission question does not execute it. "
-                            "If source evidence establishes a unique physical "
+                            "Your preceding answer has not executed it. "
+                            "First decide from the ORIGINAL receipts whether "
+                            "the requested outcome is already satisfied, a "
+                            "critical system or true ambiguity requires "
+                            "separate approval, or the original action is "
+                            "feasible using a verified controller. Never "
+                            "issue an unnecessary command if the desired "
+                            "state is already adequately supported. If "
+                            "source evidence establishes a unique physical "
                             "target/control-surface relationship, obtain a "
-                            "fresh hub_get_device command list for the exact "
+                            "NEW hub_get_device command list for the exact "
                             "actuator and choose the correct supported native "
                             "command. Execute at most one single-device "
                             "hub_call_device_command, with no batch, only if "
@@ -1083,7 +1111,7 @@ class Agent:
                 if (enable_source_review and enable_final_claim_audit
                         and source_review_kind not in (
                             "action_outcome", "capability_discovery",
-                            "implementation_feasibility"
+                            "implementation_feasibility", "action_goal"
                         )
                         and should_audit_completion(
                             source_review_invoked=source_review_invoked,
@@ -1110,6 +1138,8 @@ class Agent:
                 return completed_answer(
                     text, ("not_applicable_to_action_review"
                            if source_review_kind == "action_outcome"
+                           else "not_applicable_to_action_goal_review"
+                           if source_review_kind == "action_goal"
                            else "not_applicable_to_capability_review"
                            if source_review_kind == "capability_discovery"
                            else "not_applicable_to_feasibility_review"
@@ -1144,7 +1174,9 @@ class Agent:
                         # validation, preventing any automatic second write
                         # if it fails, times out, or returns ambiguously.
                         action_continuation_write_attempted = True
-                        if not continuation_command_advertised(receipts, args):
+                        if not continuation_command_advertised(
+                            receipts[action_continuation_receipt_offset:], args
+                        ):
                             raise MCPError(
                                 "Late device action requires a successful "
                                 "hub_get_device receipt in this request "
