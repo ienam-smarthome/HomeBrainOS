@@ -917,13 +917,20 @@ class Agent:
             }
 
         while True:
-            if hasattr(mcp, "cached_leaf_schemas"):
-                tools = model_tools(catalog, mcp.cached_leaf_schemas())
-                tools.append(_CATALOG_TOOL_DEFINITION)
-                if prior_evidence and prior_reader:
-                    tools.append(_PRIOR_TOOL_DEFINITION)
-                if device_monitor is not None:
-                    tools.append(MONITOR_TOOL_DEFINITION)
+            # Rebuild from the original live catalog on EVERY model round.
+            # A read-only source review must not permanently mutate the tool
+            # list; action continuation still exposes only its explicit
+            # single-device writer allowance, never a general write catalog.
+            cached_leaves = (
+                mcp.cached_leaf_schemas()
+                if hasattr(mcp, "cached_leaf_schemas") else None
+            )
+            tools = model_tools(catalog, cached_leaves)
+            tools.append(_CATALOG_TOOL_DEFINITION)
+            if prior_evidence and prior_reader:
+                tools.append(_PRIOR_TOOL_DEFINITION)
+            if device_monitor is not None:
+                tools.append(MONITOR_TOOL_DEFINITION)
             # Source reviews are always read-only. A separately gated
             # continuation of an original explicit device imperative can
             # expose ONE normal single-device native command, and only
