@@ -1,5 +1,8 @@
 # Hubitat MCP AI v2 — native MCP client
 
+**Alpha.79 — model-led read-only installed-capability verification.** Explicit natural `Check whether ... Verify ...` questions may use the existing bounded source-verification review to distinguish advertised native tools, app types, installed typed identities, field contracts and observed runtime behaviour. The model chooses all safe reads; no form opening as a read-only probe when the server warns of side effects, no fixed tool or ID routing, and no changed writer/cleanup controls. [Acceptance note](../docs/HOMEBRAIN-V2-ALPHA79-CAPABILITY-SOURCE-VERIFICATION-20261113.md).
+
+
 **Alpha.78 — one-off native Rule Machine safety and opt-in expiry cleanup.** A bare single clock-time request no longer silently creates a daily Visual Rule; the model may author a date-attested native Rule Machine single Switch action using current source-verified parent/target evidence, normal independent approval, and the installed native contract. The restored owned-rule cleanup is **disabled and dry-run by default**; no existing Hubitat rules are modified on upgrade. See [alpha.78 details](../docs/HOMEBRAIN-V2-ALPHA78-ONEOFF-NATIVE-RM-20261113.md).
 
 

@@ -92,6 +92,9 @@ _VERIFICATION_REQUEST_AT_START = re.compile(
     r"^\s*(?:verify|validate|audit|confirm|establish)\b",
     re.IGNORECASE,
 )
+_CHECK_WITH_PROOF_AT_START = re.compile(
+    r"^\s*check\s+(?:whether|if)\b", re.IGNORECASE,
+)
 _INSPECTION_REQUEST_AT_START = re.compile(
     r"^\s*(?:inspect|investigate)\b", re.IGNORECASE,
 )
@@ -103,7 +106,8 @@ _EXPLICIT_PROOF_REQUEST = re.compile(
 _VERIFICATION_SUBJECT = re.compile(
     r"\b(?:status|state|configuration|settings|triggers?|actions?|"
     r"history|events?|readings?|measurements?|sources?|evidence|"
-    r"identity|type|parent|health|flags?|service|logs?|device|rule|controller|automation)\b",
+    r"identity|type|parent|health|flags?|service|logs?|device|rule|controller|automation|"
+    r"capabilit(?:y|ies)|support|schema|compatibility)\b",
     re.IGNORECASE,
 )
 _WRITE_INTENT_AT_START = re.compile(
@@ -209,6 +213,18 @@ another status property. A UI configuration page alone does not prove an
 event-specific execution. When the user requires verified evidence, do not
 promote compatible indirect evidence into the requested direct proof.
 
+For capability or compatibility questions, distinguish server-advertised tool
+and guide documentation, type/driver catalogues, a typed currently installed
+instance, its precise field/action schema, an accepted configuration, and
+observed runtime execution. These are different proof levels. An application
+TYPE ID is not its installed INSTANCE ID; a valid variable-value format is
+not evidence of a trigger's scheduling contract or its timing accuracy.
+Ask for additional READ-ONLY native source evidence only if a suitable safe
+source is genuinely available. If the server warns that opening/rendering a
+form executes app code or can mutate state, do NOT probe it during a
+read-only investigation. Do not assert an installed capability, deadline,
+permission or physical effect solely from a guide or catalogue listing.
+
 If one proportionate READ-ONLY source may resolve a material requested
 property, independently choose its actual tool and arguments now. Never
 use UI controls, mutating tools or speculative actions to probe status.
@@ -301,6 +317,10 @@ For measurements, a missing matching saved sample is NOT proof a physical
 excursion did not occur. Freshness-unknown bins and current snapshots are
 not source-timestamped physical observations. For status/configuration, a
 stored pointer or UI button is not independently verified identity/state.
+For capability questions, separate a documented operation or app TYPE from
+a verified INSTALLED instance and exact field schema. A variable format
+does not establish trigger precision or runtime execution. Never claim
+installed compatibility from a guide alone.
 For all domains, retain relevant positive facts and original uncertainty.
 
 There are NO tools in this final writing pass. Do not claim to have checked
@@ -446,6 +466,8 @@ def is_source_verification_question(question: str) -> bool:
         and (
             bool(_VERIFICATION_REQUEST_AT_START.search(question))
             or bool(_INSPECTION_REQUEST_AT_START.search(question))
+            and bool(_EXPLICIT_PROOF_REQUEST.search(question))
+            or bool(_CHECK_WITH_PROOF_AT_START.search(question))
             and bool(_EXPLICIT_PROOF_REQUEST.search(question))
         )
     )

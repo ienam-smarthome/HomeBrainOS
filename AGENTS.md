@@ -1,5 +1,9 @@
 # HomeBrainOS development agent instructions
 
+## V2 alpha.79 capability-check evidence boundary (13 November 2026)
+
+For explicit verification of installed capabilities, distinguish tool-guide claims, application *type* catalogue IDs, independently typed *installed* app identity, exact native trigger/action fields, accepted configuration and observed execution. Natural `Check whether ... Verify ...` requests may receive one optional model-led read-only evidence check, but the model selects its own sources. Do not open mutating native forms for a read-only query, invent a supported schedule from a datetime variable example, or convert guide availability into proof of installed compatibility. No device/rule-specific planner. Keep original Gate B and alpha.78 native one-off protections. [Development note](docs/HOMEBRAIN-V2-ALPHA79-CAPABILITY-SOURCE-VERIFICATION-20261113.md).
+
 ## V2 scope clarification — 7 November 2026
 
 The user explicitly requires `hubitat-mcp-ai-v2/` to be a clean start following the upstream Hubitat MCP server's intended behavior. Its scope includes investigation, device control, native automation and administration within the connected server/token permissions. Earlier v2 read-only-pilot restrictions and the alpha.2 frozen tool allowlist are superseded.
