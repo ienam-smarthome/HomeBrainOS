@@ -220,9 +220,11 @@ class ActionGoalEndToEnd(unittest.IsolatedAsyncioTestCase):
         finally:
             await model.close()
         self.assertTrue(result["action_continuation_invoked"])
-        self.assertTrue(result["action_continuation_write_attempted"])
+        self.assertFalse(result["action_continuation_write_attempted"])
+        self.assertEqual(result["action_continuation_preflight_rejections"], 1)
         self.assertEqual(hub.writes, [])
         self.assertFalse(result["tool_calls"][-1]["success"])
+        self.assertEqual(result["tool_calls"][-1]["dispatch_state"], "preflight_rejected")
         self.assertIn("requires a successful hub_get_device",
                       result["tool_calls"][-1]["error"])
 
