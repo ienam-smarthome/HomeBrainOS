@@ -165,7 +165,7 @@ class NativeApprovalTests(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaises(MCPError):
                     await task
 
-    async def test_numeric_spelled_and_chat_yes_cannot_dispatch_without_ui_approval(self):
+    async def test_numeric_spelled_and_chat_yes_cannot_dispatch_a_oneoff_visual_rule(self):
         cases = [
             ("Block Demo Screen after 2 minutes", []),
             ("Block Demo Screen after two minutes", []),
@@ -186,28 +186,24 @@ class NativeApprovalTests(unittest.IsolatedAsyncioTestCase):
                             {"type": "systemMode", "config": {"modes": [33]}}
                         ]}
                     )]},
-                    {"content": "The proposed rule was declined; no write."},
+                    {"content": "The proposed recurring rule was not sent."},
                 ])
                 interaction = Interaction()
-                task = asyncio.create_task(model.answer(
-                    question, history, hub, 90,
-                    before_call=interaction.before_call,
-                    enable_action_proposal_review=False,
-                ))
                 try:
-                    pending = await self.wait_for_approval(interaction)
-                    self.assertEqual(pending["approval_kind"], "automation_write")
-                    self.assertEqual(pending["arguments"]["definition"]
-                                     ["triggers"][0]["type"], "systemMode")
-                    interaction.decide(pending["id"], False)
-                    result = await task
+                    result = await model.answer(
+                        question, history, hub, 90,
+                        before_call=interaction.before_call,
+                        enable_action_proposal_review=False,
+                    )
                 finally:
                     await model.close()
                 self.assertEqual(hub.calls, [])
-                self.assertEqual(result["automation_confirmation_requests"], 1)
+                self.assertIsNone(interaction.pending)
+                self.assertEqual(result["automation_confirmation_requests"], 0)
+                self.assertEqual(result["one_off_rule_preflight_rejections"], 1)
                 self.assertEqual(
                     result["tool_calls"][0]["result_kind"],
-                    "native_automation_approval_not_completed"
+                    "one_off_rule_preflight_rejected"
                 )
 
     async def test_approved_rule_dispatches_and_reports_native_flags(self):

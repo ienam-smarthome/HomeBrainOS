@@ -373,6 +373,9 @@ class InteractionTests(unittest.TestCase):
             runtime.app.state.configuration_error = None
             runtime.app.state.recorder = SimpleNamespace(status=lambda: {"enabled": False})
             runtime.app.state.tts = SimpleNamespace(status=lambda: {"enabled": False})
+            runtime.app.state.one_off_cleanup = SimpleNamespace(
+                status=lambda: {"enabled": False, "dry_run": True}
+            )
             runtime.app.state.device_monitor = object()
             runtime.app.state.device_monitor_error = None
             async with httpx.AsyncClient(

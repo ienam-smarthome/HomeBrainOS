@@ -24,8 +24,12 @@ _RECUR = re.compile(
 )
 _ONE = re.compile(
     r"\b(?:one[ -]?(?:off|time)|once|just\s+this\s+time|"
-    r"tomorrow|tonight|today|after\s+\d+\s*(?:minutes?|mins?|hours?|hrs?)|"
-    r"in\s+\d+\s*(?:minutes?|mins?|hours?|hrs?))\b",
+    r"tomorrow|tonight|today|after\s+(?:\d+|one|two|three|four|five|"
+    r"six|seven|eight|nine|ten|fifteen|thirty|an?)\s*(?:seconds?|secs?|"
+    r"minutes?|mins?|hours?|hrs?)|"
+    r"in\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|"
+    r"ten|fifteen|thirty|an?)\s*(?:seconds?|secs?|minutes?|mins?|"
+    r"hours?|hrs?))\b",
     re.I,
 )
 _CLOCK = re.compile(
@@ -33,6 +37,20 @@ _CLOCK = re.compile(
     r"|\b(?:at|by)\s+\d{1,2}:\d{2}\b",
     re.I,
 )
+
+
+def scoped_request_text(question: str, history: list[dict] | None) -> str:
+    """Denial-only: retain previous explicit one-off intent across chat assent."""
+    if question.strip().casefold().strip(".!") not in {
+        "yes", "yep", "okay", "ok", "proceed", "do it", "sure",
+    }:
+        return question
+    for row in reversed(history or []):
+        if row.get("role") == "user" and isinstance(row.get("content"), str):
+            previous = row["content"].strip()
+            if previous and requested_temporal_scope(previous) != "unknown":
+                return previous
+    return question
 
 
 def requested_temporal_scope(question: str) -> str:

@@ -15,7 +15,7 @@ import httpx
 from mcp import MCPError, MCPContractError, MCPClient, redact, is_tool_catalog
 from interaction import needs_confirmation
 from action_intent_guard import automation_write_requires_confirmation, rule_activation_outcome
-from one_off_rule_policy import rule_pre_dispatch_issue, requested_temporal_scope
+from one_off_rule_policy import rule_pre_dispatch_issue, requested_temporal_scope, scoped_request_text
 from action_proposal_review import (
     PREWRITE_PROPOSAL_PROMPT, is_native_action_proposal,
     is_persistent_construct, has_current_native_evidence,
@@ -767,6 +767,7 @@ class Agent:
         prewrite_unsent_proposals: list[dict[str, Any]] = []
         prewrite_no_fresh_evidence_rejections = 0
         one_off_rule_preflight_rejections = 0
+        temporal_scope_text = scoped_request_text(question, history)
         automation_confirmation_requests = 0
         final_claim_audit_invoked = False
         final_claim_audit_candidate = ""
@@ -807,7 +808,7 @@ class Agent:
                 "prewrite_unsent_proposals": prewrite_unsent_proposals,
                 "prewrite_no_fresh_evidence_rejections": prewrite_no_fresh_evidence_rejections,
                 "one_off_rule_preflight_rejections": one_off_rule_preflight_rejections,
-                "requested_temporal_scope_hint": requested_temporal_scope(question),
+                "requested_temporal_scope_hint": requested_temporal_scope(temporal_scope_text),
                 "automation_confirmation_requests": automation_confirmation_requests,
                 "final_claim_audit_invoked": final_claim_audit_invoked,
                 "final_claim_audit_status": audit_status,
@@ -1192,7 +1193,7 @@ class Agent:
                     # Switch documents may pass this extra check. Approval,
                     # backup and upstream permissions remain independent.
                     one_off_problem = rule_pre_dispatch_issue(
-                        question, name, args, receipts,
+                        temporal_scope_text, name, args, receipts,
                     )
                     if one_off_problem:
                         one_off_rule_preflight_rejections += 1

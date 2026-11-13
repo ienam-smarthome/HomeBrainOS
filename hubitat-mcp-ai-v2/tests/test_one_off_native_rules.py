@@ -88,7 +88,8 @@ class OneOffPolicyTests(unittest.TestCase):
     def test_clock_without_recurring_is_one_off(self):
         for question in [
             "block demo screen at 6.50pm", "Switch fictional light off at 18:50",
-            "block demo after 2 minutes", "turn off demo once at 6:50 PM",
+            "block demo after 2 minutes", "block demo after two minutes",
+            "turn off demo once at 6:50 PM",
         ]:
             with self.subTest(question=question):
                 self.assertEqual(requested_temporal_scope(question), "one_off")
