@@ -1,5 +1,8 @@
 # Hubitat MCP AI v2 — native MCP client
 
+**Alpha.72 rollback (13 Nov 2026):** Restored the **source-real alpha.65 working native timed-block baseline** (`81a81df`) after alpha.66–71 experimental review/action-continuation regressions. Alpha.72 packages alpha.65 functional runtime, model skill, UI and tests with **only build-version substitutions** so Home Assistant treats this as an update, not a downgrade. The previous live Google TV test observed `blockInMinutes(2)` and the resulting block. **Delayed unblocking after N minutes was not implemented or verified by that baseline**; the driver's `allowForMinutes` starts access immediately for N minutes. See [rollback note](../docs/HOMEBRAIN-V2-ALPHA72-RESTORE-ALPHA65-20261113.md). Later docs describe historical superseded experiments, not current behavior.
+
+
 **Alpha.65 — model-led action-outcome review.** V2 now compares intended target/action/timing with advertised native capabilities in its normal action guidance, and can invoke one read-only model-led evidence-sufficiency review **after a native write-capable tool result**. The model may independently inspect a changed target or pending native timer before answering; it cannot issue an additional write from that review, and no future assistant wake-up is claimed without a server/device-owned scheduled receipt. Original MCP results remain authoritative; a `client_action_receipt_scope` is merely metadata, not physical effect proof. No automatic retry, proxy scheduler, direct device-name routing, extra text-only final audit for action reviews or V1 change. Fictional tests demonstrate the review option, not real-model first-try action selection. See [alpha.65 note](../docs/HOMEBRAIN-V2-ALPHA65-ACTION-OUTCOME-REVIEW-20261112.md).
 
 
