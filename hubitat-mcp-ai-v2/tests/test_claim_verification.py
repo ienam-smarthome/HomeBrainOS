@@ -123,7 +123,7 @@ class EvidencePropertiesTests(unittest.TestCase):
             "Check whether this installed controller supports a typed "
             "calendar schedule. Verify parent identity and field schema.",
             "Check if the fictional gateway exposes this capability. "
-            "Confirm installed configuration rather than just its guide.",
+            "Verify installed configuration rather than just its guide.",
             "Check whether the valve reports a reliable state. "
             "Show evidence for the native attribute.",
         ):
