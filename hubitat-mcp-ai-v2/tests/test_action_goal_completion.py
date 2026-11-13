@@ -249,6 +249,7 @@ class ActionGoalEndToEnd(unittest.IsolatedAsyncioTestCase):
              "tool_calls": [tc("hub_call_device_command",
                                deviceId="LAB-NET", command="allowAccess")]},
             {"content": "The command was submitted. No second action is warranted."},
+            {"content": "The command result is the only action receipt; no retry was attempted."},
         ])
         try:
             result = await model.answer("Unblock Fictional Screen", [], hub, 90)
