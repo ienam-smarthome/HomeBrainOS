@@ -1,5 +1,16 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 13 November 2026 — Alpha.70: general action-goal completion instead of draft-wording gate
+
+In an original alpha.69 live first-answer test, a clear immediate device-action imperative produced two valid reads of the *media* integration. The model ended by asking if the user meant sound, device connectivity or network controls. It did not investigate the separate controller, issue a command or activate any source review. The existing alpha.69 review trigger recognised unsupported-command denials or permission prompts, not **clarification drafts**. The user goal was therefore left unresolved.
+
+Alpha.70 changes the existing review eligibility for explicit imperatives with **no attempted native write** to depend on the original action goal, not the model's draft phrase. The new `action_goal` checkpoint is read-only and model-led, encouraging broader source/actuator discovery and precise identity checks when available evidence does not establish the desired effect. After that review, the existing bounded continuation is offered without a specific phrase trigger, subject to original user intent, a live native device-command writer and sufficient remaining time. It still allows only one single-device command attempt after a **new** exact-device `hub_get_device` command detail, with upstream permissions and approval enforced. No automatic tool selection, fallback scheduler, batch, retry, destructive action or V1 modification. Negative conclusions remain source-bounded and genuine ambiguity can still require user input.
+
+Fictional tests exercise the exact *clarification instead of capability denial* failure shape, successful alternate-controller discovery and one original write plus state readback, no-effect-already/unknown cases, read-only exclusions, fresh detail requirements, and non-retry after a write. **Installed model first-answer quality and real network enforcement remain unverified.** See [alpha.70 development note](HOMEBRAIN-V2-ALPHA70-ACTION-GOAL-20261113.md).
+
+
+
+
 ## 13 November 2026 — Alpha.69: complete explicit device actions after alternate-controller discovery
 
 A private alpha.68 first answer for an explicit immediate action correctly found the distinct network-policy actuator during read-only capability discovery but stopped with “Shall I proceed?” despite already having user action intent. It had not retrieved the actuator's actual command details or executed any device command. The optional discovery review was permanently read-only, leaving no path to finish the original permitted ordinary action. An inventory switch=off did not independently verify router enforcement.
