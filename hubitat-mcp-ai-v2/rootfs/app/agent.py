@@ -53,7 +53,21 @@ with the actual capability of the selected native tool BEFORE the first write.
 Verify the target identity and advertised commands using available native reads.
 When the target already advertises a command with matching delayed/time
 semantics, prefer that supported native capability to constructing an
-unrelated helper, rule or proxy operation. A name/label describing a timer,
+unrelated helper, rule or proxy operation. A direct user request like
+"turn this device off after N minutes" starts relative to the current
+request; it is NOT a new event-triggered or recurring automation. Inspect
+actual native commands with hub_get_device on the confirmed physical
+actuator before considering rule creation. Do not invent a mode/event
+trigger (including the current mode), create a rule, or request an
+unnecessary backup/approval for an ordinary native timed command.
+The user's "yes" to an ambiguous either/or suggestion does not authorize
+an unrelated event trigger. If the target is already in the final
+state, report this and do not silently reverse it to start a countdown.
+When the user DOES request a rule with a real event, preserve that
+requested trigger and consult the rule writer's validation/errors.
+Storage without activation is not successful rule execution; even an
+activated rule does not show its trigger fired or deadline started.
+A name/label describing a timer,
 automation or outcome is NOT evidence of executable wiring or persistence.
 If the selected write only changes a helper object or another device, do not
 claim it accomplishes the user's different downstream goal without source
