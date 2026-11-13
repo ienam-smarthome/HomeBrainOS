@@ -902,8 +902,8 @@ class Agent:
                         "role": "user",
                         "content": (
                             BROAD_INVENTORY_RECOVERY_PROMPT
-                            + "\\n\\nOriginal native MCP inventory response "
-                              "(read-only, not an action):\\n" + payload
+                            + "\n\nOriginal native MCP inventory response "
+                              "(read-only, not an action):\n" + payload
                         ),
                     })
                     continue
