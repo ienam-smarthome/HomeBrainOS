@@ -703,6 +703,122 @@ def is_capability_denial_draft(draft: str) -> bool:
     return isinstance(draft, str) and bool(_CAPABILITY_DENIAL_DRAFT.search(draft))
 
 
+# A direct command is the user's ordinary permission to attempt that
+# requested action subject to upstream permissions and safety requirements.
+# It is NOT consent for a different target, a derived action, or a destructive
+# operation requiring a separate confirm=true approval.
+_IMPERATIVE_DEVICE_ACTION = re.compile(
+    r"^\s*(?:please\s+)?(?:turn|switch|set|adjust|change|enable|disable|"
+    r"start|stop|pause|play|mute|unmute|block|unblock|allow|deny|"
+    r"open|close|lock|unlock|arm|disarm|dim|brighten|raise|lower|"
+    r"increase|decrease|activate|deactivate|cancel)\b",
+    re.IGNORECASE,
+)
+_EXPLICIT_READ_ONLY_ACTION_LIMIT = re.compile(
+    r"\b(?:do\s+not|don't|never|without)\s+"
+    r"(?:\w+\s+){0,4}(?:change|modify|execute|run|act|create|write|"
+    r"control|send|trigger|turn|switch|block|unblock|apply|"
+    r"touch|alter|make\s+changes?)\b|"
+    r"\b(?:read[- ]only|dry[- ]run|simulation\s+only|"
+    r"do\s+nothing|no\s+changes)\b",
+    re.IGNORECASE,
+)
+_REDUNDANT_ACTION_CONFIRMATION = re.compile(
+    r"\b(?:shall\s+i\s+(?:proceed|do\s+(?:it|this)|"
+    r"send|execute|turn|switch|unblock|block)|"
+    r"should\s+i\s+(?:proceed|execute|turn|switch)|"
+    r"would\s+you\s+like\s+me\s+to\s+(?:proceed|do|"
+    r"execute|turn|switch|enable|disable|block|unblock)|"
+    r"may\s+i\s+proceed|"
+    r"can\s+i\s+proceed)\b",
+    re.IGNORECASE,
+)
+
+
+def is_explicit_device_action_request(question: str) -> bool:
+    """Conservative positive imperative with no embedded read-only clause.
+
+    This does not prove target identity or authorize any particular tool.
+    Questions ('Can you ...?') and investigations are intentionally excluded.
+    """
+    return (
+        isinstance(question, str)
+        and bool(_IMPERATIVE_DEVICE_ACTION.search(question))
+        and not bool(_EXPLICIT_READ_ONLY_ACTION_LIMIT.search(question))
+    )
+
+
+def is_redundant_action_confirmation_draft(draft: str) -> bool:
+    """A model's unexecuted permission prompt, not proof the action is safe."""
+    return isinstance(draft, str) and bool(
+        _REDUNDANT_ACTION_CONFIRMATION.search(draft)
+    )
+
+
+def _native_device_detail(receipt: dict) -> dict | None:
+    """Original successful hub_get_device data, never an inferred snapshot."""
+    if not isinstance(receipt, dict):
+        return None
+    if receipt.get("success") is not True or receipt.get("name") != "hub_get_device":
+        return None
+    try:
+        parsed = json.loads(receipt.get("response", ""))
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    if isinstance(parsed.get("content"), list):
+        for part in parsed["content"]:
+            if isinstance(part, dict) and part.get("type") == "text":
+                try:
+                    native = json.loads(part.get("text", ""))
+                except (TypeError, ValueError):
+                    continue
+                if isinstance(native, dict):
+                    return native
+    return parsed
+
+
+def continuation_command_advertised(receipts: list[dict], args: dict) -> bool:
+    """Require an in-request device-detail command receipt before late write.
+
+    Only the original exact target device ID and advertised command name are
+    compared. This is NOT identity proof between two different integrations.
+    The model still must corroborate that mapping, and the upstream server
+    independently validates the command, permissions and arguments.
+    """
+    if not isinstance(args, dict) or args.get("commands") is not None:
+        return False
+    device_id = args.get("deviceId")
+    command = args.get("command")
+    if not isinstance(device_id, (int, str)) or not isinstance(command, str):
+        return False
+    if not command.strip():
+        return False
+    for receipt in reversed(receipts):
+        detail = _native_device_detail(receipt)
+        if detail is None or str(detail.get("id")) != str(device_id):
+            continue
+        commands = detail.get("commands")
+        if isinstance(commands, list) and any(
+            isinstance(item, dict) and item.get("name") == command
+            for item in commands
+        ):
+            # A high-consequence actuator still needs explicit approval;
+            # a late discovery must never opportunistically unlock a door,
+            # disarm a security system or operate a garage/valve.
+            capabilities = set(
+                str(c) for c in detail.get("capabilities", [])
+            ) if isinstance(detail.get("capabilities"), list) else set()
+            if capabilities.intersection({
+                "Lock", "GarageDoorControl", "SecurityKeypad",
+                "SecuritySystem", "Valve",
+            }):
+                return False
+            return True
+    return False
+
+
 def should_review_completion(
     question: str, *, available_tools: bool, already_reviewed: bool,
     remaining_seconds: float, has_action_receipt: bool = False,
@@ -723,5 +839,9 @@ def should_review_completion(
             or has_action_receipt
             or is_capability_denial_draft(draft)
             or is_implementation_feasibility_draft(draft)
+            or (
+                is_explicit_device_action_request(question)
+                and is_redundant_action_confirmation_draft(draft)
+            )
         )
     )
