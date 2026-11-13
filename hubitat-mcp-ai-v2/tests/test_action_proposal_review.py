@@ -129,6 +129,13 @@ class NativeProposalContractTests(unittest.TestCase):
             {"name": "hub_get_tool_guide", "success": True},
             {"name": "homebrain_read_prior_evidence", "success": True},
             {"name": "hub_get_device", "success": False},
+            {"name": "hub_read_devices", "success": True,
+             "result_kind": "tool_catalog", "operation_executed": False},
+        ]))
+        self.assertTrue(has_current_native_evidence([
+            {"name": "hub_manage_devices",
+             "arguments": {"tool": "hub_get_device", "args": {}},
+             "success": True, "result_kind": "tool_result"},
         ]))
         self.assertTrue(has_current_native_evidence([
             {"name": "hub_list_devices", "success": True}
@@ -169,6 +176,10 @@ class ProposalLoopTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await assistant.close()
         self.assertTrue(result["prewrite_model_review_invoked"])
+        self.assertEqual(result["prewrite_unsent_proposals"][0]["name"],
+                         "hub_call_device_command")
+        self.assertEqual(result["prewrite_unsent_proposals"][0]["arguments"]
+                         ["deviceId"], "TEST-MEDIA")
         self.assertTrue(any("Proposed but NOT executed" in item
                             for item in assistant.inputs))
         sent = [(n, a.get("deviceId"), a.get("command")) for n, a in hub.calls]

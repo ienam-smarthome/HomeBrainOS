@@ -53,6 +53,10 @@ def is_native_action_proposal(name: str, args: dict[str, Any], catalog: list[dic
     """Classify a proposed mutating entry point without parsing the user prompt."""
     if is_read_only_review_tool(name):
         return False
+    # A selected, known writer outranks a gateway-level readOnlyHint.
+    # Gateway declarations may cover mixed leaf catalogues.
+    if native_automation_writer(name, args):
+        return True
     leaf = args.get("tool") if isinstance(args, dict) else None
     if isinstance(leaf, str) and is_read_only_review_tool(leaf):
         return False
@@ -86,9 +90,20 @@ def has_current_native_evidence(receipts: list[dict]) -> bool:
     """
     for receipt in receipts:
         name = receipt.get("name")
-        if (receipt.get("success") is True
-                and isinstance(name, str)
-                and name.startswith(("hub_get_", "hub_list_", "hub_read_"))
-                and name not in {"hub_get_tool_guide", "hub_get_skill"}):
+        args = receipt.get("arguments")
+        leaf = args.get("tool") if isinstance(args, dict) else None
+        actual_read = (
+            isinstance(name, str)
+            and (name.startswith(("hub_get_", "hub_list_", "hub_read_"))
+                 or (name.startswith("hub_manage_")
+                     and isinstance(leaf, str)
+                     and is_read_only_review_tool(leaf)))
+            and name not in {"hub_get_tool_guide", "hub_get_skill"}
+        )
+        if (receipt.get("success") is True and actual_read
+                and receipt.get("operation_executed") is not False
+                and receipt.get("result_kind") not in (
+                    "tool_catalog", "local_catalog_read", "prior_evidence_read",
+                )):
             return True
     return False

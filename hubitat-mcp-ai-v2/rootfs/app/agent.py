@@ -748,6 +748,7 @@ class Agent:
         inventory_recovery_status = "not_invoked"
         action_follow_through_invoked = False
         prewrite_model_review_invoked = False
+        prewrite_unsent_proposals: list[dict[str, Any]] = []
         prewrite_no_fresh_evidence_rejections = 0
         automation_confirmation_requests = 0
         final_claim_audit_invoked = False
@@ -786,6 +787,7 @@ class Agent:
                 "inventory_recovery_status": inventory_recovery_status,
                 "action_follow_through_invoked": action_follow_through_invoked,
                 "prewrite_model_review_invoked": prewrite_model_review_invoked,
+                "prewrite_unsent_proposals": prewrite_unsent_proposals,
                 "prewrite_no_fresh_evidence_rejections": prewrite_no_fresh_evidence_rejections,
                 "automation_confirmation_requests": automation_confirmation_requests,
                 "final_claim_audit_invoked": final_claim_audit_invoked,
@@ -869,6 +871,9 @@ class Agent:
                         })
                 if proposed_writes:
                     prewrite_model_review_invoked = True
+                    # Store only sanitised UNEXECUTED proposals in private
+                    # Technical JSON; they never become native tool receipts.
+                    prewrite_unsent_proposals = proposed_writes[:6]
                     # Never save an unsent draft as a completed assistant action.
                     # Only the explicitly unexecuted proposal is shown.
                     messages.append({
