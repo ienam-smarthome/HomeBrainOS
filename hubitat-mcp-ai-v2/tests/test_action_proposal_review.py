@@ -17,8 +17,8 @@ from action_proposal_review import (
 )
 
 
-def tool(name, **kwargs):
-    return {"tool_calls": [{"function": {"name": name, "arguments": kwargs}}]}
+def tool(tool_name, **kwargs):
+    return {"tool_calls": [{"function": {"name": tool_name, "arguments": kwargs}}]}
 
 
 def receipt(value):

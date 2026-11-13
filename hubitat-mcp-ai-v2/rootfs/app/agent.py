@@ -71,6 +71,11 @@ When the user DOES request a rule with a real event, preserve that
 requested trigger and consult the rule writer's validation/errors.
 Storage without activation is not successful rule execution; even an
 activated rule does not show its trigger fired or deadline started.
+A stored-but-inactive native rule is an EXISTING persistent draft. If
+correcting a definition, read that app and edit it using the supported
+native identity/revision contract rather than creating same-named
+replacement rules that leave extra inactive drafts. Do not retry an
+uncertain write whose real storage status has not been established.
 A name/label describing a timer,
 automation or outcome is NOT evidence of executable wiring or persistence.
 If the selected write only changes a helper object or another device, do not
