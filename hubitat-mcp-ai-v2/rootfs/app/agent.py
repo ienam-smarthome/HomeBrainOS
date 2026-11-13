@@ -14,6 +14,7 @@ import httpx
 
 from mcp import MCPError, MCPContractError, MCPClient, redact, is_tool_catalog
 from interaction import needs_confirmation
+from action_intent_guard import unrequested_rule_write_reason, rule_activation_outcome
 from control_surface_recovery import (
     BROAD_INVENTORY_RECOVERY_PROMPT, should_recover_inventory,
     DEVICE_ACTION_FOLLOW_THROUGH_PROMPT, should_follow_through_device_action,
@@ -722,6 +723,7 @@ class Agent:
         inventory_recovery_invoked = False
         inventory_recovery_status = "not_invoked"
         action_follow_through_invoked = False
+        automation_intent_rejections = 0
         final_claim_audit_invoked = False
         final_claim_audit_candidate = ""
         final_claim_audit_status = "not_invoked"
@@ -757,6 +759,7 @@ class Agent:
                 "inventory_recovery_invoked": inventory_recovery_invoked,
                 "inventory_recovery_status": inventory_recovery_status,
                 "action_follow_through_invoked": action_follow_through_invoked,
+                "automation_intent_rejections": automation_intent_rejections,
                 "final_claim_audit_invoked": final_claim_audit_invoked,
                 "final_claim_audit_status": audit_status,
                 "answer_stage_trace": answer_stage_trace,
@@ -1015,6 +1018,7 @@ class Agent:
                 args = arguments_of(call) if isinstance(call, dict) else {}
                 started_call = time.monotonic()
                 leaf_def = None  # For error receipts; never authorizes execution.
+                local_rule_intent_rejected = False
                 try:
                     if deadline - time.monotonic() <= 0:
                         raise MCPError("Request deadline reached before this operation")
@@ -1063,6 +1067,17 @@ class Agent:
                             mcp.validate_leaf_arguments(
                                 leaf_def, args.get("args", {})
                             )
+                    # A one-off device action after a relative delay does not
+                    # authorize a new recurring/event-driven automation. Run
+                    # this BEFORE approval and native dispatch; it does not
+                    # select, infer, or execute any alternative device action.
+                    rule_mismatch = unrequested_rule_write_reason(
+                        question, history, name, args,
+                    )
+                    if rule_mismatch:
+                        local_rule_intent_rejected = True
+                        automation_intent_rejections += 1
+                        raise MCPError(rule_mismatch)
                     if before_call is not None:
                         await asyncio.wait_for(
                             before_call(name, args, text),
@@ -1133,6 +1148,32 @@ class Agent:
                     else:
                         record["result_kind"] = "tool_result"
                         model_result = self.present_native_result(result, args)
+                        # Surface actual native storage versus activation,
+                        # never infer rule activation from MCP transport success.
+                        native_rule_outcome = (
+                            rule_activation_outcome(result)
+                            if name in (
+                                "hub_set_visual_rule", "hub_set_rule",
+                                "hub_create_custom_rule",
+                                "hub_update_custom_rule",
+                            )
+                            or args.get("tool") in (
+                                "hub_set_visual_rule", "hub_set_rule",
+                                "hub_create_custom_rule",
+                                "hub_update_custom_rule",
+                            )
+                            else None
+                        )
+                        if native_rule_outcome is not None:
+                            record["native_rule_outcome"] = native_rule_outcome
+                            model_result["client_native_rule_outcome"] = {
+                                **native_rule_outcome,
+                                "source": "original native MCP result",
+                                "note": (
+                                    "Stored is not activated, and an activated "
+                                    "rule is not evidence its trigger fired."
+                                ),
+                            }
                         # File chunks remain unchanged in mcp_result; only
                         # successful returned ranges contribute to in-request
                         # completeness metadata. No automatic extra reads.
@@ -1189,6 +1230,27 @@ class Agent:
                         "error": (str(redact(str(exc))) or "Tool deadline exceeded")[:240],
                     }
                     error_payload = {"error": record["error"]}
+                    if local_rule_intent_rejected:
+                        record["result_kind"] = "unrequested_automation_preflight"
+                        record["operation_executed"] = False
+                        error_payload.update({
+                            "result_kind": "unrequested_automation_preflight",
+                            "operation_executed": False,
+                            "note": (
+                                "No automation was created or edited. The "
+                                "original user request did not specify a "
+                                "separate trigger or recurring rule."
+                            ),
+                            "recovery": (
+                                "Read the actual target's native commands "
+                                "and current state. Prefer a supported "
+                                "on-device delayed operation when it matches "
+                                "the originally requested effect and timing. "
+                                "Do not invent a future mode/event trigger "
+                                "or silently change a blocked device to "
+                                "unblocked first. Report any genuine blocker."
+                            ),
+                        })
                     if isinstance(exc, CatalogToolUnavailable):
                         record["result_kind"] = "unavailable_tool"
                         record["operation_executed"] = False
