@@ -18,8 +18,8 @@ from action_intent_guard import (
 from control_surface_recovery import should_follow_through_device_action
 
 
-def call(name, **kwargs):
-    return {"function": {"name": name, "arguments": kwargs}}
+def call(tool_name, **kwargs):
+    return {"function": {"name": tool_name, "arguments": kwargs}}
 
 
 def rpc(obj):
