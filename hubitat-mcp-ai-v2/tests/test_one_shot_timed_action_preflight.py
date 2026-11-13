@@ -304,10 +304,16 @@ class NativeTimerVsRuleTests(unittest.IsolatedAsyncioTestCase):
             {"content": "The rule was stored but native activation failed."},
             {"content": "The source says activated=false; no rule trigger fired."},
         ])
+        async def explicitly_approved(name, args, draft):
+            # Synthetic stand-in for a real user's mandatory approval of
+            # the sensitive native rule write; no production bypass.
+            return None
+
         try:
             result = await model.answer(
                 "Create a rule to block Demo Screen when its switch turns "
                 "on, after 2 mins", [], hub, 90,
+                before_call=explicitly_approved,
             )
         finally:
             await model.close()
