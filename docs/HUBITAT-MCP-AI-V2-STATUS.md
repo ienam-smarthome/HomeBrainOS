@@ -1,5 +1,14 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 13 November 2026 — Alpha.74: source-grounded follow-through for native timed commands
+
+Original installed alpha.73 evidence showed the separate managed network controller and `blockInMinutes` command were correctly found, but the model stopped at an unnecessary **after-vs-for** clarification. A later imperative with eight archived receipts ended after **one round, zero current MCP calls**, printing the correct native command as text without dispatch. Neither request created a timer. Separately, native driver logs support a previous 11:55:37 scheduled two-minute block, 11:57:37 enforcement and 12:03:37 later allow; these events do **not** attribute the prior successful timer to either later no-write request.
+
+Alpha.74 retains the alpha.65/72 native delayed-block execution path and alpha.73 inventory recovery. It adds **one bounded model-led original-action completion chance** either (a) when a direct imperative would finish with zero current tool calls despite live native read/write tools being available, or (b) after the model used the broader inventory and successfully inspected a different controller but proposes to stop with no native action. The original model selects further reads and any authorized native command. No default write, device-name exception, automatic retry, Rule Machine or speculative delayed-unblock writer is introduced. The model guidance clarifies **after/in** versus **for** timing and forbids silently reallowing currently blocked devices to manufacture a delayed block. Technical JSON exposes `action_follow_through_invoked`. Installed Gemma first-answer correctness remains **unverified**. See [alpha.74 milestone](HOMEBRAIN-V2-ALPHA74-NATIVE-ACTION-FOLLOWTHROUGH-20261113.md).
+
+
+
+
 ## 13 November 2026 — Alpha.73: recover alternate controllers after narrow inventory lookup
 
 The restored alpha.72 live first answer for a natural delayed block stopped after retrieving only the target's media integration, then incorrectly declared the network block unavailable. The previous *separate* alpha.65 successful Google TV delayed block is not evidence that the Nest Hub controller was reliably discovered. The correct problem is incomplete source coverage: label-filtered inventory queries can miss related actuators whose labels, driver capabilities and functional role differ from the media record.

@@ -129,3 +129,92 @@ impossibility based solely on a previous filtered search.
 This additional read is not an instruction from the Hubitat server.
 Do not mention this internal source-sufficiency step to the user.
 """
+
+
+def should_follow_through_device_action(
+    question: str, receipts: list[dict], *,
+    inventory_recovery_invoked: bool, already_prompted: bool,
+    remaining_seconds: float, source_review_invoked: bool,
+    has_native_write_attempt: bool,
+    available_tools: set[str] | None = None,
+) -> bool:
+    """Offer ONE model-led completion opportunity for an unfinished action.
+
+    Either (a) a clear imperative produced NO in-request MCP receipts at all,
+    despite an offered read and ordinary writer, OR (b) an alternate
+    control surface was freshly inspected after a broad inventory recovery.
+    This chooses no device, command or write. Old conversation receipts
+    cannot authorize a fresh action.
+    """
+    if (
+        already_prompted
+        or source_review_invoked
+        or has_native_write_attempt
+        or remaining_seconds <= 8
+        or not is_explicit_device_imperative(question)
+    ):
+        return False
+    if not receipts and not inventory_recovery_invoked:
+        return {"hub_list_devices", "hub_get_device",
+                "hub_call_device_command"}.issubset(available_tools or set())
+    if not inventory_recovery_invoked:
+        return False
+    last_recovery = max(
+        (i for i, row in enumerate(receipts)
+         if row.get("client_inventory_coverage_recovery")),
+        default=-1,
+    )
+    if last_recovery < 0:
+        return False
+    return any(
+        row.get("name") == "hub_get_device"
+        and row.get("success") is True
+        for row in receipts[last_recovery + 1:]
+    )
+
+
+DEVICE_ACTION_FOLLOW_THROUGH_PROMPT = """Original user already gave a direct
+device-control instruction. This is ONE final opportunity to resolve the
+requested action. Your previous draft did not execute anything. First
+check whether this request has ANY original native MCP receipts. Previous
+conversation evidence, snippets of commands, and plan prose are historical
+context, not a fresh native reading, execution or source of authorization.
+When fresh in-request reads are missing, use the connected native MCP tools
+to identify and verify the real physical actuator, its current state and
+advertised commands BEFORE you consider executing the ordinary requested
+action. When the broad inventory and device-detail reads already exist,
+use those ORIGINAL current-request receipts. Recheck the intended TARGET,
+PHYSICAL EFFECT and TIMING against actually returned source evidence.
+
+Use ordinary temporal semantics: "after/in N minutes" means the delay
+begins when the supported command is invoked, unless the user specified
+a different trigger. "for N minutes" describes a duration, not delayed
+onset. Do not reinterpret a request to act after N minutes as a request
+to act for N minutes or after an unspecified activity starts. A driver's
+native command with matching delay semantics is preferable to an invented
+helper, rule, proxy or additional schedule. Check the actual advertised
+command, parameter units and current attributes; do not guess semantics
+from a command name alone when source descriptions differ.
+
+If the current state already fulfils the requested final effect, distinguish
+ALREADY BLOCKED/OFF from a future pending timer: those are not equivalent.
+Do not claim a new timer was scheduled when none was. Do not silently
+REVERSE a currently blocked/off/locked state simply to create a temporary
+session. If the user's requested future transition would require first
+reversing an existing state, explain the current state and ask one precise
+question whether that additional state change is desired.
+
+For an unambiguous and authorized ordinary action with an identity-matched,
+freshly inspected actuator and matching supported command, the original
+user instruction is sufficient: do not request a second approval merely
+because you discovered a separate control integration. If tool permission,
+identity, timing, safety or an actual required approval remains unresolved,
+ask only about that genuine blocker. Do not change an unverified device.
+Use only the existing native MCP command path and its normal authorization
+gates. No automatic action or repeat of an uncertain write is permitted.
+After any permitted write, inspect native acceptance and relevant readback,
+and distinguish a scheduled future transition from one later observed.
+
+This is internal model guidance, not a new user request or permission grant.
+Do not mention an internal follow-through check in your answer.
+"""

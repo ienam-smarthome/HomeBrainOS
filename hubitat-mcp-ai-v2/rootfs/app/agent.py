@@ -16,6 +16,7 @@ from mcp import MCPError, MCPContractError, MCPClient, redact, is_tool_catalog
 from interaction import needs_confirmation
 from control_surface_recovery import (
     BROAD_INVENTORY_RECOVERY_PROMPT, should_recover_inventory,
+    DEVICE_ACTION_FOLLOW_THROUGH_PROMPT, should_follow_through_device_action,
 )
 from evidence_scope import model_result_with_scope
 from investigation_review import (
@@ -41,6 +42,11 @@ Client integration: Use only the connected server's live catalog and schemas.
 The bundled rule-patterns reference describes the legacy custom-rule engine;
 prefer native automation surfaces as directed in the upstream skill.
 State your intended action and its effects in assistant content before tool calls.
+A proposed command printed as prose or code is NOT a submitted native tool call.
+For a clear ordinary device-action imperative, do not stop at a plan or ask
+redundant approval when the target, supported command, timing and safety
+checks are established. Execute through the connected offered native tool,
+and report only what ORIGINAL native command/state receipts actually confirm.
 For an action request, compare the user's intended TARGET, ACTION and TIMING
 with the actual capability of the selected native tool BEFORE the first write.
 Verify the target identity and advertised commands using available native reads.
@@ -715,6 +721,7 @@ class Agent:
         native_action_receipts_seen = 0
         inventory_recovery_invoked = False
         inventory_recovery_status = "not_invoked"
+        action_follow_through_invoked = False
         final_claim_audit_invoked = False
         final_claim_audit_candidate = ""
         final_claim_audit_status = "not_invoked"
@@ -749,6 +756,7 @@ class Agent:
                 "source_review_kind": source_review_kind,
                 "inventory_recovery_invoked": inventory_recovery_invoked,
                 "inventory_recovery_status": inventory_recovery_status,
+                "action_follow_through_invoked": action_follow_through_invoked,
                 "final_claim_audit_invoked": final_claim_audit_invoked,
                 "final_claim_audit_status": audit_status,
                 "answer_stage_trace": answer_stage_trace,
@@ -908,6 +916,39 @@ class Agent:
                             + "\n\nOriginal native MCP inventory response "
                               "(read-only, not an action):\n" + payload
                         ),
+                    })
+                    continue
+                # A broad inventory alone does not complete an explicit
+                # action. After a NEW detailed source read of a candidate,
+                # give the model exactly one chance to reconcile the original
+                # requested effect and timing and either use the EXISTING
+                # authorized native command path or explain a real blocker.
+                # This does not choose an actuator or dispatch any write.
+                if enable_source_review and should_follow_through_device_action(
+                    question, receipts,
+                    inventory_recovery_invoked=inventory_recovery_invoked,
+                    already_prompted=action_follow_through_invoked,
+                    available_tools=native_catalog_names,
+                    remaining_seconds=deadline - time.monotonic(),
+                    source_review_invoked=source_review_invoked,
+                    has_native_write_attempt=(
+                        native_action_receipts_seen > 0
+                        or any(
+                            rec.get("name") not in (
+                                _CATALOG_TOOL, _PRIOR_TOOL, MONITOR_TOOL
+                            )
+                            and not is_read_only_review_tool(
+                                rec.get("name", "")
+                            )
+                            for rec in receipts
+                        )
+                    ),
+                ):
+                    action_follow_through_invoked = True
+                    capture_answer_stage("pre_action_follow_through", text)
+                    messages.append({
+                        "role": "user",
+                        "content": DEVICE_ACTION_FOLLOW_THROUGH_PROMPT,
                     })
                     continue
                 # A first completed draft is not proof of evidence sufficiency.
