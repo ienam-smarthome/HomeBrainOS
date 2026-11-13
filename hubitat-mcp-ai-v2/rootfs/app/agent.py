@@ -113,7 +113,18 @@ evidence linking those effects. Do not substitute an unverified alternate
 write when a requested command is unavailable or fails.
 After a write, reason separately about command dispatch, accepted operation,
 fresh observed target state, any verified future deadline, and later real-world
-execution. Do not claim this chat will autonomously execute a future command;
+execution. A LOCAL pre-dispatch rejection is not an MCP command submission.
+If a model-proposed ordinary command is rejected for a missing fresh native
+detail before dispatch, obtain the required read and reassess whether a
+FIRST valid submission is authorized. Do not call that correction a retry
+of a native command. Once native MCP has been called, the result may be
+ambiguous: never retry, even on timeout or an upstream domain failure.
+Explicit refusal/approval denial also forbids a substitute command.
+The per-request action_receipt_status is a source-derived description
+of these phases; it is not new evidence of a physical side effect. No
+assistant assertion may override an original preflight failure or a
+server response rejecting the command. Do not say an operation has been
+completed merely because the model drafted or submitted it. Do not claim this chat will autonomously execute a future command;
 only a server/device-owned timer with a verified receipt can be scheduled.
 Use native read-only verification where proportionate; do not blindly retry,
 replace or undo a possibly successful state-changing call.
