@@ -3,6 +3,7 @@
 Fictional devices and scripted model decisions only. No real MCP server,
 household target, network side effect, background scheduler or implicit write.
 """
+import asyncio
 import json
 import sys
 import unittest
@@ -10,6 +11,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "rootfs" / "app"))
 from agent import Agent
+from mcp import MCPError
+from action_execution import action_receipt_status, safe_action_answer
 from investigation_review import (
     ACTION_GOAL_REVIEW_PROMPT, is_explicit_device_action_request,
     is_redundant_action_confirmation_draft, review_prompt,
@@ -300,6 +303,206 @@ class ActionGoalTriggerTests(unittest.TestCase):
         self.assertEqual(review_prompt("action_goal"), ACTION_GOAL_REVIEW_PROMPT)
         self.assertNotIn("Nest Hub", ACTION_GOAL_REVIEW_PROMPT)
         self.assertNotIn("6992", ACTION_GOAL_REVIEW_PROMPT)
+
+
+
+class ReceiptGroundedActionTests(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def discovery():
+        return initial_ambiguous_media_read() + [
+            {"tool_calls": [tc("hub_list_devices", format="context")]},
+            {"tool_calls": [tc("hub_get_device", deviceId="LAB-NET")]},
+            {"content": (
+                "The access controller shares the observed physicalRef with "
+                "the media endpoint and reports denied access."
+            )},
+        ]
+
+    async def test_missing_fresh_detail_is_recoverable_before_first_dispatch(self):
+        hub = LabHub()
+        model = ScriptedModel(self.discovery() + [
+            {"tool_calls": [tc("hub_call_device_command",
+                               deviceId="LAB-NET", command="allowAccess",
+                               waitFor={"attribute": "access",
+                                        "expectedValue": "allowed"})]},
+            {"tool_calls": [tc("hub_get_device", deviceId="LAB-NET")]},
+            {"tool_calls": [tc("hub_call_device_command",
+                               deviceId="LAB-NET", command="allowAccess",
+                               waitFor={"attribute": "access",
+                                        "expectedValue": "allowed"})]},
+            {"tool_calls": [tc("hub_get_device_attribute",
+                               deviceId="LAB-NET", attribute="access")]},
+            {"content": (
+                "I have sent allowAccess and the controller's post-command "
+                "native read reports access allowed. The physical network "
+                "effect was not independently tested."
+            )},
+        ])
+        try:
+            res = await model.answer("Unblock Fictional Screen", [], hub, 90)
+        finally:
+            await model.close()
+        self.assertEqual(res["rounds"], 11)
+        self.assertEqual(len(hub.writes), 1)
+        self.assertEqual(res["action_continuation_preflight_rejections"], 1)
+        self.assertTrue(res["action_continuation_write_attempted"])
+        self.assertTrue(res["action_continuation_dispatch_attempted"])
+        self.assertEqual(res["tool_calls"][4]["dispatch_state"], "preflight_rejected")
+        self.assertFalse(res["tool_calls"][4]["success"])
+        self.assertEqual(res["tool_calls"][6]["dispatch_state"], "native_result")
+        self.assertTrue(res["tool_calls"][6]["success"])
+        self.assertEqual(res["action_receipt_status"]["state"], "native_accepted")
+        self.assertTrue(res["action_receipt_status"]["postcondition_reported"])
+        self.assertEqual(res["action_receipt_status"]["postcondition_source"],
+                         "native_readback")
+        self.assertFalse(res["action_claim_guard_applied"])
+        self.assertIn("controller's post-command", res["answer"])
+
+    async def test_no_dispatch_false_success_is_rewritten_from_receipts(self):
+        hub = LabHub()
+        model = ScriptedModel(self.discovery() + [
+            {"tool_calls": [tc("hub_call_device_command",
+                               deviceId="LAB-NET", command="allowAccess")]},
+            {"content": "The Fictional Screen has been unblocked. I have sent allowAccess."},
+        ])
+        try:
+            res = await model.answer("Unblock Fictional Screen", [], hub, 90)
+        finally:
+            await model.close()
+        self.assertEqual(hub.writes, [])
+        self.assertEqual(res["action_receipt_status"]["state"],
+                         "pre_dispatch_rejected")
+        self.assertEqual(res["action_receipt_status"]["preflight_rejections"], 1)
+        self.assertFalse(res["action_receipt_status"]["native_command_submitted"])
+        self.assertTrue(res["action_claim_guard_applied"])
+        self.assertFalse(res["action_continuation_write_attempted"])
+        self.assertIn("No native device command was sent", res["answer"])
+        self.assertNotIn("has been unblocked", res["answer"])
+
+    async def test_native_domain_failure_cannot_be_reported_as_success(self):
+        class RefusingHub(LabHub):
+            async def call(self, name, args):
+                if name == "hub_call_device_command":
+                    self.calls.append((name, dict(args)))
+                    self.writes.append(dict(args))
+                    return rpc({"success": False, "error": "rejected by source"})
+                return await super().call(name, args)
+
+        hub = RefusingHub()
+        model = ScriptedModel(self.discovery() + [
+            {"tool_calls": [tc("hub_get_device", deviceId="LAB-NET")]},
+            {"tool_calls": [tc("hub_call_device_command",
+                               deviceId="LAB-NET", command="allowAccess")]},
+            {"content": "The Fictional Screen has been unblocked."},
+        ])
+        try:
+            res = await model.answer("Unblock Fictional Screen", [], hub, 90)
+        finally:
+            await model.close()
+        self.assertEqual(len(hub.writes), 1)
+        self.assertEqual(res["action_receipt_status"]["state"], "native_rejected")
+        self.assertTrue(res["action_claim_guard_applied"])
+        self.assertIn("native MCP response rejected", res["answer"])
+
+    async def test_accepted_without_postcondition_only_reports_submission(self):
+        hub = LabHub()
+        model = ScriptedModel(self.discovery() + [
+            {"tool_calls": [tc("hub_get_device", deviceId="LAB-NET")]},
+            {"tool_calls": [tc("hub_call_device_command",
+                               deviceId="LAB-NET", command="allowAccess")]},
+            {"content": "The Fictional Screen has been unblocked."},
+        ])
+        try:
+            res = await model.answer("Unblock Fictional Screen", [], hub, 90)
+        finally:
+            await model.close()
+        self.assertEqual(len(hub.writes), 1)
+        self.assertEqual(res["action_receipt_status"]["state"], "native_accepted")
+        self.assertFalse(res["action_receipt_status"]["postcondition_reported"])
+        self.assertTrue(res["action_claim_guard_applied"])
+        self.assertIn("not verified", res["answer"])
+
+    async def test_dispatched_timeout_forbids_retry_and_success_claim(self):
+        class FailingHub(LabHub):
+            async def call(self, name, args):
+                if name == "hub_call_device_command":
+                    self.calls.append((name, dict(args)))
+                    self.writes.append(dict(args))
+                    raise asyncio.TimeoutError()
+                return await super().call(name, args)
+
+        hub = FailingHub()
+        model = ScriptedModel(self.discovery() + [
+            {"tool_calls": [tc("hub_get_device", deviceId="LAB-NET")]},
+            {"tool_calls": [tc("hub_call_device_command",
+                               deviceId="LAB-NET", command="allowAccess")]},
+            {"tool_calls": [tc("hub_call_device_command",
+                               deviceId="LAB-NET", command="allowAccess")]},
+            {"content": "The Fictional Screen has been unblocked."},
+        ])
+        try:
+            res = await model.answer("Unblock Fictional Screen", [], hub, 90)
+        finally:
+            await model.close()
+        self.assertEqual(len(hub.writes), 1)
+        self.assertTrue(res["action_continuation_dispatch_attempted"])
+        self.assertEqual(res["action_receipt_status"]["state"], "outcome_unknown")
+        self.assertEqual(res["tool_calls"][5]["dispatch_state"], "outcome_unknown")
+        self.assertFalse(res["tool_calls"][5]["success"])
+        self.assertFalse(res["tool_calls"][6]["success"])
+        self.assertTrue(res["action_claim_guard_applied"])
+        self.assertIn("not confirmed", res["answer"])
+
+    async def test_user_declined_approval_blocks_dispatch_and_retry(self):
+        hub = LabHub()
+        model = ScriptedModel(self.discovery() + [
+            {"tool_calls": [tc("hub_get_device", deviceId="LAB-NET")]},
+            {"tool_calls": [tc("hub_call_device_command",
+                               deviceId="LAB-NET", command="allowAccess",
+                               confirm=True)]},
+            {"tool_calls": [tc("hub_call_device_command",
+                               deviceId="LAB-NET", command="allowAccess")]},
+            {"content": "The Fictional Screen has been unblocked."},
+        ])
+
+        async def declined(name, args, text):
+            if name == "hub_call_device_command":
+                raise MCPError("User declined this operation; do not retry it")
+
+        try:
+            res = await model.answer("Unblock Fictional Screen", [], hub, 90,
+                                     before_call=declined)
+        finally:
+            await model.close()
+        self.assertEqual(hub.writes, [])
+        self.assertTrue(res["action_continuation_write_attempted"])
+        self.assertFalse(res["action_continuation_dispatch_attempted"])
+        self.assertEqual(res["tool_calls"][5]["dispatch_state"], "approval_denied")
+        self.assertFalse(res["tool_calls"][6]["success"])
+        self.assertTrue(res["action_claim_guard_applied"])
+        self.assertIn("No native device command was sent", res["answer"])
+
+
+class ActionEvidenceClassifierTests(unittest.TestCase):
+    def test_content_text_native_success_and_failed_wait_are_distinct(self):
+        r = {
+            "name": "hub_call_device_command", "success": True,
+            "arguments": {"deviceId": "SYNTH", "command": "open"},
+            "dispatch_state": "native_result", "native_wait_for_outcome": "timed_out",
+            "response": json.dumps({"mcp_result": rpc({
+                "success": True, "waitFor": {
+                    "timedOut": True, "converged": False
+                }
+            })}),
+        }
+        s = action_receipt_status([r])
+        self.assertEqual(s["state"], "native_accepted")
+        self.assertEqual(s["wait_for_outcome"], "timed_out")
+        self.assertFalse(s["postcondition_reported"])
+        guarded, changed = safe_action_answer(
+            "I have successfully completed the request.", s)
+        self.assertTrue(changed)
+        self.assertIn("not verified", guarded)
 
 
 if __name__ == "__main__":
