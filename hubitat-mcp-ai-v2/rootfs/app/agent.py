@@ -1005,7 +1005,13 @@ class Agent:
                         if is_implementation_feasibility_draft(text)
                         and asked_kind not in ("causal", "historical_measurement")
                         else "capability_discovery"
-                        if is_capability_denial_draft(text)
+                        if (
+                            is_capability_denial_draft(text)
+                            or (
+                                is_explicit_device_action_request(question)
+                                and is_redundant_action_confirmation_draft(text)
+                            )
+                        )
                         and asked_kind not in ("causal", "historical_measurement")
                         else asked_kind
                     )
