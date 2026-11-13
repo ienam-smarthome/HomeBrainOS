@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from action_intent_guard import native_automation_writer
+from one_off_rule_policy import is_native_rule_read
 from investigation_review import is_read_only_review_tool
 
 
@@ -51,7 +52,7 @@ executed. Do not mention this internal checkpoint in the final answer.
 
 def is_native_action_proposal(name: str, args: dict[str, Any], catalog: list[dict]) -> bool:
     """Classify a proposed mutating entry point without parsing the user prompt."""
-    if is_read_only_review_tool(name):
+    if is_read_only_review_tool(name) or is_native_rule_read(name, args):
         return False
     # A selected, known writer outranks a gateway-level readOnlyHint.
     # Gateway declarations may cover mixed leaf catalogues.

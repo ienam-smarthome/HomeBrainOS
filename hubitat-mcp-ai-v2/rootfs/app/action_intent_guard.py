@@ -14,12 +14,18 @@ _NATIVE_AUTOMATION_WRITERS = frozenset({
 
 def native_automation_writer(name: str, arguments: dict[str, Any] | None) -> str | None:
     """Return a real selected writer, without reading the user question."""
-    if name in _NATIVE_AUTOMATION_WRITERS:
-        return name
-    leaf = (arguments or {}).get("tool")
-    if isinstance(leaf, str) and leaf in _NATIVE_AUTOMATION_WRITERS:
-        return leaf
-    return None
+    selected = name if name in _NATIVE_AUTOMATION_WRITERS else (
+        (arguments or {}).get("tool")
+    )
+    if not isinstance(selected, str) or selected not in _NATIVE_AUTOMATION_WRITERS:
+        return None
+    if selected == "hub_set_rule":
+        # The installed native MCP operation=read and operation-less schema
+        # discovery are reads, not native writes. Never gate them as mutations.
+        payload = (arguments or {}).get("args") if name != selected else arguments
+        if isinstance(payload, dict) and payload.get("operation") in (None, "read"):
+            return None
+    return selected
 
 def automation_write_requires_confirmation(name: str, arguments: dict[str, Any] | None) -> bool:
     return native_automation_writer(name, arguments) is not None

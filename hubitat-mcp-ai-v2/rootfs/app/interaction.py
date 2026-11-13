@@ -57,6 +57,12 @@ class Interaction:
             "id": str(uuid.uuid4()), **self.current,
             "approval_kind": ("automation_write" if automation_write
                               else "native_confirmation"),
+            "review_note": (
+                "A native rule can be saved and active even when it is "
+                "scheduled to repeat or has the wrong on/off effect. "
+                "Check the exact date, target, polarity and recurrence."
+                if automation_write else None
+            ),
         }
         try:
             approved = await self._decision

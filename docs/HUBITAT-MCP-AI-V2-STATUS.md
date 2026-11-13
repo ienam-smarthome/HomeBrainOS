@@ -1,5 +1,10 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 13 November 2026 — alpha.78 one-off Rule Machine compatibility and opt-in cleanup
+
+Alpha.77 source-real captures exposed a daily VRB clock trigger used for a bare one-time request and an unverified switch action polarity. Alpha.78 adds a denial-only temporal safety check, source-attested typed native Rule Machine one-off create path, and opt-in, dry-run-first owned-rule expiry cleanup. No deterministic target routing, no arbitrary tool grants or device-specific fix. The installed MCP create/typed parent capability and real hub execution still require live acceptance. See [alpha.78 engineering note](HOMEBRAIN-V2-ALPHA78-ONEOFF-NATIVE-RM-20261113.md).
+
+
 ## 13 November 2026 — alpha.77 model-led source alignment BEFORE the first write
 
 Alpha.76 correctly required separate persistent-rule UI confirmation but could still let a model choose a similarly named integration with the wrong real-world effect, or create durable helper/rules based only on old conversation. Alpha.77 gives the connected model a **single bounded reconsideration of its UNEXECUTED proposed native action** before dispatch. The checkpoint compares target, physical effect, timing, available current receipts, and one-off vs repeatable rule semantics. It does not choose a tool or command and may prompt the model to retrieve wider native inventory itself. The model's discarded proposed tool is not represented as a successful MCP receipt. After that checkpoint, persistent rule/helper creation without any successful current native domain read is locally rejected before user approval or native dispatch. Normal upstream confirmation and backup gates remain. Correct native device timers are still available; no new scheduler is installed. Source-real installed success is NOT established by CI. [Alpha.77 engineering note](HOMEBRAIN-V2-ALPHA77-MODEL-LED-PREDISPATCH-20261113.md).

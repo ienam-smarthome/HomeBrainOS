@@ -15,6 +15,10 @@ import httpx
 from mcp import MCPError, MCPContractError, MCPClient, redact, is_tool_catalog
 from interaction import needs_confirmation
 from action_intent_guard import automation_write_requires_confirmation, rule_activation_outcome
+from one_off_rule_policy import (
+    rule_pre_dispatch_issue, requested_temporal_scope, scoped_request_text,
+    is_native_rule_read,
+)
 from action_proposal_review import (
     PREWRITE_PROPOSAL_PROMPT, is_native_action_proposal,
     is_persistent_construct, has_current_native_evidence,
@@ -69,6 +73,23 @@ an unrelated event trigger. If the target is already in the final
 state, report this and do not silently reverse it to start a countdown.
 When the user DOES request a rule with a real event, preserve that
 requested trigger and consult the rule writer's validation/errors.
+For a SINGLE clock-time request (e.g. "at 6:50pm") without "every day",
+"daily" or another explicit recurrence, NEVER silently turn it into a
+daily clock trigger. The time may already have passed on the local hub
+clock: establish the next intended calendar occurrence or explain the
+ambiguity. Ask clarification rather than create a different frequency.
+For genuine one-off fixed-time rule writing, inspect the live native
+Rule Machine `hub_set_rule` schema and `set_rule_reference`, obtain a
+current typed Rule Machine parent app and exact device command evidence,
+and use an absolute dated Certain Time trigger if supported. Inspect
+the native rule inventory first and reconcile any existing exact same
+one-off name; never silently create a duplicate. Do NOT
+conclude that VRB's repeatable timeOfDay is a one-off, nor mistake a
+verified stored rule for a fired trigger. The old V1 "HB one-shot | ..."
+ownership tag was intentional: the dedicated opt-in cleanup can only
+recognize native rules with that exact name/date contract. A generic
+switch on/off action is NOT a promise of the requested physical effect;
+cross-check available attributes and command semantics before selection.
 Storage without activation is not successful rule execution; even an
 activated rule does not show its trigger fired or deadline started.
 A stored-but-inactive native rule is an EXISTING persistent draft. If
@@ -750,6 +771,8 @@ class Agent:
         prewrite_model_review_invoked = False
         prewrite_unsent_proposals: list[dict[str, Any]] = []
         prewrite_no_fresh_evidence_rejections = 0
+        one_off_rule_preflight_rejections = 0
+        temporal_scope_text = scoped_request_text(question, history)
         automation_confirmation_requests = 0
         final_claim_audit_invoked = False
         final_claim_audit_candidate = ""
@@ -789,6 +812,8 @@ class Agent:
                 "prewrite_model_review_invoked": prewrite_model_review_invoked,
                 "prewrite_unsent_proposals": prewrite_unsent_proposals,
                 "prewrite_no_fresh_evidence_rejections": prewrite_no_fresh_evidence_rejections,
+                "one_off_rule_preflight_rejections": one_off_rule_preflight_rejections,
+                "requested_temporal_scope_hint": requested_temporal_scope(temporal_scope_text),
                 "automation_confirmation_requests": automation_confirmation_requests,
                 "final_claim_audit_invoked": final_claim_audit_invoked,
                 "final_claim_audit_status": audit_status,
@@ -1099,12 +1124,15 @@ class Agent:
                 automation_approval_required = False
                 approval_completed = False
                 missing_current_read = False
+                one_off_rule_rejected = False
                 try:
                     if deadline - time.monotonic() <= 0:
                         raise MCPError("Request deadline reached before this operation")
                     if "_invalid_arguments" in args:
                         raise MCPError(args["_invalid_arguments"])
-                    if source_review_invoked and not is_read_only_review_tool(name):
+                    if (source_review_invoked
+                            and not is_read_only_review_tool(name)
+                            and not is_native_rule_read(name, args)):
                         raise MCPError("Evidence sufficiency follow-up permits read-only tools only")
                     is_prior = name == _PRIOR_TOOL
                     is_monitor = name == MONITOR_TOOL
@@ -1166,6 +1194,18 @@ class Agent:
                             "current state. Native one-shot commands are "
                             "unaffected."
                         )
+                    # This is a denial-only contract: do not let an unqualified
+                    # single-time request silently install a recurring daily
+                    # Visual Rule. Only verified native dated Rule Machine
+                    # Switch documents may pass this extra check. Approval,
+                    # backup and upstream permissions remain independent.
+                    one_off_problem = rule_pre_dispatch_issue(
+                        temporal_scope_text, name, args, receipts,
+                    )
+                    if one_off_problem:
+                        one_off_rule_preflight_rejections += 1
+                        one_off_rule_rejected = True
+                        raise MCPError(one_off_problem)
                     # The selected native writer/leaf, never raw prompt words,
                     # establishes the need for a separate UI approval.
                     automation_approval_required = (
@@ -1251,15 +1291,17 @@ class Agent:
                         # never infer rule activation from MCP transport success.
                         native_rule_outcome = (
                             rule_activation_outcome(result)
-                            if name in (
-                                "hub_set_visual_rule", "hub_set_rule",
-                                "hub_create_custom_rule",
-                                "hub_update_custom_rule",
-                            )
-                            or args.get("tool") in (
-                                "hub_set_visual_rule", "hub_set_rule",
-                                "hub_create_custom_rule",
-                                "hub_update_custom_rule",
+                            if not is_native_rule_read(name, args) and (
+                                name in (
+                                    "hub_set_visual_rule", "hub_set_rule",
+                                    "hub_create_custom_rule",
+                                    "hub_update_custom_rule",
+                                )
+                                or args.get("tool") in (
+                                    "hub_set_visual_rule", "hub_set_rule",
+                                    "hub_create_custom_rule",
+                                    "hub_update_custom_rule",
+                                )
                             )
                             else None
                         )
@@ -1293,6 +1335,7 @@ class Agent:
                     native_action_result = (
                         not (is_catalog or is_prior or is_monitor)
                         and not is_tool_catalog(result)
+                        and not is_native_rule_read(name, args)
                         and not is_read_only_review_tool(name)
                         and not (isinstance(selector, str)
                                  and is_read_only_review_tool(selector))
@@ -1329,6 +1372,20 @@ class Agent:
                         "error": (str(redact(str(exc))) or "Tool deadline exceeded")[:240],
                     }
                     error_payload = {"error": record["error"]}
+                    if one_off_rule_rejected:
+                        record["result_kind"] = "one_off_rule_preflight_rejected"
+                        record["operation_executed"] = False
+                        error_payload.update({
+                            "result_kind": "one_off_rule_preflight_rejected",
+                            "operation_executed": False,
+                            "note": (
+                                "No rule writer was submitted. Reconcile the "
+                                "requested schedule frequency and native dated "
+                                "Rule Machine trigger/target using current "
+                                "read-only MCP sources; do not retry the same "
+                                "recurring or unverified proposal."
+                            ),
+                        })
                     if missing_current_read:
                         record["result_kind"] = "persistent_write_missing_current_evidence"
                         record["operation_executed"] = False
