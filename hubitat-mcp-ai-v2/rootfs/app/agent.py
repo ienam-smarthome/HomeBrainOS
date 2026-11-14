@@ -233,6 +233,11 @@ _CATALOG_TOOL = "homebrain_inspect_mcp_catalog"
 class CatalogToolUnavailable(MCPError):
     """A model-selected name is absent from this request's live tools/list."""
 
+
+class InitialCatalogUnavailable(MCPError):
+    """Initial MCP catalog failed before any model inference or native domain read."""
+
+
 _PRIOR_TOOL_DEFINITION = {
     "type": "function",
     "function": {
@@ -734,7 +739,12 @@ class Agent:
     ) -> dict[str, Any]:
         started = time.monotonic()
         deadline = started + max(30, int(deadline_seconds))
-        catalog = await mcp.list_tools(refresh=True)
+        try:
+            catalog = await mcp.list_tools(refresh=True)
+        except MCPError as exc:
+            # Distinguish failed initial MCP discovery from an executed native
+            # read that returned zero rows. Do not retry or invoke the model.
+            raise InitialCatalogUnavailable(str(exc)) from None
         tools = model_tools(catalog)
         native_catalog_names = {
             item["name"] for item in catalog
