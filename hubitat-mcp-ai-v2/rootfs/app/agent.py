@@ -826,6 +826,7 @@ class Agent:
         source_review_invoked = False
         source_review_kind = None
         causal_follow_through_invoked = False
+        causal_follow_through_candidate = ""
         causal_review_receipt_count = -1
         native_action_receipts_seen = 0
         inventory_recovery_invoked = False
@@ -937,6 +938,9 @@ class Agent:
             if remaining <= 0:
                 if final_claim_audit_candidate:
                     return completed_answer(final_claim_audit_candidate, "deadline_fallback")
+                if causal_follow_through_candidate:
+                    return completed_answer(causal_follow_through_candidate,
+                                            "causal_follow_through_deadline_fallback")
                 evidence = write_failure_evidence(receipts)
                 notice = model_failure_notice(evidence)
                 return {
@@ -957,6 +961,9 @@ class Agent:
                 notice = model_failure_notice(evidence)
                 if final_claim_audit_candidate and not notice:
                     return completed_answer(final_claim_audit_candidate, "model_error_fallback")
+                if causal_follow_through_candidate and not notice:
+                    return completed_answer(causal_follow_through_candidate,
+                                            "causal_follow_through_model_error_fallback")
                 return {
                     "success": False,
                     "answer": (f"Model/transport failure: {redact(str(exc))}"
@@ -1220,6 +1227,7 @@ class Agent:
                             available_read_tools=bool(read_only_review_catalog(tools)),
                         )):
                     causal_follow_through_invoked = True
+                    causal_follow_through_candidate = text
                     capture_answer_stage("pre_causal_follow_through", text)
                     messages.append({
                         "role": "user",
@@ -1259,7 +1267,7 @@ class Agent:
                 if source_review_invoked:
                     capture_answer_stage("post_source_review_without_audit", text)
                 return completed_answer(
-                    text, ("not_applicable_to_action_review"
+                    text or causal_follow_through_candidate, ("not_applicable_to_action_review"
                            if source_review_kind == "action_outcome"
                            else "not_applicable_to_current_state_review"
                            if source_review_kind == "current_state"
