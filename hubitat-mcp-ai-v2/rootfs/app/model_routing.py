@@ -8,9 +8,11 @@ contexts mid-investigation. Cloud is explicit and leaks no key to the browser.
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 from contextvars import ContextVar
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -154,14 +156,44 @@ class OpenRouterFree:
             raise RuntimeError("Cloud fallback returned an invalid model response") from None
 
 
+def is_lan_ollama(base_url: str) -> bool:
+    """Apply local inference tuning only to an explicitly private endpoint.
+
+    Avoid changing the historical hosted Ollama Cloud contract or forwarding
+    Ollama-only generation options to unrelated public cloud gateways.
+    """
+    host = (urlsplit(base_url).hostname or "").lower()
+    if host in ("localhost", "host.docker.internal"):
+        return True
+    if host.endswith((".local", ".lan", ".home.arpa", ".internal")):
+        return True
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        # A single-label LAN hostname can resolve to the user's machine.
+        return bool(host) and "." not in host
+    return address.is_private or address.is_loopback or address.is_link_local
+
+
 class RoutedAgent(Agent):
     """Drop-in V2 Agent, with inference routing isolated per Ask task."""
 
     def __init__(self, base_url: str, model: str, api_key: str, model_timeout: int,
                  cpu_cores: int = 4, *, cloud_fallback_enabled: bool = False,
                  cloud_fallback_model: str = "openrouter/free",
-                 cloud_fallback_api_key: str = ""):
-        super().__init__(base_url, model, api_key, model_timeout, cpu_cores=cpu_cores)
+                 cloud_fallback_api_key: str = "",
+                 local_ollama_think: bool = False,
+                 local_ollama_num_ctx: int = 8192):
+        if type(local_ollama_think) is not bool:
+            raise ValueError("Local Ollama thinking must be a boolean")
+        if type(local_ollama_num_ctx) is not int or not 4096 <= local_ollama_num_ctx <= 32768:
+            raise ValueError("Local Ollama context must be 4096–32768 tokens")
+        tuning = is_lan_ollama(base_url)
+        super().__init__(
+            base_url, model, api_key, model_timeout, cpu_cores=cpu_cores,
+            local_think=local_ollama_think if tuning else None,
+            local_num_ctx=local_ollama_num_ctx if tuning else None,
+        )
         self.cloud_enabled = bool(cloud_fallback_enabled)
         self.cloud = (
             OpenRouterFree(model=cloud_fallback_model,
@@ -184,6 +216,9 @@ class RoutedAgent(Agent):
     def route_status(self) -> dict[str, Any]:
         return {
             "primary": "ollama", "primary_model": self.model,
+            "local_ollama_options_active": self.local_num_ctx is not None,
+            "local_think_enabled": self.local_think,
+            "local_num_ctx": self.local_num_ctx,
             "fallback_enabled": self.cloud is not None,
             "fallback_provider": "openrouter" if self.cloud else None,
             "fallback_model": self.cloud.model if self.cloud else None,
@@ -195,6 +230,9 @@ class RoutedAgent(Agent):
         using_cloud = state["provider"] == "cloud"
         return {
             "provider": state["provider"],
+            "attempted_provider": state.get("attempted_provider"),
+            "status": ("completed_model_round" if state["provider"] is not None
+                       else "no_completed_model_round"),
             "model": self.cloud.model if using_cloud and self.cloud else self.model,
             "cloud_fallback_used": using_cloud,
             "reason": ("local_connect_failed" if using_cloud else None),
@@ -221,6 +259,8 @@ class RoutedAgent(Agent):
         try:
             if state["provider"] == "cloud":
                 return await self.cloud.round(messages, tools, remaining)
+            state["attempted_provider"] = "local"
+            self.last_attempt = self._attempt(state)
             try:
                 response = await super().round(messages, tools, remaining)
             except ModelEndpointUnavailable:
@@ -234,6 +274,7 @@ class RoutedAgent(Agent):
                 # Only a primary connect failure before the first completed
                 # model round permits opt-in cloud transmission.
                 state["provider"] = "cloud"
+                state["attempted_provider"] = "cloud"
                 self.last_attempt = self._attempt(state)
                 return await self.cloud.round(messages, tools, remaining)
             state["provider"] = "local"

@@ -1,5 +1,5 @@
 name: "Hubitat MCP AI v2 (Preview)"
-version: "2.0.0-alpha.86"
+version: "2.0.0-alpha.87"
 slug: hubitat_mcp_ai_v2
 description: "Clean, model-led Hubitat MCP assistant with external diagnostics recorder"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
@@ -22,42 +22,42 @@ ports:
 ports_description:
   8789/tcp: "Optional direct interface; use Home Assistant ingress"
 webui: "http://[HOST]:[PORT:8789]"
+# Home Assistant Supervisor treats an option WITH a default as required,
+# even when the schema has '?'! Keep the optional blank keys below out of
+# options:, but let app.py DEFAULTS provide runtime empty-string values.
+# Users can reveal optional fields in the add-on editor as needed.
 options:
-  hubitat_mcp_url: ""
-  hubitat_mcp_token: ""
   model_base_url: "https://ollama.com"
   model_name: "gemma4:31b-cloud"
-  model_api_key: ""
+  # Applied ONLY to a private LAN Ollama primary; not Ollama Cloud.
+  local_ollama_think: false
+  local_ollama_num_ctx: 8192
   cloud_fallback_enabled: false
   cloud_fallback_model: "openrouter/free"
-  cloud_fallback_api_key: ""
   model_timeout_seconds: 120
   mcp_timeout_seconds: 25
   investigation_timeout_seconds: 300
   hub_timezone: "Europe/London"
   external_hub_diagnostics_enabled: false
-  external_hub_diagnostics_hub_url: ""
   external_hub_diagnostics_probe_seconds: 30
   external_hub_diagnostics_cpu_cores: 4
   external_hub_diagnostics_hub_timezone: "Europe/London"
   external_hub_diagnostics_retention_days: 30
   device_monitor_enabled: false
-  device_monitor_api_base: ""
-  device_monitor_access_token: ""
   one_off_cleanup_enabled: false
   one_off_cleanup_dry_run: true
   one_off_cleanup_time: "07:00"
   one_off_cleanup_timezone: "Europe/London"
   one_off_cleanup_grace_minutes: 15
   ha_tts_enabled: false
-  ha_tts_notify_service: ""
-  ha_tts_media_stream: ""
 schema:
   hubitat_mcp_url: str?
   hubitat_mcp_token: password?
   model_base_url: str
   model_name: str
   model_api_key: password?
+  local_ollama_think: bool
+  local_ollama_num_ctx: int(4096,32768)
   cloud_fallback_enabled: bool
   cloud_fallback_model: str
   cloud_fallback_api_key: password?

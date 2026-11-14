@@ -657,7 +657,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 </section>
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.86";
+const UI_VERSION="2.0.0-alpha.87";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
@@ -927,9 +927,13 @@ async function loadStatus(){
   byId('state').textContent=d.configured?'● Configured · '+d.version:'● Setup required · '+d.version;
   const route=d.model_routing||{};
   const fallback=route.fallback_enabled?' · Cloud backup: OpenRouter free (armed)':' · Cloud backup: off';
+  const tuning=route.local_ollama_options_active
+    ? ' · Local Ollama: '+(route.local_think_enabled?'thinking on':'thinking off')
+      +' · context '+route.local_num_ctx+' tokens'
+    : '';
   const lastRoute=route.last_attempt?.provider;
   const last=lastRoute&&lastRoute!=='not_used'?' · Last inference: '+(lastRoute==='cloud'?'cloud fallback':lastRoute==='local'?'local Ollama':'unknown'):'';
-  byId('statusMeta').textContent='Version: '+d.version+' · Primary: '+(d.model||'unknown')+fallback+last
+  byId('statusMeta').textContent='Version: '+d.version+' · Primary: '+(d.model||'unknown')+tuning+fallback+last
    +' · MCP: '+(d.configured?'configured (connection not independently probed)':'not ready')
    +' · Hub: '+(d.hub||'name unavailable from status source')
    +' · Devices: '+byId('overviewDevices').textContent;
