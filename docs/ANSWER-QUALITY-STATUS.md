@@ -1,5 +1,11 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-14 — V2 alpha.97 source-real history milestone; alpha.98 continuity follow-up
+
+An owner-supplied alpha.97 read-only historical measurement request selected the separate Hub & Device Monitor saved-bin archive and native Hubitat event history without being told the tool names; it finished in approximately 101 seconds over five cloud model rounds with four successful read-only calls and no recorded writes. The returned historian contained 70 saved values out of 72 positions, with explicit null and held bins; native events were filtered to a narrower recent slice. This supports source-access success and useful observed power history, but not uninterrupted ON-state proof or a benchmark-quality denominator; continuity and detailed attribution remain partially unresolved. Another owner-supplied alpha.97 explicit Monitor history request showed successful status and history calls. These are two exploratory, source-real outcomes rather than fresh blinded comparative tests. No independent Claude-equivalent accuracy score or platform CPU-load result is claimed.
+
+Alpha.98 proposes a general continuity evidence improvement: bring existing source-verified archived-bin coverage and negative continuity flags into the already scheduled final audit; allow, but do not mandate, another model-selected read-only state-transition source when materially useful. There is no new automatic MCP call, background poll, write or model pass. Source-real acceptance of alpha.98 remains **not measured**; require independent new questions and original successful private receipts. Next quality work: independently measured first-answer correctness and cost/round analysis before changing the multi-round review architecture. See [the alpha.98 note](HOMEBRAIN-V2-ALPHA98-CONTINUITY-COVERAGE-20261114.md) and [the V2 next milestone](HUBITAT-MCP-AI-V2-NEXT-MILESTONE.md).
+
 ## 2026-11-07 — V2 upstream architecture alignment (alpha.3)
 
 The user explicitly clarified that v2 is a clean start following upstream intended behavior across reads, control, native automation and administration within the connected server/token permissions. This supersedes the read-only pilot and alpha.2 frozen allowlist. V1 remains separate.
