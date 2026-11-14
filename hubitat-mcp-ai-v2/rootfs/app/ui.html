@@ -657,7 +657,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 </section>
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.87";
+const UI_VERSION="2.0.0-alpha.88";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
@@ -1430,6 +1430,8 @@ function showResult(question,answer,response,clientMs,error=null,requestId=activ
  const calls=response?.tool_calls||[],failed=calls.filter(c=>c.success===false).length;
  byId('requestSummary').textContent=error?'Request could not complete.':response?.success===false?'Request ended without a successful response.':'Response received — review the supporting evidence.';
  if(response)byId('requestSummary').textContent+=' '+calls.length+' tool attempts'+(failed?' · '+failed+' unsuccessful':'')+'.';
+ if(response?.current_state_source_status==='no_source_read_receipt')
+   byId('requestSummary').textContent+=' Current-state answer unverified: no successful device read receipt.';
  if(response?.model_route?.provider==='cloud')byId('requestSummary').textContent+=response?.success===true
    ?' Cloud fallback used after local connection failure; private request context sent to OpenRouter.'
    :' Cloud fallback attempted after local connection failure; private request context may have been sent to OpenRouter.';
