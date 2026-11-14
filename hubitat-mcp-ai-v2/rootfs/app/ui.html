@@ -839,6 +839,10 @@ function showResult(question,answer,response,clientMs,error=null,requestId=activ
  const calls=response?.tool_calls||[],failed=calls.filter(c=>c.success===false).length;
  byId('requestSummary').textContent=error?'Request could not complete.':response?.success===false?'Request ended without a successful response.':'Response received — review the supporting evidence.';
  if(response)byId('requestSummary').textContent+=' '+calls.length+' tool attempts'+(failed?' · '+failed+' unsuccessful':'')+'.';
+ if(response?.success===false&&Array.isArray(response?.executed_writes)&&response.executed_writes.length){
+  byId('requestSummary').textContent+=' Important: '+response.executed_writes.length+
+   ' native write response(s) returned before the model failed. See original receipts; do not retry blindly.';
+ }
   if(response?.prior_sources_indexed)byId('requestSummary').textContent+=' '+response.prior_sources_indexed+' earlier sources indexed; '+(response.prior_receipts_used||0)+' excerpts supplied.';
   if(response?.prior_evidence_reads)byId('requestSummary').textContent+=' '+response.prior_evidence_reads+' earlier source chunks read on demand.';
   if(response?.leaf_schema_discoveries)byId('requestSummary').textContent+=' '+response.leaf_schema_discoveries+' read-only MCP tool-schema catalogs consulted.';
