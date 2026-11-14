@@ -27,7 +27,8 @@ _CURRENT_READ_SUBJECT = re.compile(
     r"sensors?|thermostats?|valves?)\b", re.IGNORECASE,
 )
 _CURRENT_READ_EXAMPLE = re.compile(
-    r"\b(?:example|hypothetical|tutorial|documentation|syntax)\b",
+    r"\b(?:example|hypothetical|tutorial|documentation|syntax|best\s+way|"
+    r"optimis(?:e|ing)|optimiz(?:e|ing))\b",
     re.IGNORECASE,
 )
 
