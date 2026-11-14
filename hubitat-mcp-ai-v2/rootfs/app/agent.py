@@ -857,6 +857,7 @@ class Agent:
         final_claim_audit_invoked = False
         final_claim_audit_candidate = ""
         final_claim_audit_status = "not_invoked"
+        deadline_finalization_invoked = False
         file_reads = FileReadCoverage()
         # Private first-answer telemetry: capture the model's completed prose
         # at existing boundaries. This does not add model rounds, source reads,
@@ -917,6 +918,7 @@ class Agent:
                 "automation_confirmation_requests": automation_confirmation_requests,
                 "final_claim_audit_invoked": final_claim_audit_invoked,
                 "final_claim_audit_status": audit_status,
+                "deadline_finalization_invoked": deadline_finalization_invoked,
                 "answer_stage_trace": answer_stage_trace,
                 "available_read_sources": source_catalog,
                 "file_read_coverage": file_reads.snapshot(),
@@ -945,6 +947,39 @@ class Agent:
             elif source_review_invoked:
                 tools = read_only_review_catalog(tools)
             remaining = deadline - time.monotonic()
+            # Before time expires, reserve one EXISTING model round to finish
+            # a causal READ-ONLY investigation with already-returned evidence.
+            # Never launch a new native call or extra model pass. Avoid actions,
+            # mixed tool paths and cases with no successful native source.
+            finish_reserve = min(75.0, max(35.0, float(deadline_seconds) * 0.25))
+            if (not deadline_finalization_invoked
+                    and not final_claim_audit_invoked
+                    and deadline_seconds >= 120
+                    and 0 < remaining <= finish_reserve
+                    and review_kind(question) == "causal"
+                    and not native_action_receipts_seen
+                    and not prewrite_model_review_invoked
+                    and not automation_confirmation_requests
+                    and any(row.get("success") is True
+                            and row.get("result_kind") == "tool_result"
+                            and is_read_only_review_tool(row.get("name", ""))
+                            for row in receipts)
+                    and all(is_read_only_review_tool(row.get("name", ""))
+                            for row in receipts)):
+                deadline_finalization_invoked = True
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "Final source-grounded answer is now required before "
+                        "the request deadline. Do not request or execute more "
+                        "tools. Use ONLY the original already-returned source "
+                        "receipts, identify actual time-window/row limits and "
+                        "failed sources, distinguish reporters from initiators, "
+                        "and state any unknown causes without fabricating them. "
+                        "Be concise; the source record remains in Technical JSON."
+                    ),
+                })
+                tools = []
             if remaining <= 0:
                 if final_claim_audit_candidate:
                     return completed_answer(final_claim_audit_candidate, "deadline_fallback")
@@ -983,6 +1018,7 @@ class Agent:
                     "tool_calls": receipts, "rounds": rounds,
                     "model_round_metrics": model_round_metrics,
                     "prior_receipts_used": prior_receipts,
+                    "deadline_finalization_invoked": deadline_finalization_invoked,
                     "prewrite_model_review_invoked": prewrite_model_review_invoked,
                     "prewrite_unsent_proposals": prewrite_unsent_proposals,
                     "prewrite_dispatch_changed": prewrite_dispatch_changed,
@@ -1054,6 +1090,27 @@ class Agent:
             if final_claim_audit_invoked and calls:
                 # Tools were not offered; do not execute an unsolicited call.
                 return completed_answer(final_claim_audit_candidate, "tool_request_fallback")
+
+            if deadline_finalization_invoked:
+                # The final model round was deliberately tool-free. A model
+                # request to call any tool is NOT authority to execute it.
+                if calls:
+                    return {
+                        "success": False,
+                        "answer": ("The model did not finish a source-grounded "
+                                   "answer before the deadline. Its request "
+                                   "for additional tools was not executed; "
+                                   "original evidence remains in Technical JSON."),
+                        "error": "deadline",
+                        "deadline_finalization_invoked": True,
+                        "deadline_finalization_status": "unoffered_tool_rejected",
+                        "tool_calls": receipts, "rounds": rounds,
+                        "model_round_metrics": model_round_metrics,
+                        "elapsed_ms": round((time.monotonic() - started) * 1000),
+                    }
+                return completed_answer(
+                    text, "deadline_finalized" if text else "deadline_empty",
+                )
 
             if not calls:
                 # Generic coverage recovery: a filtered inventory alone
