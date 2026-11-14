@@ -278,6 +278,22 @@ expected_bin_positions and all_expected_bin_positions_populated describe
 the time grid, NOT continuous observation. Count explicit_null_bin_rows,
 absent_bin_positions, and held_from_report as distinct categories;
 do not reuse a 24-hour source summary for a 12-hour question.
+A request to establish a state CONTINUOUSLY across an interval is not
+equivalent to a trend of sampled power, temperature, motion or setpoints.
+A positive current switch/online snapshot cannot be backdated; nonzero
+historical power bins do not prove uninterrupted power, even when every
+bin position is populated. Differentiate fresh report-containing bins,
+carried-forward values and unobserved intervals. If historical state
+transitions or connectivity/command history are already returned, compare
+their actual time coverage; a source without events outside its returned
+window cannot rule out interruptions there. When one proportionate
+additional READ-ONLY state/transition source could materially resolve
+this particular requested continuity claim, independently decide whether
+to read it in this existing review stage. Do not mandate a history call,
+invent a read, or declare continuity merely because a source is offered.
+If no suitable source was read or the source remains bounded, say exactly
+which interval or state is not verified. Report sampled observations
+positively without turning missing records into a definite outage.
 sensor_freshness_unverified means that freshness is UNKNOWN: neither
 "every bin is stale" nor "every bin is fresh" follows. If the upstream
 source cannot establish fresh readings, report saved-bin extrema only.
@@ -489,6 +505,15 @@ to Y verified; the returned Y state alone does not establish X. Do not use
 a temperature, level, demand, or other observation made AFTER a historical
 outcome as evidence for the earlier moment. Check the latest relevant state
 AFTER the focal event, rather than implying an old OFF/idle still holds.
+Distinguish a device's CURRENT status from its past interval: a latest
+ON/online/idle state plus sampled nonzero power/temperature/setpoint
+observations cannot prove the device stayed ON/connected/heating uninterrupted
+throughout. For interval-wide statements, inspect original state-transition
+and coverage receipts if returned, including source-specific filters, row
+caps, missing intervals and held/cached samples. If complementary state history
+was not read, do not claim it was checked; keep continuity unverified and
+identify the discriminating source type without demanding a new read in this
+final tool-free stage.
 Bind every claimed historical reading to ONE original event row's FULL date,
 clock/offset, attribute name AND value. Never splice the time of one event
 together with a value from another event or a later current-state snapshot.
@@ -576,6 +601,23 @@ _AUDIT_SOURCE_FIELDS = frozenset((
     "can_infer_requested_window_fully_covered",
     "can_infer_external_or_manual_initiation_from_physical_tag",
     "parent_app_identity_independently_verified",
+    "fresh_sensor_reports_independently_verified",
+))
+_AUDIT_MONITOR_HISTORY_FIELDS = frozenset((
+    # Only already-returned, source-derived scalar coverage. No raw samples,
+    # log text, current-home device names, secrets or invented state intervals.
+    "source_kind", "device_id", "metric", "unit", "observational_unit",
+    "resolution", "requested_window_start_utc",
+    "requested_window_end_exclusive_utc", "returned_window_start_utc",
+    "returned_window_end_utc", "expected_bin_positions",
+    "bins_with_saved_values",
+    "bins_containing_monitor_received_power_reports",
+    "bins_held_from_previous_power_report", "explicit_null_bin_positions",
+    "absent_bin_positions", "all_saved_bin_values_present",
+    "source_completeness_verified",
+    "source_verified_continuous_physical_observation",
+    "source_verified_device_connection_or_offline_cause",
+    "source_verified_exact_physical_threshold_crossing_time",
     "fresh_sensor_reports_independently_verified",
 ))
 _AUDIT_ORIGINAL_FIELDS = frozenset((
@@ -807,7 +849,7 @@ def final_claim_receipt_scope_index(
                 mon = _audit_scalars(monitor, _AUDIT_SOURCE_FIELDS)
                 if isinstance(monitor.get("history"), dict):
                     mon["history"] = _audit_scalars(
-                        monitor["history"], _AUDIT_SOURCE_FIELDS)
+                        monitor["history"], _AUDIT_MONITOR_HISTORY_FIELDS)
                 if mon:
                     item["monitor_scope"] = mon
             original = parsed
