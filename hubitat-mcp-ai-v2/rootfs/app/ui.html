@@ -866,7 +866,9 @@ function showOverviewNames(id,metric,kind){
  if(!members.length){
   const empty=document.createElement('div');
   empty.className='overview-name empty';
-  empty.textContent=metric.count===0?'None reported':(Number.isInteger(metric.count)?'Device names unavailable':'');
+  empty.textContent=metric.devices_with_state===0?'No supported state reports':
+   metric.count===0?'None reported among covered devices':
+   (Number.isInteger(metric.count)?'Device names unavailable':'');
   if(empty.textContent)container.appendChild(empty);
   return;
  }
@@ -894,25 +896,69 @@ function showOverviewNames(id,metric,kind){
   container.appendChild(limit);
  }
 }
+const OVERVIEW_METRICS=[
+ ["lights_on","overviewLights","overviewLightsScope","overviewLightsNames","overviewLightsPreview","light"],
+ ["motion_active","overviewMotion","overviewMotionScope","overviewMotionNames","overviewMotionPreview","motion"],
+ ["battery_low","overviewBattery","overviewBatteryScope","overviewBatteryNames","overviewBatteryPreview","battery"],
+ ["contact_open","overviewContacts","overviewContactsScope","overviewContactsNames","overviewContactsPreview","contact"],
+ ["water_wet","overviewWater","overviewWaterScope","overviewWaterNames","overviewWaterPreview","water"],
+ ["heating_active","overviewHeating","overviewHeatingScope","overviewHeatingNames","overviewHeatingPreview","heat"],
+ ["reported_offline","overviewOffline","overviewOfflineScope","overviewOfflineNames","overviewOfflinePreview","health"],
+ ["other_switches_on","overviewOtherOn","overviewOtherOnScope","overviewOtherOnNames","overviewOtherOnPreview","switch"]
+];
+function toggleOverviewMembers(button){
+ // This is a DOM-only disclosure; it never calls /api/ask, /api/overview or Ollama.
+ if(!button)return;
+ const next=button.getAttribute('aria-expanded')!=='true';
+ button.setAttribute('aria-expanded',String(next));
+}
+function overviewMemberLabel(member,kind){
+ if(!member||typeof member.name!=='string')return '';
+ const name=member.name.trim().slice(0,100);
+ if(!name)return '';
+ if(kind==='battery'&&typeof member.battery_pct==='number'&&
+  Number.isFinite(member.battery_pct)&&member.battery_pct>=0&&member.battery_pct<20){
+  const pct=Number.isInteger(member.battery_pct)?String(member.battery_pct):member.battery_pct.toFixed(1);
+  return name+' · '+pct+'%';
+ }
+ return name;
+}
+function overviewPreview(metric,kind){
+ const count=metric?.count,covered=metric?.devices_with_state;
+ if(!Number.isInteger(covered)||covered===0)return 'No supported state reports';
+ if(!Number.isInteger(count))return 'Reported names unavailable';
+ if(count===0)return 'None reported in snapshot';
+ const listed=Array.isArray(metric?.members)?metric.members:[];
+ const names=listed.map(item=>overviewMemberLabel(item,kind)).filter(Boolean);
+ if(!names.length)return count+' reported · names unavailable';
+ return names.slice(0,2).join(' · ')+(count>2?' · +'+(count-2)+' more':'');
+}
 function clearOverviewCounts(){
- for(const id of ['overviewLights','overviewMotion','overviewBattery','overviewDevices'])
-  byId(id).textContent='—';
- for(const id of ['overviewLightsNames','overviewMotionNames','overviewBatteryNames'])
-  byId(id).replaceChildren();
- for(const id of ['overviewLightsScope','overviewMotionScope','overviewBatteryScope','overviewDevicesScope'])
-  byId(id).textContent='Source scope unavailable';
+ for(const [,countId,scopeId,listId,previewId] of OVERVIEW_METRICS){
+  byId(countId).textContent='—';
+  byId(scopeId).textContent='Source scope unavailable';
+  byId(listId).replaceChildren();
+  byId(previewId).textContent='';
+ }
+ byId('overviewDevices').textContent='—';
+ byId('overviewDevicesScope').textContent='Source scope unavailable';
+ // A source outage must not leave stale expanded names visible.
+ for(const [, , , listId] of OVERVIEW_METRICS){
+  const toggle=byId(listId.replace('Names','Toggle'));
+  if(toggle)toggle.setAttribute('aria-expanded','false');
+ }
 }
 function setOverviewCounts(data){
- const m=data.metrics||{};
- for(const [key,countId,scopeId,listId,kind] of [
-  ['lights_on','overviewLights','overviewLightsScope','overviewLightsNames','light'],
-  ['motion_active','overviewMotion','overviewMotionScope','overviewMotionNames','motion'],
-  ['battery_low','overviewBattery','overviewBatteryScope','overviewBatteryNames','battery']]){
-  const metric=m[key]||{};
-  byId(countId).textContent=Number.isInteger(metric.count)?String(metric.count):'—';
-  byId(scopeId).textContent=Number.isInteger(metric.devices_with_state)
-   ? 'of '+metric.devices_with_state+(kind==='light'?' identified lights reporting':' devices reporting')
-   : 'Source scope unknown';
+ const metrics=data.metrics||{};
+ for(const [key,countId,scopeId,listId,previewId,kind] of OVERVIEW_METRICS){
+  const metric=metrics[key]||{};
+  const covered=Number.isInteger(metric.devices_with_state)?metric.devices_with_state:null;
+  const count=Number.isInteger(metric.count)?metric.count:null;
+  byId(countId).textContent=covered===0||count===null?'—':String(count);
+  byId(scopeId).textContent=covered===null?'Source scope unknown':
+   covered===0?'No supported readings':
+   'of '+covered+(kind==='light'?' identified lights reporting':' devices reporting');
+  byId(previewId).textContent=overviewPreview(metric,kind);
   showOverviewNames(listId,metric,kind);
  }
  byId('overviewDevices').textContent=Number.isInteger(data.returned_devices)
@@ -922,11 +968,9 @@ function setOverviewCounts(data){
  const stamp=data.observed_at_utc?new Date(data.observed_at_utc):null;
  const time=stamp&&!Number.isNaN(stamp.getTime())?stamp.toLocaleTimeString('en-GB',
   {timeZone:'Europe/London',hour:'2-digit',minute:'2-digit'}):'unknown';
- const excluded=Number.isInteger(data.unclassified_on_switches)&&data.unclassified_on_switches>0
-  ?' · '+data.unclassified_on_switches+' ON switches not identified as lights':'';
  byId('overviewStatus').textContent='Snapshot '+time+' UK · '+
   (data.inventory_full_coverage_verified?'inventory count reconciled':'inventory may be partial')+
-  excluded+' · no device commands';
+  ' · one read-only inventory request · no device commands or AI';
 }
 function setRecorderOverview(recorder){
  const r=recorder||{},last=r.last||{};
@@ -993,12 +1037,6 @@ function toggleStatusPill(){
   const row=byId('checkMonitor').parentElement;
   if(row){row.hidden=false;byId('statusMonitor').appendChild(row);}
  }
-}
-function askOverview(tile){
- if(byId('send').disabled&&activeRequest)return;
- const question=tile?.dataset?.question;
- if(typeof question!=='string'||!question)return;
- byId('question').value=question;syncCommandBar();byId('question').focus();
 }
 function workStep(target,text,timing){
  const list=byId(target),item=document.createElement('li');
