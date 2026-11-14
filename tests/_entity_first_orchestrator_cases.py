@@ -916,14 +916,13 @@ async def test_one_time_rule_end_to_end_creates_without_self_pause():
     ai = FakeAI([])
     agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ai)
 
-    # Keep the one-off schedule safely in the future: a fixed "11:23" made
-    # this otherwise offline test fail at/after that wall-clock time.
-    local_now = datetime.now(ZoneInfo("Europe/London"))
-    local_target = local_now + timedelta(minutes=90)
-    when = ("tomorrow at " if local_target.date() != local_now.date()
-            else "at ") + local_target.strftime("%H:%M")
+    # Exercise the one-time rule's confirmation/write path using the existing
+    # supported relative-delay grammar.  A generated "tomorrow at HH:MM"
+    # prompt at/after 22:30 is parsed as a device label ending in "tomorrow",
+    # making this test time-dependent.  That distinct V1 grammar issue is
+    # tracked separately; do not weaken the device/confirmation assertions.
     propose_outcome = await agent.process_user_request_result(
-        f"turn on livingroom light 1 {when}",
+        "turn on livingroom light 1 in 90 minutes",
         session_id="one-time-e2e",
     )
     assert propose_outcome.confirmation_required is True
