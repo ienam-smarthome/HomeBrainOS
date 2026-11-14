@@ -1,0 +1,30 @@
+# HomeBrainOS v2 alpha.80 — time-grounded actions and truthful post-write errors
+
+**14 November 2026 — development-only.** This change never connects to or changes a real Hubitat device/router, and does not choose an actuator or create a scheduler. No changes to paid model routing.
+
+## Source-real problem and scope
+
+A private timed-action capture showed a mismatch between a requested wall-clock target and the dispatched numeric duration, followed by a stored driver deadline substantially later than requested. The previously introduced pre-write review also lacked a clock. A separate captured model-quota failure after a native cancel-and-read response concealed the actual write, so the visible error no longer represented what had occurred. Private household names, source receipts and IDs remain outside the public repository.
+
+An open-PR check before work found only older V1/design pull requests, with no competing V2 timed-action patch. This is a general action-quality and evidence-integrity change, not a named-device or prompt-specific correction.
+
+## Implementation
+
+1. **Read-only structured clock** — the model can call `homebrain_read_clock` with no target, an offset-aware `instant`, an ISO `local_datetime`, or `time_of_day` for the next wall-clock occurrence, plus `fold` for ambiguous DST times. It returns the client's current UTC/local instant, IANA timezone source (explicit `hub_get_info` receipt if available, otherwise configured add-on `hub_timezone`), offset, DST, UTC/local target and deterministic seconds/minutes ahead. Nonexistent spring DST wall times fail explicitly; ambiguous autumn times require fold. The local tool never parses prompt text, picks a target, calls a device or schedules future work. `client clock` is explicitly **not** an independent hub-time measurement. An explicit native server/hub timestamp can yield a bounded skew notice; ordinary device-event timestamps are not treated as the hub clock.
+2. **Stored-deadline source evidence** — parse only recognised future native pending/deadline fields, including attribute/value reads, to attach UTC deadline and offset from the current client clock. The original result remains intact. A pending timestamp inside a successful write result is a **write-response snapshot**, not independent read-back. A distinct native read after the write gets its own source label; neither proves router enforcement or future execution.
+3. **Model-led comparison, no client planner** — existing action-outcome review asks the model to compare the requested local target with the stored deadline side by side. It must explain material mismatches and not say the requested schedule succeeded on an inconsistent deadline. The pre-write model review asks for actual clock evidence before deriving absolute-clock durations. The model still selects all native tools, devices, commands and time targets; the client never parses natural language or blocks a numeric duration based on a scripted clock rule.
+4. **Pre-dispatch visibility** — the private Technical JSON includes `prewrite_dispatch_changed` and redacted reviewed-unsent versus selected-native-dispatch argument sets, to expose changed durations/targets even if the action is accepted. This is telemetry, not permission or independent outcome evidence.
+5. **Truthful model failure** — if a later model round errors after successful native write receipts, the existing request returns `success=false` and `model_error_kind` (`quota_or_billing` for HTTP 402, `rate_limit` for 429, otherwise `other`), plus `executed_writes`, `post_write_reads` and a clearly client-authored plaintext summary of directly reported values. UI highlights that a write receipt already returned. No automatically retried write, no claimed future result or replay. When no write ran, the existing error shape remains apart from the error-category field.
+6. **Guidance only** — model compares advertised commands with requested verb/physical effect; a non-exact match needs confirmation. No hardcoded media/control-device routing.
+
+## Synthetic tests and operational limits
+
+Entirely fictional `test_time_grounded_actions.py` tests London GMT/BST, both 2026 daylight-saving transitions, midnight rollover, past and imminent targets, offset-aware instants, structured arguments that reject prompt text, explicit hub-clock skew, stored-deadline evidence, embedded-write snapshot labels, model-selected clock, reviewed-120 versus dispatched-150 observability, identical arguments, HTTP 402 with prior write and separate read, HTTP 402 before any write, HTTP 429, and no duplicate native dispatch. The repository's V2 pilot tests, validation, scorecard integrity and release assurance must pass before merging.
+
+The clock is only as accurate as the add-on host and declared timezone; any hub skew/source freshness warning is a **comparison**, not automatic correction. Device timers can be inaccurate, pause or fail across reboots. A computed deadline and a stored deadline do not prove eventual blocking, device state, network enforcement or exact-once semantics. Do not extrapolate CI to installed model accuracy.
+
+## Acceptance, outside this PR
+
+After updating, first ask a **fresh read-only** question about current local time/timezone and inspect the `homebrain_read_clock` receipt and source label, ideally also a safe `hub_get_info` source. A live timed command test later requires the user's explicit choice of a specific, noncritical target; first answer and PRIVATE original Technical JSON must compare requested and stored deadlines and show any prewrite drift. For model-quota failure testing use a fictional scripted case, not deliberately write to a household device.
+
+Do not count coached acceptance as the 12 blind Gate B first answers. Leave native one-off approval, cleanup and other existing safety gates unchanged. A separate RFC may consider owner-authored standing defaults; none are implemented here. Do not change model routing or paid-cloud settings without separate authorisation.
