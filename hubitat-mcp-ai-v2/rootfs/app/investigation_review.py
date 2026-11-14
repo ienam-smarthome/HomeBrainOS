@@ -9,6 +9,71 @@ from __future__ import annotations
 import re
 import json
 
+# Light-touch eligibility for a *missing-source* checkpoint: explicit live
+# measurement/state reads only, not generic knowledge questions or writes.
+# This never selects a device, names an MCP tool, or fabricates a status.
+_CURRENT_READ_START = re.compile(
+    r"^\s*(?:what(?:'s|\s+(?:is|are))|which|show|check|read|report|"
+    r"give|tell|is|are|list)\b", re.IGNORECASE,
+)
+_CURRENT_READ_TIME = re.compile(
+    r"\b(?:current(?:ly)?|right\s+now|now|live|reported)\b",
+    re.IGNORECASE,
+)
+_CURRENT_READ_SUBJECT = re.compile(
+    r"\b(?:state|status|on|off|levels?|brightness|temperature|humidity|"
+    r"power|batter(?:y|ies)|voltage|motion|active|health|readings?|"
+    r"setpoint|switch|position|open|closed|devices?|lights?|"
+    r"sensors?|thermostats?|valves?)\b", re.IGNORECASE,
+)
+_CURRENT_READ_EXAMPLE = re.compile(
+    r"\b(?:example|hypothetical|tutorial|documentation|syntax|best\s+way|"
+    r"optimis(?:e|ing)|optimiz(?:e|ing))\b",
+    re.IGNORECASE,
+)
+
+# Only spend an additional model round when the draft itself refuses or
+# defers an authorised READ. A direct answer without a tool receipt is still
+# separately labelled unverified; it is not automatically retried.
+_PENDING_READ_DRAFT = re.compile(
+    r"\b(?:please\s+confirm|would\s+you\s+like\s+me\s+to|"
+    r"need\s+to\s+(?:call|use|read|query|retrieve|fetch|check)|"
+    r"can\s+I\s+(?:read|query|fetch|check|inspect)|"
+    r"shall\s+I\s+(?:read|query|fetch|check))\b",
+    re.IGNORECASE,
+)
+
+
+def is_deferred_read_draft(answer: str) -> bool:
+    """Textual evidence of an unfinished read, never a tool or device router."""
+    return isinstance(answer, str) and bool(_PENDING_READ_DRAFT.search(answer))
+
+
+CURRENT_STATE_REVIEW_PROMPT = """Read-only live-state completion checkpoint (internal).
+The user's original question asks for a CURRENT reported fact. The earlier
+draft is NOT a device report, and no native MCP read has been attempted in
+this Ask request. The source catalog only lists available tools; its existence
+does NOT establish an individual device identity, actual state or freshness.
+
+The user has already authorised proportionate READ-ONLY observation. Do NOT
+ask permission to read. If the live offered READ-ONLY MCP tools can identify
+the requested target and retrieve its reported state, independently choose
+the exact currently advertised tool(s) and arguments NOW. Use only live tool
+names and schemas; inspect the available catalog if you need discovery.
+Do not invent an unadvertised tool, assume a similar name identifies a
+device, or read an optional monitor merely because it is offered.
+
+No tool is preselected or dispatched by this checkpoint: YOU decide the
+source, quantity, and whether a suitable safe read is available. If no
+proportionate supported source exists, state precisely that the requested
+state is unverified. Report only returned facts, units and field-specific
+timestamps; do not confuse a configured source with a successful device read.
+Never change a device, rule, setting or record. Never request approval for
+a read-only source. Follow the user's read-only restriction. Do not mention
+this internal checkpoint.
+"""
+
+
 _CAUSAL_QUESTION = re.compile(
     r"\bwhy\b|\bwhat\s+(?:caused|triggered|initiated|made|explains)\b"
     r"|\b(?:cause|reason|trigger)\s+(?:of|for|behind)\b"
@@ -569,8 +634,26 @@ def frozen_review_kind(question: str) -> str | None:
     return None
 
 
+def is_current_state_question(question: str) -> bool:
+    """Current read intent only; never matches imperative writes by name.
+
+    Eligibility is not proof the target exists, nor an instruction to use a
+    particular tool. Ordinary ungrounded knowledge questions are excluded.
+    """
+    return (
+        isinstance(question, str)
+        and not bool(_WRITE_INTENT_AT_START.search(question))
+        and bool(_CURRENT_READ_START.search(question))
+        and bool(_CURRENT_READ_TIME.search(question))
+        and bool(_CURRENT_READ_SUBJECT.search(question))
+        and not bool(_CURRENT_READ_EXAMPLE.search(question))
+    )
+
+
 def review_prompt(kind: str) -> str:
     """Choose review guidance, not a tool or a computed answer."""
+    if kind == "current_state":
+        return CURRENT_STATE_REVIEW_PROMPT
     if kind == "historical_measurement":
         return MEASUREMENT_REVIEW_PROMPT
     if kind == "source_verification":
@@ -613,6 +696,7 @@ def is_causal_question(question: str) -> bool:
 def should_review_completion(
     question: str, *, available_tools: bool, already_reviewed: bool,
     remaining_seconds: float, has_action_receipt: bool = False,
+    has_tool_receipts: bool = False, candidate_answer: str = "",
 ) -> bool:
     """Only open a model review when there is a chance to investigate safely.
 
@@ -623,5 +707,9 @@ def should_review_completion(
         not already_reviewed
         and available_tools
         and remaining_seconds > 8
-        and (review_kind(question) is not None or has_action_receipt)
+        and (
+            review_kind(question) is not None or has_action_receipt
+            or (not has_tool_receipts and is_current_state_question(question)
+                and is_deferred_read_draft(candidate_answer))
+        )
     )

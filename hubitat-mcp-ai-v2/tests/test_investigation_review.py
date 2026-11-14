@@ -14,7 +14,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "rootfs" / "app"))
 from agent import Agent
 from investigation_review import (
-    SOURCE_REVIEW_PROMPT, is_causal_question, should_review_completion,
+    SOURCE_REVIEW_PROMPT, CURRENT_STATE_REVIEW_PROMPT,
+    is_causal_question, is_current_state_question, should_review_completion,
     is_read_only_review_tool, read_only_review_catalog,
 )
 
@@ -92,6 +93,57 @@ class ReviewDecisionTests(unittest.TestCase):
         self.assertFalse(should_review_completion(
             "Why did this happen?", available_tools=False,
             already_reviewed=False, remaining_seconds=30))
+
+    def test_current_read_intent_requires_explicit_live_state_and_no_source(self):
+        for question in (
+            "What is the current reported state of Fictional Lamp 1? Do not change anything.",
+            "Show current temperature of the greenhouse sensor",
+            "Which lights are on right now?",
+            "Check the live battery status of the alarm",
+            "Is the motion sensor active now?",
+        ):
+            with self.subTest(question=question):
+                self.assertTrue(is_current_state_question(question))
+                self.assertTrue(should_review_completion(
+                    question, available_tools=True, already_reviewed=False,
+                    remaining_seconds=120, has_tool_receipts=False,
+                    candidate_answer="To retrieve it I need to call a read-only tool. Please confirm.",
+                ))
+                self.assertFalse(should_review_completion(
+                    question, available_tools=True, already_reviewed=False,
+                    remaining_seconds=120, has_tool_receipts=False,
+                    candidate_answer="The current sensor reports 4 W.",
+                ))
+                self.assertFalse(should_review_completion(
+                    question, available_tools=True, already_reviewed=False,
+                    remaining_seconds=120, has_tool_receipts=True,
+                    candidate_answer="Please confirm the read.",
+                ))
+        for question in (
+            "Show relay status",
+            "How do I read the current state of a virtual lamp?",
+            "Turn on fictional lamp now",
+            "Show a hypothetical example of current power readings",
+            "What is the current best way to optimise a battery?",
+        ):
+            with self.subTest(question=question):
+                self.assertFalse(is_current_state_question(question))
+        self.assertFalse(should_review_completion(
+            "What is the current state of a valve?",
+            available_tools=False, already_reviewed=False, remaining_seconds=120,
+        ))
+        self.assertFalse(should_review_completion(
+            "What is the current state of a valve?",
+            available_tools=True, already_reviewed=True, remaining_seconds=120,
+        ))
+        self.assertFalse(should_review_completion(
+            "What is the current state of a valve?",
+            available_tools=True, already_reviewed=False, remaining_seconds=3,
+        ))
+        self.assertIn("Do NOT", CURRENT_STATE_REVIEW_PROMPT)
+        self.assertIn("READ-ONLY", CURRENT_STATE_REVIEW_PROMPT)
+        self.assertIn("no native MCP read", CURRENT_STATE_REVIEW_PROMPT)
+        self.assertNotIn("Livingroom", CURRENT_STATE_REVIEW_PROMPT)
 
     def test_review_catalog_excludes_any_write_or_manage_gateway(self):
         self.assertTrue(is_read_only_review_tool("hub_read_history"))
@@ -171,6 +223,88 @@ class ReviewLoopTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["source_review_invoked"])
         self.assertEqual(len(hub.calls), 1)
         self.assertIn("initiator is unverified", result["answer"])
+
+    async def test_current_state_model_decides_read_after_unverified_no_tool_draft(self):
+        hub = FakeMCP()
+        agent = ScriptedAgent([
+            {"content": "I inspected the catalog. Please confirm a read.",
+             "tool_calls": []},
+            {"content": "", "tool_calls": [call_history(
+                {"attribute": "switch", "limit": 2})]},
+            {"content": ("A fictional bridge reported OFF in a bounded source; "
+                         "this does not establish a command initiator."),
+             "tool_calls": []},
+        ])
+        try:
+            result = await agent.answer(
+                "What is the current reported state of Fictional Relay? "
+                "Do not change anything.", [], hub, 120,
+            )
+        finally:
+            await agent.close()
+        self.assertTrue(result["success"])
+        self.assertEqual(result["rounds"], 3)
+        self.assertEqual(result["source_review_kind"], "current_state")
+        self.assertTrue(result["source_review_invoked"])
+        self.assertFalse(result["final_claim_audit_invoked"])
+        self.assertEqual(result["current_state_source_status"], "read_only_receipt_present")
+        self.assertEqual(result["tool_calls"][0]["name"], "hub_read_history")
+        self.assertTrue(result["tool_calls"][0]["success"])
+        self.assertEqual(hub.calls, [("hub_read_history", {
+            "attribute": "switch", "limit": 2,
+        })])
+        self.assertIn("bridge reported OFF", result["answer"])
+        self.assertEqual(agent.round_messages[1][-1]["role"], "user")
+        self.assertIn("read-only live-state", agent.round_messages[1][-1]["content"].lower())
+        self.assertEqual(agent.round_tools[1],
+                         ["hub_read_history", "homebrain_inspect_mcp_catalog",
+                          "homebrain_read_clock"])
+
+    async def test_model_declines_read_only_followup_without_fabricating_source(self):
+        hub = FakeMCP()
+        agent = ScriptedAgent([
+            {"content": "Please confirm I can look.", "tool_calls": []},
+            {"content": "No current source was read.", "tool_calls": []},
+        ])
+        try:
+            result = await agent.answer(
+                "Check the current status of fictional thermostat",
+                [], hub, 120,
+            )
+        finally:
+            await agent.close()
+        self.assertEqual(result["source_review_kind"], "current_state")
+        self.assertEqual(result["current_state_source_status"], "no_source_read_receipt")
+        self.assertEqual(result["final_claim_audit_status"],
+                         "not_applicable_to_current_state_review")
+        self.assertEqual(result["rounds"], 2)
+        self.assertEqual(result["tool_calls"], [])
+        self.assertEqual(hub.calls, [])
+
+    async def test_readonly_followup_rejects_model_selected_writer(self):
+        hub = FakeMCP()
+        agent = ScriptedAgent([
+            {"content": "Please confirm I can inspect it.", "tool_calls": []},
+            {"content": "", "tool_calls": [{
+                "function": {"name": "hub_manage_apps", "arguments": {
+                    "tool": "hub_set_native_app", "args": {},
+                }},
+            }]},
+            {"content": "No current device state was verified.", "tool_calls": []},
+        ])
+        try:
+            result = await agent.answer(
+                "What is the current state of fictional lamp?",
+                [], hub, 120,
+            )
+        finally:
+            await agent.close()
+        self.assertEqual(result["source_review_kind"], "current_state")
+        self.assertEqual(result["current_state_source_status"], "no_source_read_receipt")
+        self.assertEqual(hub.calls, [])
+        self.assertEqual(len(result["tool_calls"]), 1)
+        self.assertFalse(result["tool_calls"][0]["success"])
+        self.assertIn("read-only", result["tool_calls"][0]["error"])
 
     async def test_noncausal_question_keeps_normal_completion(self):
         hub = FakeMCP()

@@ -31,7 +31,7 @@ from evidence_scope import model_result_with_scope
 from investigation_review import (
     should_review_completion,
     is_read_only_review_tool, read_only_review_catalog,
-    review_kind, review_prompt,
+    review_kind, review_prompt, is_current_state_question,
     FINAL_CLAIM_AUDIT_PROMPT, should_audit_completion,
     final_claim_receipt_scope_index,
 )
@@ -871,6 +871,17 @@ class Agent:
                 "leaf_schema_discoveries": leaf_schema_discoveries,
                 "source_review_invoked": source_review_invoked,
                 "source_review_kind": source_review_kind,
+                "current_state_source_status": (
+                    "read_only_receipt_present" if is_current_state_question(question)
+                    and any(
+                        item.get("success") is True
+                        and is_read_only_review_tool(item.get("name", ""))
+                        and item.get("name") not in (_CATALOG_TOOL, _PRIOR_TOOL, CLOCK_TOOL)
+                        for item in receipts
+                    ) else
+                    "no_source_read_receipt" if is_current_state_question(question)
+                    else "not_applicable"
+                ),
                 "inventory_recovery_invoked": inventory_recovery_invoked,
                 "inventory_recovery_status": inventory_recovery_status,
                 "action_follow_through_invoked": action_follow_through_invoked,
@@ -1156,12 +1167,16 @@ class Agent:
                     already_reviewed=source_review_invoked,
                     remaining_seconds=deadline - time.monotonic(),
                     has_action_receipt=native_action_receipts_seen > 0,
+                    has_tool_receipts=bool(receipts),
+                    candidate_answer=text,
                 ):
                     capture_answer_stage("pre_source_review", text)
                     source_review_invoked = True
                     source_review_kind = (
                         "action_outcome" if native_action_receipts_seen > 0
                         else review_kind(question)
+                        or ("current_state" if not receipts
+                            and is_current_state_question(question) else None)
                     )
                     messages.append({"role": "user", "content": review_prompt(source_review_kind)})
                     continue
@@ -1172,7 +1187,7 @@ class Agent:
                         "completed" if text else "empty_response_fallback",
                     )
                 if (enable_source_review and enable_final_claim_audit
-                        and source_review_kind != "action_outcome"
+                        and source_review_kind not in ("action_outcome", "current_state")
                         and should_audit_completion(
                             source_review_invoked=source_review_invoked,
                             already_audited=final_claim_audit_invoked,
@@ -1198,6 +1213,8 @@ class Agent:
                 return completed_answer(
                     text, ("not_applicable_to_action_review"
                            if source_review_kind == "action_outcome"
+                           else "not_applicable_to_current_state_review"
+                           if source_review_kind == "current_state"
                            else "skipped_low_time" if source_review_invoked
                            and enable_source_review else "not_invoked"),
                 )
