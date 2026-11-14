@@ -1,5 +1,5 @@
 name: "Hubitat MCP AI v2 (Preview)"
-version: "2.0.0-alpha.85"
+version: "2.0.0-alpha.86"
 slug: hubitat_mcp_ai_v2
 description: "Clean, model-led Hubitat MCP assistant with external diagnostics recorder"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
@@ -28,6 +28,9 @@ options:
   model_base_url: "https://ollama.com"
   model_name: "gemma4:31b-cloud"
   model_api_key: ""
+  cloud_fallback_enabled: false
+  cloud_fallback_model: "openrouter/free"
+  cloud_fallback_api_key: ""
   model_timeout_seconds: 120
   mcp_timeout_seconds: 25
   investigation_timeout_seconds: 300
@@ -55,6 +58,9 @@ schema:
   model_base_url: str
   model_name: str
   model_api_key: password?
+  cloud_fallback_enabled: bool
+  cloud_fallback_model: str
+  cloud_fallback_api_key: password?
   model_timeout_seconds: int(10,300)
   mcp_timeout_seconds: int(5,90)
   investigation_timeout_seconds: int(30,1800)
