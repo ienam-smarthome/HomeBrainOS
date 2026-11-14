@@ -20,7 +20,9 @@ from time_evidence import (
     TOOL_NAME, clock_facts, deadline_facts, hub_clock_source, reported_hub_skew,
     write_hub_clock_skew,
 )
-from write_receipt_evidence import model_error_kind, write_failure_evidence
+from write_receipt_evidence import (
+    model_error_kind, write_failure_evidence, matches_prior_written_target,
+)
 
 
 def at(value):
@@ -151,6 +153,9 @@ class ClockEvidenceTests(unittest.TestCase):
         report = write_failure_evidence([write, read])
         self.assertEqual(len(report["executed_writes"]), 1)
         self.assertEqual(len(report["post_write_reads"]), 1)
+        self.assertTrue(report["post_write_reads"][0]["same_explicit_target_id_as_prior_write"])
+        self.assertFalse(matches_prior_written_target(
+            [write], {"deviceId": "FICTIONAL-DIFFERENT"}))
         self.assertEqual(report["post_write_reads"][0]["reported_values"]["pendingUntil"],
                          "2026-11-13T03:16:00Z")
 
@@ -291,6 +296,8 @@ class TimeActionIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("pendingUntil", result["post_write_reads"][0]["reported_values"])
         self.assertTrue(result["tool_calls"][1]["deadline_facts"]
                         ["independent_post_write_readback"])
+        self.assertTrue(result["tool_calls"][1]["deadline_facts"]
+                        ["target_identity_match_verified"])
         self.assertIn("NOT written by the model", result["answer"])
         self.assertIn("pendingUntil", result["answer"])
         self.assertIn("must not be automatically retried", result["answer"])
