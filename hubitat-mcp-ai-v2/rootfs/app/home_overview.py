@@ -122,7 +122,14 @@ def summarize_device_inventory(response):
     lights_on = motion_active = battery_low = 0
     light_covered = motion_covered = battery_covered = 0
     unclassified_switch_on = 0
-    members = {"lights_on": [], "motion_active": [], "battery_low": []}
+    contact_open = water_wet = heating_active = reported_offline = 0
+    contact_covered = water_covered = heating_covered = health_covered = 0
+    other_switch_covered = 0
+    members = {
+        "lights_on": [], "motion_active": [], "battery_low": [],
+        "contact_open": [], "water_wet": [], "heating_active": [],
+        "reported_offline": [], "other_switches_on": [],
+    }
     max_members_per_metric = 250
     for device in devices:
         if not isinstance(device, dict):
@@ -139,8 +146,12 @@ def summarize_device_inventory(response):
                     lights_on += 1
                     if len(members["lights_on"]) < max_members_per_metric:
                         members["lights_on"].append({"name": label})
-            elif switch.strip().lower() == "on":
-                unclassified_switch_on += 1
+            else:
+                other_switch_covered += 1
+                if switch.strip().lower() == "on":
+                    unclassified_switch_on += 1
+                    if len(members["other_switches_on"]) < max_members_per_metric:
+                        members["other_switches_on"].append({"name": label})
         motion = states.get("motion")
         if isinstance(motion, str) and motion.strip().lower() in ("active", "inactive"):
             motion_covered += 1
@@ -155,7 +166,44 @@ def summarize_device_inventory(response):
                 battery_low += 1
                 if len(members["battery_low"]) < max_members_per_metric:
                     members["battery_low"].append({"name": label, "battery_pct": level})
-    for key in ("lights_on", "motion_active"):
+        # Additional summaries use the SAME inventory and state dictionary.
+        # No event history, extra MCP call, inferred alerts or stale-state
+        # "recovery" is permitted. Unknown attributes are not clean states.
+        contact = states.get("contact")
+        if isinstance(contact, str) and contact.strip().lower() in ("open", "closed"):
+            contact_covered += 1
+            if contact.strip().lower() == "open":
+                contact_open += 1
+                if len(members["contact_open"]) < max_members_per_metric:
+                    members["contact_open"].append({"name": label})
+        water = states.get("water")
+        if isinstance(water, str) and water.strip().lower() in ("wet", "dry"):
+            water_covered += 1
+            if water.strip().lower() == "wet":
+                water_wet += 1
+                if len(members["water_wet"]) < max_members_per_metric:
+                    members["water_wet"].append({"name": label})
+        heat = states.get("thermostatOperatingState")
+        if heat is None:
+            heat = states.get("operatingState")
+        if isinstance(heat, str) and heat.strip().lower() in (
+                "heating", "idle", "cooling", "pending heat",
+                "pending cool", "fan only", "off"):
+            heating_covered += 1
+            if heat.strip().lower() == "heating":
+                heating_active += 1
+                if len(members["heating_active"]) < max_members_per_metric:
+                    members["heating_active"].append({"name": label})
+        health = states.get("healthStatus")
+        if isinstance(health, str) and health.strip().lower() in ("online", "offline"):
+            health_covered += 1
+            if health.strip().lower() == "offline":
+                reported_offline += 1
+                if len(members["reported_offline"]) < max_members_per_metric:
+                    members["reported_offline"].append({"name": label})
+    for key in ("lights_on", "motion_active", "contact_open",
+                "water_wet", "heating_active", "reported_offline",
+                "other_switches_on"):
         members[key].sort(key=lambda item: item["name"].casefold())
     members["battery_low"].sort(key=lambda item: (item["battery_pct"], item["name"].casefold()))
     partial = total is None or total > len(devices) or observed != len(devices)
@@ -182,11 +230,19 @@ def summarize_device_inventory(response):
             "motion_active": metric("motion_active", motion_active, motion_covered),
             "battery_low": metric("battery_low", battery_low, battery_covered,
                                   threshold_exclusive_pct=20),
+            "contact_open": metric("contact_open", contact_open, contact_covered),
+            "water_wet": metric("water_wet", water_wet, water_covered),
+            "heating_active": metric("heating_active", heating_active, heating_covered),
+            "reported_offline": metric("reported_offline", reported_offline, health_covered),
+            "other_switches_on": metric(
+                "other_switches_on", unclassified_switch_on, other_switch_covered),
         },
         "notes": [
             "Lights ON uses positive light names, device-type or colour-capability evidence; unidentified ON switches are excluded rather than counted as lights.",
             "Only returned devices reporting the relevant attribute are counted; names are truncated and the list is bounded.",
             "Absent or stale attributes are unknown, not confirmed OFF, inactive or healthy.",
+            "Contact, water, heating and health counts use only explicit returned attributes with recognised values; an absent reading is unknown, not a clean or healthy status.",
+            "ON switches lacking positive light identification are listed separately; they may be plugs, relays or other loads, not necessarily lighting.",
             "A snapshot is not the V1 scheduled system audit or proof of recent device reporting.",
         ],
     }
