@@ -104,7 +104,7 @@ class TypedHistoryProjectionTests(unittest.TestCase):
         source = receipt()
         before = json.dumps(source, sort_keys=True)
         bad_draft = (
-            "Six ON/OFF state changes, three cycles; no OFF at 21:00:34.760. "
+            "Six ON/OFF state changes, three cycles; no OFF at 2030-04-02T21:00:34.760+0000. "
             "Seven commands, last ON at 22:14:09.089 from a button."
         )
         r = verify_and_project_history(QUESTION, bad_draft, [source])
