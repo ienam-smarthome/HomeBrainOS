@@ -39,9 +39,12 @@ DEFAULTS: dict[str, Any] = {
     "hubitat_mcp_token": "",
     "cloud_mode": "free",
     "cloud_free_model": "openrouter/free",
+    "cloud_paid_provider": "openrouter",
     "cloud_paid_model": "google/gemini-3.1-flash-lite",
+    "ollama_cloud_model": "nemotron-3-super",
     "cloud_paid_consent": False,
     "cloud_api_key": "",
+    "ollama_cloud_api_key": "",
     "model_timeout_seconds": 120,
     "mcp_timeout_seconds": 25,
     "investigation_timeout_seconds": 300,
@@ -119,8 +122,11 @@ async def lifecycle(app: FastAPI):
             mode=str(options["cloud_mode"]),
             free_model=str(options["cloud_free_model"]),
             paid_model=str(options["cloud_paid_model"]),
+            paid_provider=str(options["cloud_paid_provider"]),
+            ollama_model=str(options["ollama_cloud_model"]),
             paid_consent=options["cloud_paid_consent"],
             api_key=str(options["cloud_api_key"]),
+            ollama_api_key=str(options["ollama_cloud_api_key"]),
             model_timeout=int(options["model_timeout_seconds"]),
             cpu_cores=int(options["external_hub_diagnostics_cpu_cores"]),
         )
@@ -195,7 +201,7 @@ async def lifecycle(app: FastAPI):
             await app.state.model.close()
 
 
-app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.89", lifespan=lifecycle)
+app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.90", lifespan=lifecycle)
 app.include_router(benchmark_router)
 app.include_router(autonomous_router)
 app.include_router(reasoning_router)
@@ -242,6 +248,8 @@ async def status():
         "model": (app.state.model.model if app.state.model else
                   str(options.get("cloud_free_model", "openrouter/free")
                       if options.get("cloud_mode", "free") == "free"
+                      else options.get("ollama_cloud_model", "nemotron-3-super")
+                      if options.get("cloud_paid_provider", "openrouter") == "ollama"
                       else options.get("cloud_paid_model",
                                        "google/gemini-3.1-flash-lite"))),
         "model_routing": (app.state.model.route_status()

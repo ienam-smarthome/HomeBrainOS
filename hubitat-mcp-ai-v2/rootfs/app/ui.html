@@ -601,7 +601,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
  <h2>AI Evaluation · experimental</h2>
  <div class="card" id="cloudProbeCard">
   <h3>Cloud tool-calling test</h3>
-  <p class="muted">One explicit OpenRouter model request with a fictional read-only test tool. No Hubitat/MCP calls, household data, or real device changes. Uses one free-model request or may incur paid-model charges when paid mode is explicitly configured.</p>
+  <p class="muted">One explicit request to the selected cloud provider (OpenRouter or Ollama Cloud), with a fictional read-only test tool. No Hubitat/MCP calls, household data, or real device changes. Uses one free-model request or may incur paid-model charges when paid mode is explicitly configured.</p>
   <div class="row">
    <button type="button" id="cloudProbeRun" onclick="testCloudToolCalling()">Test cloud tool calling</button>
    <span id="cloudProbeStatus" class="eval-meta" role="status" aria-live="polite">Not tested. Results are synthetic and do not prove live MCP accuracy.</span>
@@ -665,7 +665,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 </section>
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.89";
+const UI_VERSION="2.0.0-alpha.90";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
@@ -686,7 +686,7 @@ async function testCloudToolCalling(){
    method:'POST',headers:{'X-Homebrain-Request':'1'}
   });
   status.textContent=(d.tool_call_test_passed?'✓ Tool request correctly selected':'⚠ No valid tool request returned')
-   +' · '+(d.mode||'unknown')+' · '+(d.model||'unknown')
+   +' · '+(d.provider==='ollama'?'Ollama Cloud':'OpenRouter')+' · '+(d.mode||'unknown')+' · '+(d.model||'unknown')
    +' · '+(Number(d.elapsed_ms||0)/1000).toFixed(1)+'s'
    +' · No Hubitat tools executed';
  }catch(e){status.textContent='Cloud tool test failed: '+String(e.message)}
@@ -951,9 +951,11 @@ async function loadStatus(){
   byId('state').textContent=d.configured?'● Configured · '+d.version:'● Setup required · '+d.version;
   const route=d.model_routing||{};
   const mode=route.mode==='paid'?'paid (explicitly enabled)':'free';
+  const selectedProvider=route.primary==='ollama'?'Ollama Cloud':'OpenRouter';
   const lastRoute=route.last_attempt?.provider;
-  const last=lastRoute==='openrouter'?' · Last inference: OpenRouter attempted':'';
-  byId('statusMeta').textContent='Version: '+d.version+' · Cloud: OpenRouter '+mode
+  const last=(lastRoute==='openrouter'||lastRoute==='ollama')
+    ?' · Last inference: '+(lastRoute==='ollama'?'Ollama Cloud':'OpenRouter')+' attempted':'';
+  byId('statusMeta').textContent='Version: '+d.version+' · Cloud: '+selectedProvider+' '+mode
    +' · Model: '+(d.model||'unknown')+last
    +' · MCP: '+(d.configured?'configured (connection not independently probed)':'not ready')
    +' · Hub: '+(d.hub||'name unavailable from status source')
@@ -1454,8 +1456,10 @@ function showResult(question,answer,response,clientMs,error=null,requestId=activ
  if(response?.current_state_source_status==='no_source_read_receipt')
    byId('requestSummary').textContent+=' Current-state answer unverified: no successful device read receipt.';
  if(response?.model_route?.provider==='cloud')
-   byId('requestSummary').textContent+=' Model: OpenRouter '+(response.model_route.mode||'cloud')
-    +' · private question and native evidence were sent to the cloud provider.';
+   byId('requestSummary').textContent+=' Model: '
+    +(response.model_route.attempted_provider==='ollama'?'Ollama Cloud':'OpenRouter')
+    +' '+(response.model_route.mode||'cloud')
+    +' · private question and native evidence were sent to the selected cloud provider.';
  if(response?.success===false&&Array.isArray(response?.executed_writes)&&response.executed_writes.length){
   byId('requestSummary').textContent+=' Important: '+response.executed_writes.length+
    ' native write response(s) returned before the model failed. See original receipts; do not retry blindly.';

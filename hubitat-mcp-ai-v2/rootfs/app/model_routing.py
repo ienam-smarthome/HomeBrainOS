@@ -1,8 +1,8 @@
-"""HomeBrainOS V2 cloud-only OpenRouter inference.
+"""HomeBrainOS V2 cloud-only routing: OpenRouter free/paid or paid Ollama Cloud.
 
-The native MCP agent owns the tool strategy, receives original read results and
-requires approval for writes. This module handles only model inference. There
-is no LAN Ollama transport, model process, free-to-paid retry or billing switch.
+The native MCP agent owns investigation and native write approvals.
+The user selects exactly one provider for each installed config. No LAN Ollama,
+automatic free-to-paid conversion, cross-provider retry or billing switch.
 """
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from typing import Any
 import httpx
 
 from agent import Agent
+from ollama_cloud import OllamaCloudChat
 
 _FREE_MODEL = re.compile(r"^[a-zA-Z0-9._-]+/[a-zA-Z0-9._:-]+$")
 _PAID_MODEL = re.compile(r"^[a-zA-Z0-9._-]+/[a-zA-Z0-9._:-]+$")
@@ -198,18 +199,38 @@ class OpenRouterChat:
 
 
 class CloudAgent(Agent):
-    """V2 Agent orchestration with OpenRouter only; no Ollama model client."""
+    """V2 Agent orchestration with an explicitly selected cloud provider."""
 
     def __init__(self, *, mode: str = "free",
                  free_model: str = "openrouter/free",
                  paid_model: str = "google/gemini-3.1-flash-lite",
                  paid_consent: bool = False, api_key: str = "",
+                 paid_provider: str = "openrouter",
+                 ollama_model: str = "nemotron-3-super",
+                 ollama_api_key: str = "",
                  model_timeout: int = 120, cpu_cores: int = 4):
-        self.cloud = OpenRouterChat(
-            mode=mode, free_model=free_model, paid_model=paid_model,
-            paid_consent=paid_consent, api_key=api_key,
-            timeout=model_timeout,
-        )
+        if mode not in ("free", "paid"):
+            raise ValueError("Cloud mode must be free or paid")
+        if paid_provider not in ("openrouter", "ollama"):
+            raise ValueError("Paid provider must be openrouter or ollama")
+        if type(paid_consent) is not bool:
+            raise ValueError("Paid model consent must be a boolean")
+        if mode == "paid" and not paid_consent:
+            raise ValueError("Paid cloud mode requires explicit cloud_paid_consent=true")
+        # Free ALWAYS remains OpenRouter free, regardless of stored paid
+        # provider or key. Only the chosen provider/client is constructed.
+        self.provider = "ollama" if mode == "paid" and paid_provider == "ollama" else "openrouter"
+        if self.provider == "ollama":
+            self.cloud = OllamaCloudChat(
+                model=ollama_model, api_key=ollama_api_key,
+                paid_consent=paid_consent, timeout=model_timeout,
+            )
+        else:
+            self.cloud = OpenRouterChat(
+                mode=mode, free_model=free_model, paid_model=paid_model,
+                paid_consent=paid_consent, api_key=api_key,
+                timeout=model_timeout,
+            )
         self.model = self.cloud.model
         self.timeout = max(10, int(model_timeout))
         self.cpu_cores = max(1, min(64, int(cpu_cores)))
@@ -222,7 +243,7 @@ class CloudAgent(Agent):
 
     def route_status(self) -> dict[str, Any]:
         return {
-            "primary": "openrouter",
+            "primary": self.provider,
             "primary_model": self.model,
             "mode": self.cloud.mode,
             "paid_mode": self.cloud.mode == "paid",
@@ -232,12 +253,11 @@ class CloudAgent(Agent):
         }
 
     async def answer(self, *args, **kwargs) -> dict:
-        # Existing agent chooses the native MCP reads/writes and enforces
-        # approvals; the model provider does not modify its tool-call loop.
+        # Existing agent chooses native MCP reads/writes and enforces approvals.
         result = await super().answer(*args, **kwargs)
         result["model_route"] = {
             "provider": "cloud",
-            "attempted_provider": "openrouter",
+            "attempted_provider": self.provider,
             "mode": self.cloud.mode,
             "model": self.model,
             "status": ("completed_model_round" if result.get("rounds", 0) > 0
@@ -248,8 +268,8 @@ class CloudAgent(Agent):
 
     async def round(self, messages: list[dict], tools: list[dict],
                     remaining: float) -> dict:
-        # Never fallback to a paid model, another provider or local LLM.
-        self.last_attempt = {"provider": "openrouter", "mode": self.cloud.mode}
+        # No fallback, retries, or changes of paid/free status.
+        self.last_attempt = {"provider": self.provider, "mode": self.cloud.mode}
         return await self.cloud.round(messages, tools, remaining)
 
 
@@ -300,6 +320,7 @@ async def probe_cloud_tool_call(agent: CloudAgent) -> dict:
     return {
         "tool_call_test_passed": verified,
         "model": agent.model,
+        "provider": agent.provider,
         "mode": agent.cloud.mode,
         "model_rounds": 1,
         "elapsed_ms": round((time.monotonic() - started) * 1000),
