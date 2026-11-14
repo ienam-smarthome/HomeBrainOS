@@ -926,6 +926,36 @@ class Agent:
                 ),
                 "answer_stage_trace": answer_stage_trace,
                 "available_read_sources": source_catalog,
+                "read_source_usage": {
+                    "native_device_event_reads": sum(
+                        row.get("name") == "hub_list_device_events"
+                        and row.get("success") is True for row in receipts
+                    ),
+                    "hub_device_monitor_tool_attempts": sum(
+                        row.get("name") == MONITOR_TOOL for row in receipts
+                    ),
+                    "hub_device_monitor_status_reads": sum(
+                        row.get("name") == MONITOR_TOOL
+                        and row.get("success") is True
+                        and isinstance(row.get("arguments"), dict)
+                        and row["arguments"].get("mode") == "status"
+                        for row in receipts
+                    ),
+                    "hub_device_monitor_historical_reads": sum(
+                        row.get("name") == MONITOR_TOOL
+                        and row.get("success") is True
+                        and isinstance(row.get("arguments"), dict)
+                        and row["arguments"].get("mode") in ("history", "compare")
+                        for row in receipts
+                    ),
+                    "hub_device_monitor_history_used": any(
+                        row.get("name") == MONITOR_TOOL
+                        and row.get("success") is True
+                        and isinstance(row.get("arguments"), dict)
+                        and row["arguments"].get("mode") in ("history", "compare")
+                        for row in receipts
+                    ),
+                },
                 "file_read_coverage": file_reads.snapshot(),
                 "tool_calls": receipts,
                 "rounds": rounds,
@@ -1332,7 +1362,9 @@ class Agent:
                     # Replay only a compact source-scope navigation aid; the
                     # model's original read receipts remain unchanged and
                     # authoritative. No new source or tool call is introduced.
-                    scope_index = final_claim_receipt_scope_index(receipts)
+                    scope_index = final_claim_receipt_scope_index(
+                        receipts, draft_answer=text
+                    )
                     messages.append({
                         "role": "user",
                         "content": FINAL_CLAIM_AUDIT_PROMPT
