@@ -118,6 +118,13 @@ Distinguish whether the question asks about the latest event of a SPECIFIC
 type versus the latest overall state, and disclose later changes.
 Check actual returned filters, lookback, result limits, chronology and
 competing explanations.
+Before selecting another source, use the receipts ALREADY retrieved. Check
+source-provided exact event-name counts for repeated command types, compare
+the source-matched log count against the actual returned log entries and their
+times, and inspect relevant configured selected-input groups rather than
+fixating on a single participant. Return-limit and match-count differences
+are evidence of bounded coverage, not missing actions or proven exclusivity.
+Selected current input references are not historical trigger execution proof.
 A filtered state history without command rows does not rule out unseen
 commands. A device/bridge reporter and notified listeners do not prove
 external initiation. Chronological compatibility alone does not prove cause.
