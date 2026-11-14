@@ -849,7 +849,7 @@ async function submit(text){
   const history=conversationHistory.slice(-8);
   answer.classList.add('busy');recordTrace('Starting request',0);
   const body=answer.querySelector('.exchange-body');
-  if(body)body.textContent='Working… You can ask another question to replace this request.';
+  if(body)body.textContent='Starting request… Ask another question to replace this request.';
   const progressTimer=setInterval(async()=>{
     if(sequence!==requestSequence||controller.signal.aborted)return;
     try{
@@ -1024,6 +1024,10 @@ mic.addEventListener('click',event=>{if(event.detail===0)startVoice()});
 mic.addEventListener('contextmenu',event=>event.preventDefault());
 // Retained only for old DOM contract tests; never a second on-screen mic.
 document.getElementById('micFab').hidden=true;
+
+document.getElementById('runHealthAudit').onclick=async()=>{const button=document.getElementById('runHealthAudit');button.disabled=true;button.textContent='🩺 Checking…';try{const data=await jsonResponse(await fetch(apiPath('api/health-audit/run'),{method:'POST'}));renderHealthAuditV2(data);document.getElementById('healthAuditDetails').open=true}catch(error){document.getElementById('healthAuditMeta').textContent='System check failed: '+error.message}finally{button.disabled=false;button.textContent='🩺 Run system check now'}};
+document.getElementById('sendPushoverReport').onclick=async()=>{const button=document.getElementById('sendPushoverReport'),meta=document.getElementById('healthAuditMeta');button.disabled=true;button.textContent='📲 Sending report…';try{const response=await fetch(apiPath('api/pushover/report'),{method:'POST'}),data=await jsonResponse(response);if(!response.ok||!data.success)throw new Error(data.detail||'Pushover rejected the report');meta.textContent=data.message||'Latest System Check report sent to Pushover.';button.textContent='✅ Report sent'}catch(error){meta.textContent='Pushover report failed: '+error.message;button.textContent='❌ Send failed'}finally{setTimeout(()=>{button.disabled=false;button.textContent='📲 Send report to Pushover'},1800)}};
+
 
 let journalBrowseOffset=0;
 function journalBrowseParameters(){
