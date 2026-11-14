@@ -83,10 +83,15 @@ def queued_action_card(actions: object) -> dict[str, Any] | None:
                              "command": "Read-only companion", "fields": []})
             continue
         shown: dict[str, str] = {}
-        verb = ""
-        for key, raw in _walk(args):
-            if key in _ALLOWED_COMMAND_KEYS and not verb:
-                verb = _public_value(raw) or ""
+        pairs = list(_walk(args))
+        # The outer gateway selector describes a transport surface, not the
+        # driver's native requested command. Prefer the leaf's command.
+        verb = next((
+            candidate for selected in ("command", "operation", "action", "tool")
+            for key, raw in pairs if key == selected
+            for candidate in [_public_value(raw)] if candidate
+        ), "")
+        for key, raw in pairs:
             for slot, keys in _ALLOWED_FIELDS:
                 if slot not in shown and key in keys:
                     valid = _public_value(raw)
