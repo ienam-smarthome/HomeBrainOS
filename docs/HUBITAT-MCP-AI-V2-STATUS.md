@@ -1,5 +1,9 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 14 November 2026 — alpha.84 Ask/Chat focused layout
+
+The device overview leaves Ask/Chat entirely and is retained as an optional expandable inventory panel within System Health. Ask keeps one spacious column, clear input/answer hierarchy, readable prior answers and original evidence/approval controls. Existing startup `/api/overview` and manual refresh remain the only inventory queries; opening System Health or expanding cached names makes no native or model request. V1 untouched; synthetic tests do not verify installed UX. [Engineering note](HOMEBRAIN-V2-ALPHA84-FOCUSED-ASK-20261114.md).
+
 ## 14 November 2026 — alpha.83 named system snapshot and System Health
 
 V2 Home Overview is expanded to nine compact named metrics from the original single read-only Hubitat inventory. The new System Health tab groups observed potential-attention states and currently reported activity, with coverage and named members. All pill expanders and tab changes are DOM-only, without extra inventory reads or Ollama calls. Investigate shortcuts prefill Ask without submitting. This is not a system-health oracle or active monitoring service: missing values are unknown, and offline/heating readings are sourced attributes only. V1 remains unchanged. [Engineering note](HOMEBRAIN-V2-ALPHA83-SYSTEM-HEALTH-SNAPSHOT-20261114.md).

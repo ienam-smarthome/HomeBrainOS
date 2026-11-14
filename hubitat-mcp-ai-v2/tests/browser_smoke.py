@@ -247,6 +247,14 @@ with sync_playwright() as p:
   errors=[];page.on("pageerror",lambda e:errors.append(str(e)))
   page.goto(f"http://127.0.0.1:{server.server_port}")
   page.wait_for_function("document.querySelector('#overviewLights').textContent === '1'")
+  assert page.locator("#ask .overview-aside").count()==0,"Ask must not contain the device overview"
+  assert page.locator("#systemHealth .overview-aside").count()==1
+  assert not page.locator("#overviewLightsToggle").is_visible(),"Device overview is on System Health only"
+  if width==1280:
+   assert page.locator(".ask-grid").bounding_box()["width"]>850,"Chat should use a wide single column"
+  page.locator("#systemHealthTab").click()
+  assert not page.locator("#overviewLightsToggle").is_visible(),"Full overview begins collapsed"
+  page.locator("#healthInventoryDetails > summary").click()
   assert page.locator("#overviewLightsPreview").inner_text()=="Lab Sample Light 2"
   assert page.locator("#overviewMotionPreview").inner_text()=="Lab Motion A"
   assert page.locator("#overviewBatteryPreview").inner_text()=="Lab Battery Sensor · 9%"
@@ -285,8 +293,10 @@ with sync_playwright() as p:
   assert len(requests)==0,"Preparing question does not submit to model"
   page.locator("#question").fill("")
   assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+  page.locator("#systemHealthTab").click()
   page.locator("#refreshOverview").click()
   page.wait_for_function("!document.querySelector('#refreshOverview').disabled")
+  page.locator("#askTab").click()
   assert page.locator("#overviewLights").inner_text()=="1"
   assert len(requests)==0,"Overview refresh is read-only; no Ask call"
   assert len(overview_requests)==2,"Only manual refresh adds an inventory read"

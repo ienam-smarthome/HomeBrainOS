@@ -121,7 +121,7 @@ AUDIT_SELECTORS = {
     "ask": [
         "#ask .compose-subtitle",
         "#ask .voice-privacy",
-        "#ask .overview-tile small",
+        "#ask .compose-heading h2",
         "#ask .feed-empty span",
     ],
     "systemHealth": [
@@ -135,6 +135,7 @@ AUDIT_SELECTORS = {
         "#systemHealth .health-guide h4",
         "#systemHealth .health-guide p",
         "#systemHealth .health-guide button",
+        "#systemHealth .health-inventory-details > summary",
     ],
     "diagnostics": [
         "#diagnostics #cards .metric small",

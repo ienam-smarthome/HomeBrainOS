@@ -1,5 +1,9 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## Alpha.84 installed Ask/Chat acceptance
+
+Update only the V2 Preview add-on to alpha.84. Confirm Ask / Chat has no Home Overview sidebar/cards, input and newest answer use a centred single column, mobile and light/dark rendering remain readable, the voice button and actual pending-approval cards still work, and conversation/evidence/Copy for review are accessible. In System Health, expand **Device overview** to view all nine named pills and use the existing manual Refresh button; check browser requests show the original single startup `/api/overview`, no extra read on tab open or pill disclosure, and no `/api/ask` until the owner submits. Do not treat this coached visual check as a fresh Gate B model-answer sample. V1 unchanged.
+
 ## Alpha.83 installed System Health acceptance
 
 After updating, inspect one existing overview snapshot: expand named lights, motion and low batteries plus contact/water/heating/reported-offline/other-ON if available. Open System Health repeatedly and verify counts/names agree with the same snapshot without additional `/api/overview` or `/api/ask` network requests. A troubleshooting shortcut should **prepare**, not submit, a question; only owner pressing Ask should invoke Ollama. Check partial inventory and absent-attribute cases render unknown, not false zero/healthy claims. This is a read-only UI acceptance check, not a blind Gate B answer benchmark. V1 unchanged.

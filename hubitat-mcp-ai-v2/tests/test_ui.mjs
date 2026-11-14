@@ -32,6 +32,13 @@ function harness(){
  return{state,el,timers,timeouts,navigator,run:code=>vm.runInContext(code,context),flushTimeouts(){const scheduled=[...timeouts.values()];timeouts.clear();for(const fn of scheduled)fn();},get copied(){return copied;},get fallback(){return fallback;},get focused(){return focused;},get askCalls(){return askCalls;},get overviewCalls(){return overviewCalls;},get clearCalls(){return clearCalls;}};
 }
 const h=harness();
+// Overview controls live in System Health, never inside the Ask/Chat surface.
+const askSection=html.split('<section id="ask"')[1].split('<section id="systemHealth"')[0];
+const healthSection=html.split('<section id="systemHealth"')[1].split('<section id="diagnostics"')[0];
+assert(!askSection.includes('class="overview-aside"'), 'Ask must not contain the overview');
+assert(healthSection.includes('class="overview-aside"'), 'System Health keeps device names and refresh');
+assert(healthSection.includes('id="healthInventoryDetails"'), 'Full inventory is an optional disclosure');
+assert(html.includes('class="answer-feed" id="answerFeed"'), 'Conversation feed retained');
 // The overview is an independently authenticated, read-only source request.
 assert(html.includes('id="refreshOverview"'));
 assert(html.includes('id="overviewLights"'));
