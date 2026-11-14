@@ -420,7 +420,44 @@ try{localStorage.removeItem('hmcp_chats_v1');sessionStorage.removeItem('hmcp_ses
   for(let i=sessionStorage.length-1;i>=0;i--){const key=sessionStorage.key(i);
     if(key&&key.startsWith('hmcp_history_'))sessionStorage.removeItem(key)}}catch(error){}
 document.getElementById('title').textContent=TITLE;document.getElementById('version').textContent='v'+VERSION;
-const query=document.getElementById('query'),ask=document.getElementById('ask'),answer=document.getElementById('answer');
+const query=document.getElementById('query'),ask=document.getElementById('ask');
+const feed=document.getElementById('exchangeFeed');
+let answer=document.getElementById('answer'),activeTrace=[],currentQuestion='';
+function syncCommandBar(){
+  query.style.height='auto';query.style.height=Math.min(132,Math.max(44,query.scrollHeight))+'px';
+  const ready=!!query.value.trim();ask.disabled=!ready;ask.classList.toggle('ready',ready);
+}
+function beginExchange(question){
+  const empty=document.getElementById('feedEmpty');if(empty)empty.remove();
+  if(answer&&!answer.hidden){
+    answer.classList.add('older');answer.removeAttribute('id');
+    answer.querySelectorAll('.action-controls button').forEach(button=>button.disabled=true);
+    answer=document.createElement('article');answer.className='exchange';answer.id='answer';
+    answer.setAttribute('role','status');feed.prepend(answer);
+  }
+  answer.hidden=false;answer.dataset.question=question;answer.replaceChildren();
+  const asked=document.createElement('p');asked.className='exchange-question';
+  asked.append('You asked: ');
+  const name=document.createElement('strong');name.textContent=question;asked.appendChild(name);
+  answer.appendChild(asked);
+  const trace=document.createElement('ol');trace.className='work-trace';trace.setAttribute('aria-label','Observed work');
+  answer.appendChild(trace);activeTrace=[];currentQuestion=question;
+  const body=document.createElement('div');body.className='exchange-body';
+  body.textContent='Starting request…';answer.appendChild(body);
+  return answer;
+}
+function recordTrace(stage,elapsed){
+  const value=String(stage||'').trim();if(!value||value==='Waiting for request')return;
+  if(activeTrace.length&&activeTrace[activeTrace.length-1].stage===value)return;
+  activeTrace.push({stage:value,elapsed:typeof elapsed==='number'&&Number.isFinite(elapsed)?elapsed:null});
+  const timeline=answer.querySelector('.work-trace');if(!timeline)return;
+  const li=document.createElement('li');li.textContent=value;
+  if(typeof elapsed==='number'&&Number.isFinite(elapsed)){
+    const time=document.createElement('small');time.textContent='observed '+elapsed.toFixed(1)+'s';li.appendChild(time);
+  }
+  timeline.appendChild(li);
+}
+
 const modelTier=document.getElementById('modelTier'),modelTierNote=document.getElementById('modelTierNote');
 function describeModelTier(){const mode=modelTier.value;modelTierNote.textContent=mode==='free'?'Free: use the configured default model; never upgrade this request to paid.':mode==='paid'?'Paid: DeepSeek Pro only. No Gemma fallback or HomeBrain budget; Ollama account credits apply.':mode==='claude'?'Paid: Claude via the Anthropic API. Anthropic bills separately; no Gemma or DeepSeek fallback.':'Auto: opt-in to existing hybrid routing (may use Ollama paid credits).';}
 modelTier.value='free';modelTier.onchange=describeModelTier;describeModelTier();
@@ -513,7 +550,14 @@ let suggestedAction=null,conversationHistory=[];
 function resetConversation(){
   if(activeRequest){activeRequest.abort();activeRequest=null;requestSequence++}
   stopAudio();suggestedAction=null;conversationHistory=[];sessionId=newSessionId();
-  query.value='';answer.classList.remove('busy');answer.textContent='Ready for a new topic.';
+  query.value='';syncCommandBar();
+  feed.replaceChildren();
+  answer=document.createElement('article');answer.className='exchange';answer.id='answer';answer.hidden=true;
+  answer.setAttribute('role','status');feed.appendChild(answer);
+  const empty=document.createElement('p');empty.className='feed-empty';empty.id='feedEmpty';
+  empty.textContent='What should the house do? ';const sub=document.createElement('span');
+  sub.textContent='Your newest answer will appear here.';empty.appendChild(sub);feed.prepend(empty);
+  activeTrace=[];currentQuestion='';
   document.getElementById('lastRoute').textContent='—';
   document.getElementById('lastTime').textContent='—';query.focus();
 }
