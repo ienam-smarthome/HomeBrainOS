@@ -10,6 +10,7 @@ import re
 import json
 
 from temporal_receipt_fidelity import temporal_receipt_fidelity_index
+from receipt_completeness_index import original_event_completeness_index
 
 # Light-touch eligibility for a *missing-source* checkpoint: explicit live
 # measurement/state reads only, not generic knowledge questions or writes.
@@ -508,7 +509,16 @@ a correctly qualified explanation.
 
 Before saying "only one" or "no other" command/event occurred, compare the
 claim with EVERY relevant exact event name/count in the original returned
-rows. More than one returned command of the same type disproves a claim
+rows. Reconcile each draft's statement of a TOTAL NUMBER of observation
+batches, events, and refreshes against every returned matching event row.
+Use source timestamps for the CADENCE: do not call six observations about
+30 minutes apart "four hourly refreshes". A draft may cite just selected
+illustrative rows, but a claim that those are the ONLY relevant returned
+observations must match ALL original rows of each named event type.
+Also check EVERY returned command row that is material to the timeline,
+including commands the draft omitted. Preserve command name, time and
+recorded issuer while separating a command being issued from its execution
+or any controller's unverified internal reason. More than one returned command of the same type disproves a claim
 that only one exists IN THE WHOLE RETURNED WINDOW; it does not preclude one
 specific command being closest in time to the focal outcome. Distinguish
 a unique command immediately adjacent to the focal event from unique
@@ -958,10 +968,15 @@ def final_claim_receipt_scope_index(
     temporal_anchors = temporal_receipt_fidelity_index(
         receipts, draft_answer
     ) if draft_answer else None
+    completeness_anchors = original_event_completeness_index(
+        receipts, draft_answer
+    ) if draft_answer else None
     return json.dumps({
         "note": "Navigation index from returned receipt fields ONLY; not independent evidence. Do not infer unseen records absent. Failed calls are not empty successes. Inspect original receipts for full detail.",
         **({"temporal_event_anchors": temporal_anchors}
            if temporal_anchors is not None else {}),
+        **({"original_event_completeness": completeness_anchors}
+           if completeness_anchors is not None else {}),
         "indexed_receipts": rows,
         "failed_calls_in_indexed_receipts": sum(
             row.get("read_failed") is True for row in rows),
