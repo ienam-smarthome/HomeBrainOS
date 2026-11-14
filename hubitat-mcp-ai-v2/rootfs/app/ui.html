@@ -992,6 +992,16 @@ function archivePriorExchange(){
  const drawer=document.createElement('details'),summary=document.createElement('summary');
  const count=Array.isArray(capture.response?.tool_calls)?capture.response.tool_calls.length:0;
  summary.textContent='Evidence · '+count+' calls · PRIVATE JSON';drawer.appendChild(summary);
+ const receipts=Array.isArray(capture.response?.tool_calls)?capture.response.tool_calls:[];
+ for(const rec of receipts){
+  if(!rec||typeof rec!=='object')continue;
+  const row=document.createElement('div');row.className='evidence-receipt';
+  const label=document.createElement('span');label.textContent=String(rec.name||'MCP tool');
+  const info=document.createElement('small');info.textContent=
+   (rec.success===true?'success':rec.success===false?'failed':'status unknown')+
+   (typeof rec.elapsed_ms==='number'?' · '+(rec.elapsed_ms/1000).toFixed(2)+'s':'');
+  row.append(label,info);drawer.appendChild(row);
+ }
  const warning=document.createElement('p');warning.className='private-warning';
  warning.textContent='PRIVATE: inspect original MCP receipts before sharing.';drawer.appendChild(warning);
  const download=document.createElement('button');download.type='button';download.textContent='Download PRIVATE JSON';
