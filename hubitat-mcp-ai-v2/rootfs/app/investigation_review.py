@@ -745,7 +745,7 @@ def final_claim_receipt_scope_index(receipts: list[dict]) -> str:
             # arguments). A simple status code is safe diagnostic metadata.
             item["read_failed"] = True
             error = record.get("error")
-            match = re.search(r"\\bHTTP\\s+([45]\\d{2})\\b", error,
+            match = re.search(r"\bHTTP\s+([45]\d{2})\b", error,
                               re.IGNORECASE) if isinstance(error, str) else None
             if match is not None:
                 item["read_error_class"] = "http"
