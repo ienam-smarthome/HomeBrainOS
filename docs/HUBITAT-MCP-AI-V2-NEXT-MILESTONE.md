@@ -1,5 +1,11 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## Alpha.95 transport visibility and cautious read-only acceptance
+
+The installed alpha.94 request that returned MCP HTTP 503 in approximately 0.1 seconds contained zero native tool receipts, no model execution and no causal evidence. It is an **infrastructure/source-access failure**, not a valid model-quality score or a proven hub-overload diagnosis. Alpha.95's new `mcp_failure.phase=initial_catalog` must describe this path with no new requests, model rounds, automatic retries, secrets or device changes. A reoccurrence is not a reason to repeatedly probe an unstable hub.
+
+When the hub is stable, launch V2 only by explicit operator choice, and make one new read-only first-answer request. Retain private original receipts and verify catalog access, actual model inference, source windows, error classes, native call count, duration and correct uncertainty. Do not change model/provider or cloud consent for this acceptance; keep V1 untouched. [Safety and acceptance note](HOMEBRAIN-V2-ALPHA95-INITIAL-MCP-CATALOG-FAILURE-20261114.md).
+
 ## Alpha.94 read-only source-real acceptance
 
 On a genuinely new causal first answer after V2 Preview alpha.94 upgrade, confirm a model independently distinguishes: (1) direct prior/target state and timestamps, (2) recorded command issuer from reporter and listeners, (3) configured selected inputs vs explicitly null/empty current inputs and unknown historical inputs, and (4) a failed read versus a successful empty query. Retain original source scope/lookback and material unknowns. Compare actual response length, nine-versus-fewer model rounds where applicable, cumulative output/input tokens, duration and no writes. The 350–550-word final audit target is only model guidance, not guaranteed performance. [Acceptance details](HOMEBRAIN-V2-ALPHA94-EVIDENCE-CONTRADICTION-ERROR-20261114.md).
