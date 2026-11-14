@@ -1,5 +1,9 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 14 November 2026 — alpha.85 model-led requested-vs-returned source calibration
+
+A private installed alpha.84 first-answer review found that the model incorrectly treated the earliest returned sensor event as the requested 24-hour history boundary, and promoted subsequent device-reported zero power to independently verified physical shutdown, despite intervening samples. Older reviews across different domains recorded related evidence-calibration gaps. Alpha.85 tightens the existing source-review and final-claim audit instructions: compare focal timestamp against requested window separately from returned row bounds; preserve positive issuers but distinguish reported telemetry from independent physical proof. No new model call, forced source, tool effect, automatic rewrite or V1 runtime change. Longer existing prompts may use slightly more tokens. All tests are fictional; improved installed first-answer quality remains unmeasured. [Alpha.85 note](HOMEBRAIN-V2-ALPHA85-RECEIPT-TIME-CALIBRATION-20261114.md).
+
 ## 14 November 2026 — alpha.84 Ask/Chat focused layout
 
 The device overview leaves Ask/Chat entirely and is retained as an optional expandable inventory panel within System Health. Ask keeps one spacious column, clear input/answer hierarchy, readable prior answers and original evidence/approval controls. Existing startup `/api/overview` and manual refresh remain the only inventory queries; opening System Health or expanding cached names makes no native or model request. V1 untouched; synthetic tests do not verify installed UX. [Engineering note](HOMEBRAIN-V2-ALPHA84-FOCUSED-ASK-20261114.md).

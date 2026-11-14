@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "rootfs" / "app"))
 from agent import Agent
 from investigation_review import (
     FINAL_CLAIM_AUDIT_PROMPT, should_audit_completion,
+    final_claim_receipt_scope_index,
 )
 
 
@@ -184,6 +185,14 @@ class FinalAuditPromptTests(unittest.TestCase):
         self.assertIn("physical-tagged state report", FINAL_CLAIM_AUDIT_PROMPT)
         self.assertIn("real command-off issuer", FINAL_CLAIM_AUDIT_PROMPT)
         self.assertIn("There are NO tools", FINAL_CLAIM_AUDIT_PROMPT)
+        # Time-window overlap and physical claims must be audited against
+        # original receipts, not inferred from the first returned event.
+        self.assertIn("first returned row is NOT the query start",
+                      FINAL_CLAIM_AUDIT_PROMPT)
+        self.assertIn("inside the query", FINAL_CLAIM_AUDIT_PROMPT)
+        self.assertIn("intervening nonzero readings", FINAL_CLAIM_AUDIT_PROMPT)
+        self.assertIn("independent physical verification",
+                      FINAL_CLAIM_AUDIT_PROMPT)
         self.assertTrue(should_audit_completion(
             source_review_invoked=True, already_audited=False,
             remaining_seconds=40, has_draft=True,
@@ -196,6 +205,58 @@ class FinalAuditPromptTests(unittest.TestCase):
             source_review_invoked=False, already_audited=False,
             remaining_seconds=40, has_draft=True,
         ))
+
+
+    def test_scope_index_preserves_disjoint_returned_rows_and_requested_window(self):
+        """Fictional overlap: requested interval includes focal event, but returned
+        sensor rows begin later. The source index must not invent a retention cause.
+        """
+        native = {
+            "sinceTimestamp": "2026-03-01T11:48:00+0000",
+            "hoursBack": 24,
+            "events": [{"name": "humidity", "value": "52",
+                        "date": "2026-03-02T02:05:40+0000"}],
+            "count": 1,
+        }
+        receipt = {
+            "name": "hub_list_device_events",
+            "arguments": {"deviceId": "LAB-SENSOR", "hoursBack": 24,
+                          "secret": "do-not-export"},
+            "success": True,
+            "response": json.dumps({
+                "client_claim_evidence_headline": {
+                    "source_kind": "bounded returned device event rows",
+                    "returned_row_count": 1,
+                    "oldest_returned_event": "2026-03-02T02:05:40+0000",
+                    "row_limit_reached": False,
+                },
+                "content": [{"type": "text", "text": json.dumps(native)}],
+            }),
+        }
+        original = json.loads(receipt["response"])
+        index = json.loads(final_claim_receipt_scope_index([receipt]))
+        item = index["indexed_receipts"][0]
+        self.assertEqual(item["arguments"]["hoursBack"], 24)
+        self.assertEqual(item["original_returned_fields"]["sinceTimestamp"],
+                         native["sinceTimestamp"])
+        self.assertEqual(item["source_headline"]["oldest_returned_event"],
+                         "2026-03-02T02:05:40+0000")
+        self.assertNotIn("secret", json.dumps(index))
+        self.assertNotIn("retention", json.dumps(index))
+        self.assertEqual(json.loads(receipt["response"]), original,
+                         "Read-only scope indexing must never mutate receipts")
+
+    def test_fictional_reported_power_is_not_independent_confirmation(self):
+        # No hardware/driver assumptions in the model-only audit contract.
+        prompt = FINAL_CLAIM_AUDIT_PROMPT
+        for requirement in ("device-reported 0 W",
+                            "intervening nonzero readings",
+                            "physical shutdown",
+                            "reported outcome",
+                            "independent physical verification"):
+            self.assertIn(requirement, prompt)
+        self.assertNotIn("Dehumidifier 1", prompt)
+        self.assertNotIn("Bathroom Meter", prompt)
 
 
 if __name__ == "__main__":

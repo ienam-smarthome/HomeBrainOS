@@ -1,5 +1,9 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## Alpha.85 private source-real first-answer acceptance
+
+After installing alpha.85 V2 Preview, use a **new uncoached READ-ONLY** investigation, not the already-exposed case. Verify the installed version and retain the first answer plus PRIVATE original MCP Technical JSON. Check that requested query start/end or hoursBack are not confused with first/last **returned** rows, that focal event-time input gaps are not mislabelled "outside the lookback", that all relevant intervening telemetry samples are respected, and that 0 W / switch-off reports are not described as independent physical confirmation. Record false negatives, causal overclaims, available-but-unread historical sources and any model/tool errors. Compare elapsed time and, where available, token cost with prior runs. Continue the standing >=12 new cases across >=6 domains. A successful source-review/final-audit stage is **not** proof of a correct answer; synthetic checks cannot score first-answer quality. No live write needed, V1 unchanged.
+
 ## Alpha.84 installed Ask/Chat acceptance
 
 Update only the V2 Preview add-on to alpha.84. Confirm Ask / Chat has no Home Overview sidebar/cards, input and newest answer use a centred single column, mobile and light/dark rendering remain readable, the voice button and actual pending-approval cards still work, and conversation/evidence/Copy for review are accessible. In System Health, expand **Device overview** to view all nine named pills and use the existing manual Refresh button; check browser requests show the original single startup `/api/overview`, no extra read on tab open or pill disclosure, and no `/api/ask` until the owner submits. Do not treat this coached visual check as a fresh Gate B model-answer sample. V1 unchanged.

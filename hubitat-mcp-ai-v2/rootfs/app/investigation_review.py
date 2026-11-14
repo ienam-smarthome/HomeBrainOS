@@ -27,6 +27,17 @@ filters, lookback, result limits, chronology and competing explanations.
 A filtered state history without command rows does not rule out unseen
 commands. A device/bridge reporter and notified listeners do not prove
 external initiation. Chronological compatibility alone does not prove cause.
+Compare any focal event's timestamp with BOTH the source's requested history
+bounds and the first/last matching rows actually RETURNED. A later oldest
+returned row does not mean an earlier focal event falls outside the requested
+lookback or establish that the store erased the missing samples. Where event-
+time inputs are not returned, look for proportionate alternative read-only
+sources or say the decisive input is unknown.
+Likewise, sequential state and power telemetry are device-reported
+observations, not independent confirmation of the physical mechanism.
+Check intervening samples before describing a continuous drop or claiming
+physical verification. Current controller settings do not establish which
+historical decision path actually executed.
 
 If a relevant available READ-ONLY MCP source could materially distinguish
 the remaining hypotheses, select its exact tool and arguments now. You own
@@ -296,6 +307,13 @@ universal claims ("all", "every"), and causal claims ("caused",
 ORIGINAL receipt that supports it and compare the exact scope:
 entity, event/attribute filter, text pattern, lookback start/end,
 returned rows, row cap, source store, freshness and reporter/issuer role.
+For every time-scoped claim, compare the focal timestamp with the ORIGINAL
+requested since/until or relative-lookback start, then separately with the
+oldest/newest RETURNED row. The first returned row is NOT the query start,
+native retention boundary, or proof the requested interval was fully covered.
+If the focal time is inside the query but matching rows were not returned
+for that interval, describe missing returned evidence; never call the focal
+time "outside the lookback" solely because the earliest returned row is later.
 If the original receipt does not cover the claim, narrow the statement.
 
 Apply a counterexample check: could the missing event/command/value exist
@@ -324,6 +342,13 @@ issued no command. A currently configured automation cannot, without
 execution evidence, be either established or excluded as the event cause.
 Keep positive evidence such as a real command-off issuer, with its timestamp,
 even when the internal controller decision cannot be proven.
+For proposed physical outcomes, check the actual order of ALL relevant
+returned state/power samples, including intervening nonzero readings. A
+device-reported 0 W and a switch-off report support what the sensors
+reported; they do not independently prove a physical shutdown or exclude
+later/unseen activity. Never turn correlated telemetry into "physical
+confirmation" or invent a monotonic power drop. Distinguish command
+acceptance, reported outcome and independent physical verification.
 
 For measurements, a missing matching saved sample is NOT proof a physical
 excursion did not occur. Freshness-unknown bins and current snapshots are
