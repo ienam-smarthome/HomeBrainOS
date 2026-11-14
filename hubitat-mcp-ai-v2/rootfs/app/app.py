@@ -8,7 +8,6 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
-from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
@@ -75,15 +74,6 @@ def config(path: Path = Path("/data/options.json")) -> dict:
             raise ValueError("Invalid add-on options")
         result.update({key: saved[key] for key in DEFAULTS if key in saved})
     return result
-
-
-def http_base(url: str) -> str:
-    parts = urlsplit(url)
-    if parts.scheme not in ("http", "https") or not parts.netloc or parts.username or parts.password:
-        raise ValueError("Model base URL must be HTTP(S) without embedded credentials")
-    if parts.query or parts.fragment:
-        raise ValueError("Model base URL must not contain a query or fragment")
-    return url.rstrip("/")
 
 
 @asynccontextmanager
