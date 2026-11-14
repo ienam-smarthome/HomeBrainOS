@@ -758,7 +758,60 @@ function showAnswer(data){
   document.getElementById('lastTime').textContent=data.elapsed_ms===undefined?'—':(data.elapsed_ms/1000).toFixed(1)+'s';
   if(readAnswers&&speechText(rawMessage).length<1500)void speakAnswer(rawMessage,audioButton);
 }
-async function status(){try{const data=await jsonResponse(await fetch(apiPath('api/status')));pill('mcp',data.mcp?.online,data.mcp?.online?'MCP online':`MCP offline · ${data.mcp?.error||'unavailable'}`);pill('ollama',data.ollama?.configured,data.ollama?.configured?'Ollama ready':'Ollama API key required');const paidOption=modelTier.querySelector('option[value="paid"]');if(paidOption)paidOption.disabled=data.paid_routing?.enabled===false;const claudeOption=modelTier.querySelector('option[value="claude"]');if(claudeOption)claudeOption.disabled=data.claude?.configured!==true;if((modelTier.value==='paid'&&paidOption?.disabled)||(modelTier.value==='claude'&&claudeOption?.disabled))modelTier.value='free';describeModelTier();document.getElementById('tools').textContent=data.mcp?.tools??'—';document.getElementById('model').textContent=data.ollama?.model||'—'}catch(error){pill('mcp',false,'Status error · '+error.message)}try{const dash=await jsonResponse(await fetch(apiPath('api/dashboard')));document.getElementById('dashLights').textContent=dash.lights_on??'—';document.getElementById('dashMotion').textContent=dash.motion_active??'—';document.getElementById('dashBatteries').textContent=dash.low_batteries??'—';const active=dash.active_rooms||[];const loaded=[dash.lights_on,dash.motion_active,dash.low_batteries].some(value=>value!=null);document.getElementById('dashActiveRooms').textContent=loaded?active.length:'—';document.getElementById('dashActiveRoomNames').textContent=loaded?(active.length?active.map(room=>room.name).join(', '):'No motion or lights on'):'Loading live states…'}catch(error){console.warn('Dashboard unavailable',error)}loadHealthAudit();loadJournal()}
+async function status(){
+  const pillButton=document.getElementById('connectionPill');
+  try{
+    const data=await jsonResponse(await fetch(apiPath('api/status')));
+    pill('mcp',data.mcp?.online,data.mcp?.online?'MCP online':'MCP offline · '+(data.mcp?.error||'unavailable'));
+    pill('ollama',data.ollama?.configured,data.ollama?.configured?'Ollama ready':'Ollama API key required');
+    const paidOption=modelTier.querySelector('option[value="paid"]');
+    if(paidOption)paidOption.disabled=data.paid_routing?.enabled===false;
+    const claudeOption=modelTier.querySelector('option[value="claude"]');
+    if(claudeOption)claudeOption.disabled=data.claude?.configured!==true;
+    if((modelTier.value==='paid'&&paidOption?.disabled)||(modelTier.value==='claude'&&claudeOption?.disabled))modelTier.value='free';
+    describeModelTier();
+    document.getElementById('tools').textContent=data.mcp?.tools??'—';
+    document.getElementById('model').textContent=data.ollama?.model||'—';
+    const online=data.mcp?.online===true;
+    pillButton.textContent=(online?'● Connected':'● Offline')+' · '+String(data.ollama?.model||'model unavailable');
+    pillButton.classList.toggle('online',online);
+  }catch(error){
+    pill('mcp',false,'Status error · '+error.message);
+    pillButton.textContent='● Connection unknown';
+  }
+  try{
+    const dash=await jsonResponse(await fetch(apiPath('api/dashboard')));
+    document.getElementById('dashLights').textContent=dash.lights_on??'—';
+    document.getElementById('dashMotion').textContent=dash.motion_active??'—';
+    document.getElementById('dashBatteries').textContent=dash.low_batteries??'—';
+    document.getElementById('dashDevices').textContent=dash.devices??'—';
+    document.getElementById('statusDevices').textContent=dash.devices??'—';
+    document.getElementById('statusHub').textContent=dash.hub_info?.name||dash.hub_info?.model||'Hubitat';
+    const active=dash.active_rooms||[];
+    const loaded=dash.success===true;
+    document.getElementById('dashActiveRooms').textContent=loaded?active.length:'—';
+    document.getElementById('dashActiveRoomNames').textContent=loaded?(active.length?active.map(room=>room.name).join(', '):'No motion or lights on'):'Live states unavailable';
+    document.getElementById('overviewNote').textContent=loaded?
+      'Read-only snapshot · inventory reconciled ('+String(dash.source||'live inventory')+') · no device commands':
+      'Snapshot unavailable · no device commands';
+  }catch(error){
+    document.getElementById('overviewNote').textContent='Snapshot unavailable · no device commands';
+    console.warn('Dashboard unavailable',error);
+  }
+  loadHealthAudit();loadJournal();
+}
+document.getElementById('connectionPill').onclick=()=>{
+  const panel=document.getElementById('connectionPanel');
+  panel.hidden=!panel.hidden;
+  document.getElementById('connectionPill').setAttribute('aria-expanded',String(!panel.hidden));
+};
+document.getElementById('checkConnection').onclick=()=>void status();
+document.addEventListener('keydown',event=>{
+  if(event.key==='Escape'){
+    const panel=document.getElementById('connectionPanel');panel.hidden=true;
+    document.getElementById('connectionPill').setAttribute('aria-expanded','false');
+  }
+});
 const MAX_CHAT_PROMPT_CHARS=12000;
 function askApiErrorMessage(response,data,length){
   if(response.status===422&&Array.isArray(data?.detail)){
