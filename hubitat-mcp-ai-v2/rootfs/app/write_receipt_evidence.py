@@ -49,6 +49,26 @@ def _target(arguments: dict) -> dict:
     return result
 
 
+def _read_values(record: dict) -> dict:
+    try:
+        raw = json.loads(record.get("response", ""))
+    except (ValueError, TypeError):
+        return {}
+    document = native_document(raw)
+    if not isinstance(document, dict):
+        return {}
+    # Retain only directly reported value fields, never infer or calculate
+    # downstream effects. Redaction applies to each source value.
+    values = {}
+    if isinstance(document.get("attribute"), str) and "value" in document:
+        values[str(document["attribute"])[:100]] = redact(document["value"])
+    for key in ("switch", "pendingUntil", "deadline", "pendingBlockUntil",
+                "internetAccess", "scheduledFor"):
+        if key in document and type(document[key]) in (str, int, float, bool):
+            values[key] = redact(document[key])
+    return dict(list(values.items())[:8])
+
+
 def write_failure_evidence(receipts: list[dict]) -> dict:
     executed_writes = []
     post_write_reads = []
@@ -77,6 +97,7 @@ def write_failure_evidence(receipts: list[dict]) -> dict:
                 "tool": name,
                 **_target(record.get("arguments", {})),
                 "separate_post_write_read": True,
+                "reported_values": _read_values(record),
                 "source_response": redact(str(record.get("response", ""))[:6000]),
             })
     return {"executed_writes": executed_writes[:12],
@@ -104,6 +125,9 @@ def model_failure_notice(evidence: dict) -> str:
                      "original Technical JSON for exact reported values:")
         for read in reads:
             lines.append("- " + str(read["tool"]) +
-                         " (separate read; downstream outcome not independently proven)")
+                         ": " + (json.dumps(read.get("reported_values"), ensure_ascii=False)
+                                if read.get("reported_values") else
+                                "no direct scalar reading extracted") +
+                         " (separate native read; no downstream outcome claim)")
     lines.append("The write(s) must not be automatically retried after this model failure.")
     return "\n".join(lines)
