@@ -126,7 +126,8 @@ def clock_facts(args: dict[str, Any], timezone_name: str = "Europe/London",
             raise ValueError("time_of_day must be HH:MM[:SS]")
         parsed = time_type.fromisoformat(value)
         target = _local_target(datetime.combine(local.date(), parsed), zone, fold)
-        if target.astimezone(UTC) <= current:
+        passed_today = target.astimezone(UTC) <= current
+        if passed_today:
             target = _local_target(datetime.combine(local.date() + timedelta(days=1), parsed), zone, fold)
     delta = (target.astimezone(UTC) - current).total_seconds()
     answer["target"] = {
@@ -134,6 +135,7 @@ def clock_facts(args: dict[str, Any], timezone_name: str = "Europe/London",
         "target_local": target.isoformat(),
         "target_utc": target.astimezone(UTC).isoformat(),
         "next_occurrence": key == "time_of_day",
+        "today_occurrence_passed": passed_today if key == "time_of_day" else None,
         "seconds_ahead": delta,
         "whole_minutes_ahead": math.floor(delta / 60),
         "past": delta < 0,
@@ -203,7 +205,13 @@ def deadline_facts(value: dict, *, now: datetime | None = None) -> dict | None:
     def collect(obj: Any, depth: int = 0):
         if depth > 4 or not isinstance(obj, dict):
             return None
-        for key, raw in obj.items():
+        pairs = list(obj.items())
+        # Native hub_get_device_attribute may use attribute/value rather than
+        # the keyed state map returned by a device document.
+        if (_DEADLINE_FIELD.fullmatch(str(obj.get("attribute") or ""))
+                and isinstance(obj.get("value"), str)):
+            pairs.insert(0, (str(obj["attribute"]), obj["value"]))
+        for key, raw in pairs:
             if _DEADLINE_FIELD.fullmatch(key) and isinstance(raw, str):
                 try:
                     due = _iso(raw)
