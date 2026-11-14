@@ -1,5 +1,10 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 14 November 2026 — alpha.81 V2-only command-first UI candidate
+
+The UI redesign has been applied to **`hubitat-mcp-ai-v2/rootfs/app/ui.html`**, not to the separate V1 add-on. It preserves the V2 model-led agent, native `/api/ask`, source-scoped overview, request UUID confirmation, original receipts, diagnostics and AI Evaluation. Newest-first answer cards, real stage/receipt timelines, voice and responsive overview are presentation changes. The V2 web interaction now opts into approval for all selected native writes (reads bypass); edited action chips cannot modify stored tool arguments. Synthetic CI is structural, not live Hubitat or browser microphone acceptance. [Details](HOMEBRAIN-V2-ALPHA81-COMMAND-FIRST-UI-20261114.md).
+
+
 ## 14 November 2026 — alpha.80 clock-grounded timed native actions (candidate)
 
 Private source-real evidence showed a requested local-clock target differing from an accepted native driver timer's stored deadline, numeric pre-write drift not surfaced to the UI, and a later model-billing failure obscuring an already completed native write/read sequence. V2 alpha.80 adds only a client-clock read-only structured arithmetic tool, original native deadline-source metadata, a model-led requested-versus-stored deadline comparison, prewrite argument-delta telemetry and client-authored executed-write receipts on later model failures. The model selects the actuator, command, target and any verification reads; no fixed parser/routing, scheduling worker, native one-off writer replacement, permission bypass, or paid-model routing change. The tool may use a hub-reported IANA timezone only when an explicit `hub_get_info` source already returned it; the instantaneous clock remains labelled client-sourced. Full details: [alpha.80 note](HOMEBRAIN-V2-ALPHA80-TIME-GROUNDED-ACTIONS-20261114.md). No source-real accuracy or device execution is proved by this candidate.
