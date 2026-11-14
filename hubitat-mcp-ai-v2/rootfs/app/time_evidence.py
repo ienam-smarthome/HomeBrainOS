@@ -193,6 +193,26 @@ def hub_clock_source(name: str, value: dict) -> dict | None:
     return outcome or None
 
 
+def write_hub_clock_skew(value: dict, *, now: datetime | None = None) -> dict | None:
+    """Warn only for an explicit hub/server time field in the write response.
+
+    Device-state timestamps, createdAt and ordinary event dates are NOT
+    treated as a live hub clock; the source timestamp may itself be stale.
+    """
+    doc = native_document(value)
+    if not isinstance(doc, dict):
+        return None
+    for key in _HUB_CLOCK_FIELD:
+        raw = doc.get(key)
+        if isinstance(raw, str):
+            try:
+                source = {"hub_instant_utc": _iso(raw).isoformat()}
+                return reported_hub_skew(source, now=now)
+            except ValueError:
+                continue
+    return None
+
+
 def deadline_facts(value: dict, *, now: datetime | None = None) -> dict | None:
     """Index only recognised native pending-deadline fields, never arbitrary dates.
 
