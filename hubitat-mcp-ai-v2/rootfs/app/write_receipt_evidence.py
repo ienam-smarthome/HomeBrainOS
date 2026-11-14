@@ -69,6 +69,29 @@ def _read_values(record: dict) -> dict:
     return dict(list(values.items())[:8])
 
 
+def _identity(arguments: dict) -> tuple[str, str] | None:
+    if not isinstance(arguments, dict):
+        return None
+    payload = (arguments.get("args") if isinstance(arguments.get("tool"), str)
+               and isinstance(arguments.get("args"), dict) else arguments)
+    for key in ("deviceId", "appId", "rule_id", "ruleId"):
+        if isinstance(payload.get(key), (str, int)):
+            return key, str(payload[key])
+    return None
+
+
+def matches_prior_written_target(receipts: list[dict], read_arguments: dict) -> bool:
+    """Separate read call is target-specific only if explicit native IDs match."""
+    current = _identity(read_arguments)
+    if current is None:
+        return False
+    return any(
+        row.get("possible_native_action") is True and row.get("success") is True
+        and _identity(row.get("arguments", {})) == current
+        for row in receipts
+    )
+
+
 def write_failure_evidence(receipts: list[dict]) -> dict:
     executed_writes = []
     post_write_reads = []
@@ -100,6 +123,13 @@ def write_failure_evidence(receipts: list[dict]) -> dict:
                 "tool": name,
                 **_target(record.get("arguments", {})),
                 "separate_post_write_read": True,
+                "same_explicit_target_id_as_prior_write": (
+                    _identity(record.get("arguments", {})) is not None
+                    and any(_identity(w.get("arguments", {}))
+                            == _identity(record.get("arguments", {}))
+                            for w in receipts if w.get("possible_native_action") is True
+                            and w.get("success") is True)
+                ),
                 "reported_values": _read_values(record),
                 "source_response": redact(str(record.get("response", ""))[:6000]),
             })
