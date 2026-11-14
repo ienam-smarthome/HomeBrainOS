@@ -31,6 +31,7 @@ options:
   model_timeout_seconds: 120
   mcp_timeout_seconds: 25
   investigation_timeout_seconds: 300
+  hub_timezone: "Europe/London"
   external_hub_diagnostics_enabled: false
   external_hub_diagnostics_hub_url: ""
   external_hub_diagnostics_probe_seconds: 30
@@ -57,6 +58,7 @@ schema:
   model_timeout_seconds: int(10,300)
   mcp_timeout_seconds: int(5,90)
   investigation_timeout_seconds: int(30,1800)
+  hub_timezone: str
   external_hub_diagnostics_enabled: bool
   external_hub_diagnostics_hub_url: str?
   external_hub_diagnostics_probe_seconds: int(30,300)
