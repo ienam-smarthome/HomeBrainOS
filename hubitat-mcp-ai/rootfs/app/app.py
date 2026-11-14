@@ -414,6 +414,11 @@ agent = UnifiedMCPAgent(
         OPTIONS.get("semantic_default_temperature_step") or 1.0
     ),
 )
+# WebUI opts in to routine approval without changing the standalone agent's
+# backwards-compatible confirmation policy. The queued action still runs
+# exclusively through ConfirmedActionCoordinator after explicit approval.
+agent.confirmation_policy.confirm_routine_writes = True
+
 cloud_benchmark = CloudBenchmark()
 cloud_connection_diagnostics = CloudConnectionDiagnostics()
 stage5_benchmark = Stage5Benchmark()
