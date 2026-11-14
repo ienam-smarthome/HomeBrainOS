@@ -830,8 +830,9 @@ function askApiErrorMessage(response,data,length){
 async function submit(text){
   const incidentAI=text&&typeof text==='object'?text.incidentAI||null:null;
   text=(incidentAI?text.text:text||query.value).trim();if(!text)return;
+  beginExchange(text);
   if(text.length>MAX_CHAT_PROMPT_CHARS){
-    query.value=text;
+    query.value=text;syncCommandBar();
     showAnswer({success:false,route:'validation-error',
       message:'Question exceeds the '+MAX_CHAT_PROMPT_CHARS.toLocaleString()+
         '-character limit ('+text.length.toLocaleString()+
@@ -840,21 +841,25 @@ async function submit(text){
   }
   const normalized=text.toLowerCase().replace(/[.!]/g,'').trim();
   if(suggestedAction==='firmware-update'&&['yes','yes please','proceed','do it'].includes(normalized))text='Install the available Hubitat firmware update';
-  suggestedAction=null;stopAudio();query.value=text;
+  suggestedAction=null;stopAudio();query.value='';syncCommandBar();
   if(activeRequest)activeRequest.abort();
   const controller=new AbortController();activeRequest=controller;
   const sequence=++requestSequence,requestId=newSessionId(),requestSessionId=sessionId;
   const selectedTier=modelTier.value;
   const history=conversationHistory.slice(-8);
-  answer.classList.add('busy');answer.textContent='Starting request… Ask another question to replace this request.';
+  answer.classList.add('busy');recordTrace('Starting request',0);
+  const body=answer.querySelector('.exchange-body');
+  if(body)body.textContent='Working… You can ask another question to replace this request.';
   const progressTimer=setInterval(async()=>{
     if(sequence!==requestSequence||controller.signal.aborted)return;
     try{
       const response=await fetch(apiPath('api/request-progress')+'?session_id='+encodeURIComponent(requestSessionId)+'&request_id='+encodeURIComponent(requestId),{signal:controller.signal});
       if(!response.ok)return;
       const progress=await response.json();
-      if(sequence===requestSequence&&activeRequest===controller&&!progress.completed&&progress.stage&&progress.stage!=='Waiting for request')
-        answer.textContent=progress.stage+' · '+(progress.elapsed_seconds||0).toFixed(0)+'s elapsed';
+      if(sequence===requestSequence&&activeRequest===controller&&!progress.completed&&progress.stage&&progress.stage!=='Waiting for request'){
+        recordTrace(progress.stage,Number(progress.elapsed_seconds));
+        const body=answer.querySelector('.exchange-body');if(body)body.textContent=progress.stage;
+      }
     }catch(error){}
   },1500);
   try{
