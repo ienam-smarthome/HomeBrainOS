@@ -130,6 +130,30 @@ class ClockEvidenceTests(unittest.TestCase):
             "attribute": "pendingUntil", "value": "2026-11-13T01:00:00Z",
         }), now=now)["offset_from_client_now_minutes"], 14)
 
+    def test_gateway_read_after_write_is_a_separate_read(self):
+        write = {
+            "name": "hub_call_device_command",
+            "arguments": {"deviceId": "FICTIONAL-RELAY", "command": "deferCutoff",
+                          "parameters": ["2"]},
+            "success": True, "possible_native_action": True,
+            "result_kind": "tool_result",
+            "response": json.dumps(native({"success": True, "accepted": True})),
+        }
+        read = {
+            "name": "hub_read_devices",
+            "arguments": {"tool": "hub_get_device_attribute", "args": {
+                "deviceId": "FICTIONAL-RELAY", "attribute": "pendingUntil"}},
+            "success": True, "result_kind": "tool_result",
+            "response": json.dumps(native({
+                "attribute": "pendingUntil", "value": "2026-11-13T03:16:00Z",
+            })),
+        }
+        report = write_failure_evidence([write, read])
+        self.assertEqual(len(report["executed_writes"]), 1)
+        self.assertEqual(len(report["post_write_reads"]), 1)
+        self.assertEqual(report["post_write_reads"][0]["reported_values"]["pendingUntil"],
+                         "2026-11-13T03:16:00Z")
+
     def test_error_kind(self):
         self.assertEqual(model_error_kind("Model API returned HTTP 402"),
                          "quota_or_billing")
