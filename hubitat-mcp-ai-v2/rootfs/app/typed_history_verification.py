@@ -8,6 +8,7 @@ write home state or invent any missing events. Unverifiable cases fail closed.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 import re
 from typing import Any
 
@@ -16,6 +17,10 @@ from temporal_receipt_fidelity import _native_payload, _safe_event
 _MAX_NATIVE_ROWS = 120
 _NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,63}$")
 _SAFE_ACTOR = re.compile(r"^[A-Za-z][A-Za-z0-9 ()_.-]{0,55}$")
+_PRIVATE = re.compile(
+    r"passw|secret|token|credential|auth|access.key|api.key|pin|code",
+    re.I,
+)
 _SCOPE = re.compile(
     r"\b(?:all|every|each)\s+(?:of\s+the\s+|the\s+)?"
     r"(?:returned|recorded|observed|matching)\b", re.I,
@@ -96,9 +101,7 @@ def _actor(value: Any) -> str:
     identifier = ("app " + app_id if app_id else
                   "device " + device_id if device_id else "issuer not identified")
     name = value.get("name")
-    if isinstance(name, str) and _SAFE_ACTOR.fullmatch(name) and not re.search(
-        r"passw|secret|token|credential|auth|access.key|pin|code", name, re.I,
-    ):
+    if isinstance(name, str) and _SAFE_ACTOR.fullmatch(name) and not _PRIVATE.search(name):
         return identifier + " (" + name + ")"
     return identifier
 
@@ -161,12 +164,22 @@ def verify_and_project_history(
     args=receipt.get("arguments")
     if not isinstance(args,dict):
         return _unverified("missing_read_arguments",field)
+    hours_arg=args.get("hoursBack")
+    if type(hours_arg) is not int or not 1 <= hours_arg <= 168:
+        return _unverified("invalid_read_duration",field)
+    limit_arg=args.get("limit")
+    if limit_arg is not None and (
+        type(limit_arg) is not int or limit_arg < 1
+    ):
+        return _unverified("invalid_read_limit",field)
     original = _native_payload(receipt)
     if not isinstance(original,dict) or not isinstance(original.get("events"),list):
         return _unverified("native_rows_unavailable",field)
     rows=original["events"]
     if len(rows)>_MAX_NATIVE_ROWS:
         return _unverified("returned_rows_exceed_safe_complete_projection_cap",field)
+    if limit_arg is not None and len(rows) >= limit_arg:
+        return _unverified("source_row_limit_reached_or_ambiguous",field)
     for value in (original.get("count"),):
         if value is not None and (type(value) is not int or value!=len(rows)):
             return _unverified("original_row_count_mismatch",field)
@@ -192,7 +205,7 @@ def verify_and_project_history(
     # A backend may provide separate source scope about unreturned rows;
     # if it explicitly contradicts the parsed data, stop rather than fudge.
     try:
-        outer=__import__("json").loads(str(receipt.get("response","")))
+        outer=json.loads(str(receipt.get("response","")))
     except (ValueError,TypeError):
         return _unverified("invalid_original_receipt_envelope",field)
     if not isinstance(outer,dict):
@@ -228,7 +241,7 @@ def verify_and_project_history(
             if stamp is None:
                 return _unverified("command_timestamp_unverifiable",field)
             commands.append((stamp,raw["date"],name,raw.get("producedBy")))
-        else:
+        elif not _PRIVATE.search(name):
             other_counts[name]=other_counts.get(name,0)+1
     states.sort(key=lambda x:x[0])
     commands.sort(key=lambda x:x[0])
@@ -241,7 +254,7 @@ def verify_and_project_history(
         "necessarily occurred or was stored.",
         "",
         f"Device ID: `{_safe_id(args.get('deviceId')) or 'unverified'}`. "
-        f"Native query lookback: `{args.get('hoursBack', 'unspecified')}` hour(s).",
+        f"Native query lookback: `{hours_arg}` hour(s).",
     ]
     if since:
         lines.append(f"Requested source start (as returned): `{since}`.")
