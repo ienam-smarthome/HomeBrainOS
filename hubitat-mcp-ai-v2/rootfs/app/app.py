@@ -22,7 +22,7 @@ from prospective_routes import router as prospective_router
 from prospective_source_ab import ProspectiveWorkspace
 from pydantic import BaseModel, Field, StrictBool
 
-from agent import Agent
+from model_routing import RoutedAgent
 from write_receipt_evidence import model_error_kind
 from external_hub_diagnostics import ExternalHubDiagnostics
 from device_monitor import HubDeviceMonitor
@@ -41,6 +41,9 @@ DEFAULTS: dict[str, Any] = {
     "model_base_url": "https://ollama.com",
     "model_name": "gemma4:31b-cloud",
     "model_api_key": "",
+    "cloud_fallback_enabled": False,
+    "cloud_fallback_model": "openrouter/free",
+    "cloud_fallback_api_key": "",
     "model_timeout_seconds": 120,
     "mcp_timeout_seconds": 25,
     "investigation_timeout_seconds": 300,
@@ -123,12 +126,15 @@ async def lifecycle(app: FastAPI):
         media_stream=str(options["ha_tts_media_stream"]),
     )
     try:
-        app.state.model = Agent(
+        app.state.model = RoutedAgent(
             http_base(str(options["model_base_url"])),
             str(options["model_name"]),
             str(options["model_api_key"]),
             int(options["model_timeout_seconds"]),
             cpu_cores=int(options["external_hub_diagnostics_cpu_cores"]),
+            cloud_fallback_enabled=bool(options["cloud_fallback_enabled"]),
+            cloud_fallback_model=str(options["cloud_fallback_model"]),
+            cloud_fallback_api_key=str(options["cloud_fallback_api_key"]),
         )
         app.state.model.hub_timezone = str(options["hub_timezone"])
         if str(options["hubitat_mcp_url"]).strip():
@@ -197,7 +203,7 @@ async def lifecycle(app: FastAPI):
             await app.state.model.close()
 
 
-app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.85", lifespan=lifecycle)
+app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.86", lifespan=lifecycle)
 app.include_router(benchmark_router)
 app.include_router(autonomous_router)
 app.include_router(reasoning_router)
@@ -244,6 +250,8 @@ async def status():
         )),
         "configuration_error": app.state.configuration_error,
         "model": str(options["model_name"]),
+        "model_routing": (app.state.model.route_status()
+                          if hasattr(app.state.model, "route_status") else None),
         "recorder": app.state.recorder.status(),
         "device_monitor": {
             "enabled": bool(options.get("device_monitor_enabled", False)),

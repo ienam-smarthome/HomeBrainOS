@@ -545,7 +545,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
  <div id="healthActive" class="health-grid" aria-label="Observed active device states"></div>
  <div class="health-actions card">
   <h3>Troubleshooting</h3>
-  <p>Choose a read-only investigation topic. Preparing a question has no cost; submitting it with <strong>Ask</strong> uses the configured AI model and may consume Ollama credits.</p>
+  <p>Choose a read-only investigation topic. Preparing a question has no model cost; submitting it uses your configured primary model. If free-cloud fallback is explicitly enabled and local Ollama cannot connect, private home evidence is sent to OpenRouter. Free usage has limits.</p>
   <div class="health-guide-grid">
    <article class="health-guide"><h4>Lights or motion</h4><p>Check which sensors reported a state and investigate automation commands versus bridge reports.</p><button type="button" onclick="prepareHealthQuestion('Investigate the most recent light or motion anomaly using original Hubitat MCP receipts. Check reporter versus initiator. Read-only; do not change anything.')">Prepare investigation</button></article>
    <article class="health-guide"><h4>Heating behaviour</h4><p>Compare actual thermostat and TRV operating states with demand, without treating heating state as cause.</p><button type="button" onclick="prepareHealthQuestion('Investigate current heating state and TRV demand using fresh native evidence. Distinguish commands, setpoints and operating states. Read-only; do not change anything.')">Prepare investigation</button></article>
@@ -657,7 +657,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 </section>
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.85";
+const UI_VERSION="2.0.0-alpha.86";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
@@ -924,8 +924,12 @@ async function loadStatus(){
       : 'Hub & Device Monitor: not configured';
   ttsInfo=d.tts||{enabled:false};
   setRecorderOverview(d.recorder);
-  byId('state').textContent=d.configured?'● Connected · '+d.version:'● Setup required · '+d.version;
-  byId('statusMeta').textContent='Version: '+d.version+' · Model: '+(d.model||'unknown')
+  byId('state').textContent=d.configured?'● Configured · '+d.version:'● Setup required · '+d.version;
+  const route=d.model_routing||{};
+  const fallback=route.fallback_enabled?' · Cloud backup: OpenRouter free (armed)':' · Cloud backup: off';
+  const lastRoute=route.last_attempt?.provider;
+  const last=lastRoute&&lastRoute!=='not_used'?' · Last inference: '+(lastRoute==='cloud'?'cloud fallback':lastRoute==='local'?'local Ollama':'unknown'):'';
+  byId('statusMeta').textContent='Version: '+d.version+' · Primary: '+(d.model||'unknown')+fallback+last
    +' · MCP: '+(d.configured?'configured (connection not independently probed)':'not ready')
    +' · Hub: '+(d.hub||'name unavailable from status source')
    +' · Devices: '+byId('overviewDevices').textContent;
@@ -1422,6 +1426,10 @@ function showResult(question,answer,response,clientMs,error=null,requestId=activ
  const calls=response?.tool_calls||[],failed=calls.filter(c=>c.success===false).length;
  byId('requestSummary').textContent=error?'Request could not complete.':response?.success===false?'Request ended without a successful response.':'Response received — review the supporting evidence.';
  if(response)byId('requestSummary').textContent+=' '+calls.length+' tool attempts'+(failed?' · '+failed+' unsuccessful':'')+'.';
+ if(response?.model_route?.provider==='cloud')byId('requestSummary').textContent+=response?.success===true
+   ?' Cloud fallback used after local connection failure; private request context sent to OpenRouter.'
+   :' Cloud fallback attempted after local connection failure; private request context may have been sent to OpenRouter.';
+ else if(response?.model_route?.provider==='local')byId('requestSummary').textContent+=' Model: local Ollama.';
  if(response?.success===false&&Array.isArray(response?.executed_writes)&&response.executed_writes.length){
   byId('requestSummary').textContent+=' Important: '+response.executed_writes.length+
    ' native write response(s) returned before the model failed. See original receipts; do not retry blindly.';
