@@ -427,6 +427,44 @@ button,textarea,select{color:var(--hb-text);border-color:var(--hb-edge);backgrou
   #evaluation .eval-consent input{accent-color:#165da9}
 }
 /* Do not apply light-mode text to dark plotting surfaces or graph tooltip. */
+/* alpha.83 System Health: source-only findings, never a polling subsystem. */
+#systemHealth{color:var(--hb-text)}
+#systemHealth .health-heading{display:flex;gap:16px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;margin:5px 0 14px}
+#systemHealth .health-heading h2{font-size:22px;letter-spacing:-.03em;color:var(--hb-text);margin:0 0 5px}
+#systemHealth .health-heading p{font-size:13px;max-width:690px;margin:0;color:var(--hb-sub)}
+#systemHealth .health-source-label{font-size:11px;font-weight:650;letter-spacing:.01em;border:1px solid var(--hb-edge);background:var(--hb-panel);border-radius:999px;padding:6px 10px;color:var(--hb-sub)}
+#systemHealth .health-snapshot{background:var(--hb-panel);color:var(--hb-text);border:1px solid var(--hb-edge);padding:14px 17px;border-radius:13px;margin:0 0 19px;box-shadow:none}
+#systemHealth .health-snapshot strong{color:var(--hb-text);font-size:15px}
+#systemHealth .health-snapshot p,#systemHealth .health-snapshot small{display:block;color:var(--hb-sub);font-size:12px;margin:6px 0 0;line-height:1.5}
+#systemHealth .health-section-title{color:var(--hb-text);font-size:16px;margin:20px 0 5px}
+#systemHealth .health-helper,#systemHealth .health-empty{color:var(--hb-sub);font-size:12px;line-height:1.5;margin:0 0 12px}
+#systemHealth .health-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0 0 10px}
+#systemHealth .health-card{min-width:0;border:1px solid var(--hb-edge);background:var(--hb-panel);border-radius:12px;padding:12px;overflow-wrap:anywhere}
+#systemHealth .health-card.needs-review{border-left:3px solid var(--hb-accent)}
+#systemHealth .health-card-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}
+#systemHealth .health-card-heading span{color:var(--hb-text);font-size:12px;font-weight:600;min-width:0}
+#systemHealth .health-count{color:var(--hb-text);font-size:24px;line-height:1.1;font-variant-numeric:tabular-nums}
+#systemHealth .health-card-scope,#systemHealth .health-card-preview,#systemHealth .health-omitted{font-size:11px;line-height:1.5;color:var(--hb-sub);margin:8px 0 0}
+#systemHealth .health-card-preview{font-weight:550;overflow-wrap:anywhere}
+#systemHealth .health-members{margin:9px 0 0;border-top:1px solid var(--hb-edge);padding-top:7px}
+#systemHealth .health-members summary{color:var(--hb-sub);font-size:11px;cursor:pointer}
+#systemHealth .health-members ul{padding-left:18px;margin:7px 0 2px;color:var(--hb-text);font-size:11px;line-height:1.55;overflow-wrap:anywhere}
+#systemHealth .health-actions{background:var(--hb-panel);color:var(--hb-text);border:1px solid var(--hb-edge);border-radius:13px;padding:15px;margin-top:23px;box-shadow:none}
+#systemHealth .health-actions h3{font-size:16px;color:var(--hb-text);margin:0 0 5px}
+#systemHealth .health-actions p,#systemHealth .health-privacy{color:var(--hb-sub);font-size:12px;line-height:1.55;margin:7px 0 14px}
+#systemHealth .health-actions p strong{color:var(--hb-text)}
+#systemHealth .health-guide-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}
+#systemHealth .health-guide{background:var(--hb-tile);border:1px solid var(--hb-edge);border-radius:10px;padding:11px;min-width:0}
+#systemHealth .health-guide h4{color:var(--hb-text);font-size:13px;margin:0}
+#systemHealth .health-guide p{color:var(--hb-sub);font-size:11.5px;margin:6px 0 10px}
+#systemHealth .health-guide button{width:auto;max-width:100%;background:var(--hb-panel);color:var(--hb-text);border:1px solid var(--hb-edge);padding:8px 10px;border-radius:8px;font-size:11.5px;margin:0}
+#systemHealth .health-guide button:hover{border-color:var(--hb-accent)}
+#systemHealth .health-privacy{margin:14px 0 0}
+#systemHealth button:focus-visible,#systemHealth summary:focus-visible{outline:3px solid var(--hb-accent);outline-offset:2px}
+@media(max-width:900px){#systemHealth .health-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:520px){#systemHealth .health-guide-grid{grid-template-columns:1fr}#systemHealth .health-grid{gap:7px}
+#systemHealth .health-card{padding:10px}#systemHealth .health-heading{gap:8px}
+#systemHealth .health-heading h2{font-size:19px}#systemHealth .health-count{font-size:22px}}
 button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-visible,.overview-tile:focus-visible{outline:3px solid var(--hb-accent);outline-offset:2px}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
 
@@ -1003,6 +1041,8 @@ function setOverviewCounts(data){
   {timeZone:'Europe/London',hour:'2-digit',minute:'2-digit'}):'unknown';
  byId('overviewStatus').textContent='Snapshot '+time+' UK · '+
   (data.inventory_full_coverage_verified?'inventory count reconciled':'inventory may be partial')+
+  (Number.isInteger(data.unclassified_on_switches)&&data.unclassified_on_switches>0
+   ?' · '+data.unclassified_on_switches+' ON switches not identified as lights':'')+
   ' · one read-only inventory request · no device commands or AI';
 }
 const HEALTH_ATTENTION=[
