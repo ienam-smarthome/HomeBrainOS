@@ -250,8 +250,10 @@ async def status():
                            not app.state.configuration_error),
         "configuration_error": app.state.configuration_error,
         "model": (app.state.model.model if app.state.model else
-                  str(options["cloud_free_model"] if options["cloud_mode"] == "free"
-                      else options["cloud_paid_model"])),
+                  str(options.get("cloud_free_model", "openrouter/free")
+                      if options.get("cloud_mode", "free") == "free"
+                      else options.get("cloud_paid_model",
+                                       "google/gemini-3.1-flash-lite"))),
         "model_routing": (app.state.model.route_status()
                           if hasattr(app.state.model, "route_status") else None),
         "recorder": app.state.recorder.status(),
