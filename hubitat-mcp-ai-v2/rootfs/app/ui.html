@@ -599,6 +599,14 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 <section id="evaluation" aria-label="Optional AI evaluation">
 <div class="card">
  <h2>AI Evaluation · experimental</h2>
+ <div class="card" id="cloudProbeCard">
+  <h3>Cloud tool-calling test</h3>
+  <p class="muted">One explicit OpenRouter model request with a fictional read-only test tool. No Hubitat/MCP calls, household data, or real device changes. Uses one free-model request or may incur paid-model charges when paid mode is explicitly configured.</p>
+  <div class="row">
+   <button type="button" id="cloudProbeRun" onclick="testCloudToolCalling()">Test cloud tool calling</button>
+   <span id="cloudProbeStatus" class="eval-meta" role="status" aria-live="polite">Not tested. Results are synthetic and do not prove live MCP accuracy.</span>
+  </div>
+ </div>
  <p class="muted">We previously compared V1 with V2 to measure overall capability and first-answer quality. This is a separate test: does reviewing V2's own answer with identical original MCP evidence improve factual accuracy enough to justify extra model rounds and delay?</p>
  <p class="muted">The experiment has <strong>no Hubitat or MCP tools</strong>. It reuses frozen original receipts. It cannot check new sources, decide correctness automatically, or replace independent V1 versus V2 acceptance testing.</p>
  <div class="row">
@@ -657,7 +665,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 </section>
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.88";
+const UI_VERSION="2.0.0-alpha.89";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
@@ -668,6 +676,22 @@ let cachedHealthOverview=null;
 let evaluationCapture=null,evaluationResult=null,evaluationBusy=false;
 function tab(which){if(!['ask','systemHealth','diagnostics','evaluation'].includes(which))return;for(const id of ['ask','systemHealth','diagnostics','evaluation']){byId(id).classList.toggle('active',id===which);byId(id+'Tab').classList.toggle('active',id===which)}if(which==='systemHealth')renderSystemHealth(cachedHealthOverview);if(which==='diagnostics')refreshDiagnostics();if(which==='evaluation')byId('evalModel').textContent='Configured model: '+(configuredModel||'not configured');}
 async function readJson(url, init){const r=await fetch(url,{...init,cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.detail||('HTTP '+r.status));return d;}
+
+async function testCloudToolCalling(){
+ const button=byId('cloudProbeRun'),status=byId('cloudProbeStatus');
+ button.disabled=true;
+ status.textContent='Testing one fictional cloud tool call; this consumes a model request…';
+ try{
+  const d=await readJson('api/model/probe',{
+   method:'POST',headers:{'X-Homebrain-Request':'1'}
+  });
+  status.textContent=(d.tool_call_test_passed?'✓ Tool request correctly selected':'⚠ No valid tool request returned')
+   +' · '+(d.mode||'unknown')+' · '+(d.model||'unknown')
+   +' · '+(Number(d.elapsed_ms||0)/1000).toFixed(1)+'s'
+   +' · No Hubitat tools executed';
+ }catch(e){status.textContent='Cloud tool test failed: '+String(e.message)}
+ finally{button.disabled=false}
+}
 
 function evaluationToggle(){
  byId('evalRun').disabled=!evaluationCapture||!byId('evalConsent').checked||evaluationBusy;
@@ -926,14 +950,11 @@ async function loadStatus(){
   setRecorderOverview(d.recorder);
   byId('state').textContent=d.configured?'● Configured · '+d.version:'● Setup required · '+d.version;
   const route=d.model_routing||{};
-  const fallback=route.fallback_enabled?' · Cloud backup: OpenRouter free (armed)':' · Cloud backup: off';
-  const tuning=route.local_ollama_options_active
-    ? ' · Local Ollama: '+(route.local_think_enabled?'thinking on':'thinking off')
-      +' · context '+route.local_num_ctx+' tokens'
-    : '';
+  const mode=route.mode==='paid'?'paid (explicitly enabled)':'free';
   const lastRoute=route.last_attempt?.provider;
-  const last=lastRoute&&lastRoute!=='not_used'?' · Last inference: '+(lastRoute==='cloud'?'cloud fallback':lastRoute==='local'?'local Ollama':'unknown'):'';
-  byId('statusMeta').textContent='Version: '+d.version+' · Primary: '+(d.model||'unknown')+tuning+fallback+last
+  const last=lastRoute==='openrouter'?' · Last inference: OpenRouter attempted':'';
+  byId('statusMeta').textContent='Version: '+d.version+' · Cloud: OpenRouter '+mode
+   +' · Model: '+(d.model||'unknown')+last
    +' · MCP: '+(d.configured?'configured (connection not independently probed)':'not ready')
    +' · Hub: '+(d.hub||'name unavailable from status source')
    +' · Devices: '+byId('overviewDevices').textContent;
@@ -1432,10 +1453,9 @@ function showResult(question,answer,response,clientMs,error=null,requestId=activ
  if(response)byId('requestSummary').textContent+=' '+calls.length+' tool attempts'+(failed?' · '+failed+' unsuccessful':'')+'.';
  if(response?.current_state_source_status==='no_source_read_receipt')
    byId('requestSummary').textContent+=' Current-state answer unverified: no successful device read receipt.';
- if(response?.model_route?.provider==='cloud')byId('requestSummary').textContent+=response?.success===true
-   ?' Cloud fallback used after local connection failure; private request context sent to OpenRouter.'
-   :' Cloud fallback attempted after local connection failure; private request context may have been sent to OpenRouter.';
- else if(response?.model_route?.provider==='local')byId('requestSummary').textContent+=' Model: local Ollama.';
+ if(response?.model_route?.provider==='cloud')
+   byId('requestSummary').textContent+=' Model: OpenRouter '+(response.model_route.mode||'cloud')
+    +' · private question and native evidence were sent to the cloud provider.';
  if(response?.success===false&&Array.isArray(response?.executed_writes)&&response.executed_writes.length){
   byId('requestSummary').textContent+=' Important: '+response.executed_writes.length+
    ' native write response(s) returned before the model failed. See original receipts; do not retry blindly.';

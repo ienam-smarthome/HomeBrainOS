@@ -1,43 +1,67 @@
-"""V2 local Ollama first; opt-in, free-model cloud backup on CONNECT failure only.
+"""HomeBrainOS V2 cloud-only OpenRouter inference.
 
-The model chooses every MCP tool. The router chooses only the inference host,
-before a first successful model round. Once a request receives any local model
-response, it stays local: never replay an ambiguous write or mix model
-contexts mid-investigation. Cloud is explicit and leaks no key to the browser.
+The native MCP agent owns the tool strategy, receives original read results and
+requires approval for writes. This module handles only model inference. There
+is no LAN Ollama transport, model process, free-to-paid retry or billing switch.
 """
 from __future__ import annotations
 
 import asyncio
-import ipaddress
 import json
-from contextvars import ContextVar
+import re
+import time
 from typing import Any
-from urllib.parse import urlsplit
 
 import httpx
 
-from agent import Agent, ModelEndpointUnavailable
+from agent import Agent
+
+_FREE_MODEL = re.compile(r"^[a-zA-Z0-9._-]+/[a-zA-Z0-9._:-]+$")
+_PAID_MODEL = re.compile(r"^[a-zA-Z0-9._-]+/[a-zA-Z0-9._:-]+$")
 
 
 def free_model_name(name: str) -> str:
-    """Free OpenRouter-only model IDs prevent accidentally selecting paid routes."""
+    """Reject every non-free model route in free mode."""
     value = str(name).strip()
-    if not value or not (value == "openrouter/free" or value.endswith(":free")):
-        raise ValueError(
-            "Cloud fallback accepts only openrouter/free or an explicit :free model"
-        )
-    if len(value) > 160 or any(char.isspace() for char in value):
-        raise ValueError("Invalid cloud free-model identifier")
+    if (not _FREE_MODEL.fullmatch(value) or len(value) > 160
+            or not (value == "openrouter/free" or value.endswith(":free"))):
+        raise ValueError("Free cloud mode accepts only openrouter/free or a :free model")
     return value
 
 
-def openai_messages(original: list[dict]) -> list[dict]:
-    """Map Ollama-style tool messages to OpenAI chat-completions tool pairing.
+def paid_model_name(name: str) -> str:
+    """Paid inference requires a fixed named model, not an auto router."""
+    value = str(name).strip()
+    if (not _PAID_MODEL.fullmatch(value) or len(value) > 160
+            or value.endswith(":free") or value in (
+                "openrouter/free", "openrouter/auto", "openrouter/auto-beta",
+            )):
+        raise ValueError("Paid mode requires a fixed named chargeable model ID")
+    return value
 
-    Upstream model outputs can contain a list of tool calls without IDs. IDs
-    are recreated deterministically at every model round from prior message
-    positions. Each native tool receipt maps to the issuing assistant call;
-    no content or tool arguments are invented or interpreted.
+
+def cloud_configuration(*, mode: str, free_model: str,
+                        paid_model: str, paid_consent: bool, api_key: str) -> dict:
+    """Validate explicit provider & billing selection before constructing a client."""
+    if mode not in ("free", "paid"):
+        raise ValueError("Cloud mode must be free or paid")
+    if type(paid_consent) is not bool:
+        raise ValueError("Paid model consent must be a boolean")
+    model = (free_model_name(free_model) if mode == "free"
+             else paid_model_name(paid_model))
+    if mode == "paid" and not paid_consent:
+        raise ValueError("Paid cloud mode requires explicit cloud_paid_consent=true")
+    if not str(api_key).strip():
+        raise ValueError("Configure an OpenRouter API key for cloud-only V2")
+    return {"mode": mode, "model": model}
+
+
+def openai_messages(original: list[dict]) -> list[dict]:
+    """Pair Ollama-format *agent internal* messages with OpenAI tool call IDs.
+
+    This is an internal conversation format, not local model execution.
+    Each MCP receipt is matched to an issuing assistant tool call. Nothing
+    selects, reorders or executes a native tool and original text stays intact.
     """
     result: list[dict] = []
     waiting: list[tuple[str, str]] = []
@@ -59,14 +83,12 @@ def openai_messages(original: list[dict]) -> list[dict]:
                 raw = fun.get("arguments", {})
                 arguments = raw if isinstance(raw, str) else json.dumps(raw)
                 formatted.append({
-                    "id": call_id,
-                    "type": "function",
+                    "id": call_id, "type": "function",
                     "function": {"name": fun["name"], "arguments": arguments},
                 })
                 waiting.append((fun["name"], call_id))
             result.append({
-                "role": "assistant",
-                "content": entry.get("content") or None,
+                "role": "assistant", "content": entry.get("content") or None,
                 "tool_calls": formatted,
             })
         elif role == "tool":
@@ -74,7 +96,7 @@ def openai_messages(original: list[dict]) -> list[dict]:
             match = next((i for i, (tool_name, _) in enumerate(waiting)
                           if tool_name == name), -1)
             if match < 0:
-                raise ValueError("Unpaired model tool result; cannot change providers")
+                raise ValueError("Unpaired model tool result")
             call_id = waiting.pop(match)[1]
             result.append({
                 "role": "tool", "tool_call_id": call_id,
@@ -87,14 +109,17 @@ def openai_messages(original: list[dict]) -> list[dict]:
     return result
 
 
-class OpenRouterFree:
-    """Explicit server-side key; only the provider's free model routes."""
+class OpenRouterChat:
+    """Fixed HTTPS OpenRouter transport; no other model endpoints are reachable."""
     BASE = "https://openrouter.ai/api/v1"
 
-    def __init__(self, *, model: str, api_key: str, timeout: int):
-        self.model = free_model_name(model)
-        if not str(api_key).strip():
-            raise ValueError("Cloud fallback requires an OpenRouter API key")
+    def __init__(self, *, mode: str, free_model: str, paid_model: str,
+                 paid_consent: bool, api_key: str, timeout: int):
+        selection = cloud_configuration(
+            mode=mode, free_model=free_model, paid_model=paid_model,
+            paid_consent=paid_consent, api_key=api_key)
+        self.mode = selection["mode"]
+        self.model = selection["model"]
         self.timeout = max(10, int(timeout))
         self.client = httpx.AsyncClient(
             timeout=httpx.Timeout(float(self.timeout), connect=5.0),
@@ -122,164 +147,162 @@ class OpenRouterFree:
             ), timeout=min(float(self.timeout), remaining))
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            # No provider response text: it can contain credentials or home data.
+            # Never return the provider body: it may contain private home data.
             raise RuntimeError(
-                f"Cloud fallback returned HTTP {exc.response.status_code}"
+                f"OpenRouter model request returned HTTP {exc.response.status_code}"
             ) from None
         except (asyncio.TimeoutError, httpx.TimeoutException):
-            raise RuntimeError("Cloud fallback model request timed out") from None
+            raise RuntimeError("OpenRouter model request timed out") from None
         except httpx.RequestError:
-            raise RuntimeError("Could not contact the cloud fallback endpoint") from None
+            raise RuntimeError("Could not contact OpenRouter") from None
         except ValueError:
-            raise RuntimeError("Cloud fallback conversation format invalid") from None
+            raise RuntimeError("OpenRouter conversation format invalid") from None
         try:
             body = response.json()
             choice = body["choices"][0]["message"]
             if not isinstance(choice, dict):
                 raise ValueError("missing assistant response")
-            function_calls = []
+            calls = []
             for raw in (choice.get("tool_calls") or []):
-                if not isinstance(raw, dict):
-                    raise ValueError("invalid cloud tool call")
-                fun = raw.get("function")
+                fun = raw.get("function") if isinstance(raw, dict) else None
                 if not isinstance(fun, dict) or not isinstance(fun.get("name"), str):
                     raise ValueError("invalid cloud tool call")
                 arguments = fun.get("arguments", "{}")
-                function_calls.append({"function": {
+                if not isinstance(arguments, (str, dict)):
+                    raise ValueError("invalid cloud tool arguments")
+                calls.append({"function": {
                     "name": fun["name"], "arguments": arguments,
                 }})
+            # Expose only provider-returned numeric usage, not guessed cost,
+            # raw messages, hidden reasoning or credential-bearing response.
+            metrics: dict[str, Any] = {}
+            usage = body.get("usage") if isinstance(body, dict) else None
+            if isinstance(usage, dict):
+                for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+                    v = usage.get(key)
+                    if type(v) is int and v >= 0:
+                        metrics[key] = v
+                cost = usage.get("cost")
+                if type(cost) in (int, float) and 0 <= cost < 1000:
+                    metrics["provider_reported_cost_usd"] = round(float(cost), 8)
+            reported_model = body.get("model") if isinstance(body, dict) else None
+            if isinstance(reported_model, str) and len(reported_model) < 200:
+                metrics["provider_reported_model"] = reported_model
             return {
                 "content": choice.get("content") or "",
-                "tool_calls": function_calls,
+                "tool_calls": calls,
+                **({"_inference_metrics": metrics} if metrics else {}),
             }
-        except (ValueError, KeyError, TypeError, IndexError):
-            raise RuntimeError("Cloud fallback returned an invalid model response") from None
+        except (ValueError, KeyError, TypeError, IndexError, AttributeError):
+            raise RuntimeError("OpenRouter returned an invalid model response") from None
 
 
-def is_lan_ollama(base_url: str) -> bool:
-    """Apply local inference tuning only to an explicitly private endpoint.
+class CloudAgent(Agent):
+    """V2 Agent orchestration with OpenRouter only; no Ollama model client."""
 
-    Avoid changing the historical hosted Ollama Cloud contract or forwarding
-    Ollama-only generation options to unrelated public cloud gateways.
-    """
-    host = (urlsplit(base_url).hostname or "").lower()
-    if host in ("localhost", "host.docker.internal"):
-        return True
-    if host.endswith((".local", ".lan", ".home.arpa", ".internal")):
-        return True
-    try:
-        address = ipaddress.ip_address(host)
-    except ValueError:
-        # A single-label LAN hostname can resolve to the user's machine.
-        return bool(host) and "." not in host
-    return address.is_private or address.is_loopback or address.is_link_local
-
-
-class RoutedAgent(Agent):
-    """Drop-in V2 Agent, with inference routing isolated per Ask task."""
-
-    def __init__(self, base_url: str, model: str, api_key: str, model_timeout: int,
-                 cpu_cores: int = 4, *, cloud_fallback_enabled: bool = False,
-                 cloud_fallback_model: str = "openrouter/free",
-                 cloud_fallback_api_key: str = "",
-                 local_ollama_think: bool = False,
-                 local_ollama_num_ctx: int = 8192):
-        if type(local_ollama_think) is not bool:
-            raise ValueError("Local Ollama thinking must be a boolean")
-        if type(local_ollama_num_ctx) is not int or not 4096 <= local_ollama_num_ctx <= 32768:
-            raise ValueError("Local Ollama context must be 4096–32768 tokens")
-        tuning = is_lan_ollama(base_url)
-        super().__init__(
-            base_url, model, api_key, model_timeout, cpu_cores=cpu_cores,
-            local_think=local_ollama_think if tuning else None,
-            local_num_ctx=local_ollama_num_ctx if tuning else None,
+    def __init__(self, *, mode: str = "free",
+                 free_model: str = "openrouter/free",
+                 paid_model: str = "google/gemini-3.1-flash-lite",
+                 paid_consent: bool = False, api_key: str = "",
+                 model_timeout: int = 120, cpu_cores: int = 4):
+        self.cloud = OpenRouterChat(
+            mode=mode, free_model=free_model, paid_model=paid_model,
+            paid_consent=paid_consent, api_key=api_key,
+            timeout=model_timeout,
         )
-        self.cloud_enabled = bool(cloud_fallback_enabled)
-        self.cloud = (
-            OpenRouterFree(model=cloud_fallback_model,
-                           api_key=cloud_fallback_api_key,
-                           timeout=model_timeout)
-            if self.cloud_enabled else None
-        )
-        self._route: ContextVar[dict | None] = ContextVar(
-            f"homebrain_route_{id(self)}", default=None,
-        )
+        self.model = self.cloud.model
+        self.timeout = max(10, int(model_timeout))
+        self.cpu_cores = max(1, min(64, int(cpu_cores)))
         self.last_attempt: dict[str, Any] = {
-            "provider": "not_used", "cloud_fallback_used": False,
+            "provider": "not_used", "mode": self.cloud.mode,
         }
 
     async def close(self) -> None:
-        await super().close()
-        if self.cloud is not None:
-            await self.cloud.close()
+        await self.cloud.close()
 
     def route_status(self) -> dict[str, Any]:
         return {
-            "primary": "ollama", "primary_model": self.model,
-            "local_ollama_options_active": self.local_num_ctx is not None,
-            "local_think_enabled": self.local_think,
-            "local_num_ctx": self.local_num_ctx,
-            "fallback_enabled": self.cloud is not None,
-            "fallback_provider": "openrouter" if self.cloud else None,
-            "fallback_model": self.cloud.model if self.cloud else None,
+            "primary": "openrouter",
+            "primary_model": self.model,
+            "mode": self.cloud.mode,
+            "paid_mode": self.cloud.mode == "paid",
+            "automatic_paid_fallback": False,
             "last_attempt": dict(self.last_attempt),
-            "status_basis": "last model attempt; no reachability check performed",
-        }
-
-    def _attempt(self, state: dict) -> dict:
-        using_cloud = state["provider"] == "cloud"
-        return {
-            "provider": state["provider"],
-            "attempted_provider": state.get("attempted_provider"),
-            "status": ("completed_model_round" if state["provider"] is not None
-                       else "no_completed_model_round"),
-            "model": self.cloud.model if using_cloud and self.cloud else self.model,
-            "cloud_fallback_used": using_cloud,
-            "reason": ("local_connect_failed" if using_cloud else None),
+            "status_basis": "selected model only; no live connectivity probe",
         }
 
     async def answer(self, *args, **kwargs) -> dict:
-        state = {"provider": None}
-        token = self._route.set(state)
-        try:
-            result = await super().answer(*args, **kwargs)
-            # Only request-scope provenance; no secret or URL in Technical JSON.
-            result["model_route"] = self._attempt(state)
-            return result
-        finally:
-            self._route.reset(token)
+        # Existing agent chooses the native MCP reads/writes and enforces
+        # approvals; the model provider does not modify its tool-call loop.
+        result = await super().answer(*args, **kwargs)
+        result["model_route"] = {
+            "provider": "cloud",
+            "attempted_provider": "openrouter",
+            "mode": self.cloud.mode,
+            "model": self.model,
+            "status": ("completed_model_round" if result.get("rounds", 0) > 0
+                       else "no_completed_model_round"),
+            "cloud_fallback_used": False,
+        }
+        return result
 
     async def round(self, messages: list[dict], tools: list[dict],
                     remaining: float) -> dict:
-        state = self._route.get()
-        standalone = state is None
-        if standalone:
-            state = {"provider": None}
-            token = self._route.set(state)
+        # Never fallback to a paid model, another provider or local LLM.
+        self.last_attempt = {"provider": "openrouter", "mode": self.cloud.mode}
+        return await self.cloud.round(messages, tools, remaining)
+
+
+_PROBE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "fixture_read_state",
+        "description": "Return the reported state of a fictional test switch. READ ONLY.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "fixture_id": {"type": "string", "enum": ["DEMO_SWITCH"]},
+            },
+            "required": ["fixture_id"],
+            "additionalProperties": False,
+        },
+    },
+}
+
+
+async def probe_cloud_tool_call(agent: CloudAgent) -> dict:
+    """Explicit one-shot model-only test; no Hubitat, MCP or home data."""
+    started = time.monotonic()
+    response = await agent.round([
+        {"role": "system", "content": (
+            "You are testing function calls. Use the offered read-only "
+            "fixture_read_state tool for the fictional switch, not prose."
+        )},
+        {"role": "user", "content": (
+            "Call fixture_read_state with fixture_id DEMO_SWITCH. "
+            "Do not guess its state and do not perform any real action."
+        )},
+    ], [_PROBE_TOOL], min(agent.timeout, 60))
+    calls = response.get("tool_calls") or []
+    verified = False
+    for call in calls:
+        fun = call.get("function") if isinstance(call, dict) else None
+        if not isinstance(fun, dict) or fun.get("name") != "fixture_read_state":
+            continue
+        args = fun.get("arguments", {})
         try:
-            if state["provider"] == "cloud":
-                return await self.cloud.round(messages, tools, remaining)
-            state["attempted_provider"] = "local"
-            self.last_attempt = self._attempt(state)
-            try:
-                response = await super().round(messages, tools, remaining)
-            except ModelEndpointUnavailable:
-                if state["provider"] == "local":
-                    raise ModelEndpointUnavailable(
-                        "Local model disconnected mid-request; cloud handoff "
-                        "was not attempted after a successful model round"
-                    ) from None
-                if self.cloud is None:
-                    raise
-                # Only a primary connect failure before the first completed
-                # model round permits opt-in cloud transmission.
-                state["provider"] = "cloud"
-                state["attempted_provider"] = "cloud"
-                self.last_attempt = self._attempt(state)
-                return await self.cloud.round(messages, tools, remaining)
-            state["provider"] = "local"
-            self.last_attempt = self._attempt(state)
-            return response
-        finally:
-            if standalone:
-                self._route.reset(token)
+            args = json.loads(args) if isinstance(args, str) else args
+        except (ValueError, TypeError):
+            continue
+        verified = isinstance(args, dict) and args == {"fixture_id": "DEMO_SWITCH"}
+        if verified:
+            break
+    return {
+        "tool_call_test_passed": verified,
+        "model": agent.model,
+        "mode": agent.cloud.mode,
+        "model_rounds": 1,
+        "elapsed_ms": round((time.monotonic() - started) * 1000),
+        "usage": response.get("_inference_metrics", {}),
+        "note": "Synthetic tool request only; no actual tool executed or Hubitat state checked",
+    }

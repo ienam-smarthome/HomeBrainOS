@@ -1,5 +1,5 @@
 name: "Hubitat MCP AI v2 (Preview)"
-version: "2.0.0-alpha.88"
+version: "2.0.0-alpha.89"
 slug: hubitat_mcp_ai_v2
 description: "Clean, model-led Hubitat MCP assistant with external diagnostics recorder"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
@@ -22,18 +22,17 @@ ports:
 ports_description:
   8789/tcp: "Optional direct interface; use Home Assistant ingress"
 webui: "http://[HOST]:[PORT:8789]"
-# Home Assistant Supervisor treats an option WITH a default as required,
-# even when the schema has '?'! Keep the optional blank keys below out of
-# options:, but let app.py DEFAULTS provide runtime empty-string values.
-# Users can reveal optional fields in the add-on editor as needed.
+# Home Assistant Supervisor treats options with defaults as required even
+# if schema uses '?'. The OpenRouter API key is optional in this schema
+# until supplied by the operator; V2 fails closed without a key.
+# Do not include a blank cloud_api_key in options. Existing legacy Ollama
+# settings are ignored and never used by the alpha.89 runtime.
 options:
-  model_base_url: "https://ollama.com"
-  model_name: "gemma4:31b-cloud"
-  # Applied ONLY to a private LAN Ollama primary; not Ollama Cloud.
-  local_ollama_think: false
-  local_ollama_num_ctx: 8192
-  cloud_fallback_enabled: false
-  cloud_fallback_model: "openrouter/free"
+  # Cloud-only: one selected OpenRouter model, no LAN Ollama transport.
+  cloud_mode: "free"
+  cloud_free_model: "openrouter/free"
+  cloud_paid_model: "google/gemini-3.1-flash-lite"
+  cloud_paid_consent: false
   model_timeout_seconds: 120
   mcp_timeout_seconds: 25
   investigation_timeout_seconds: 300
@@ -53,14 +52,11 @@ options:
 schema:
   hubitat_mcp_url: str?
   hubitat_mcp_token: password?
-  model_base_url: str
-  model_name: str
-  model_api_key: password?
-  local_ollama_think: bool
-  local_ollama_num_ctx: int(4096,32768)
-  cloud_fallback_enabled: bool
-  cloud_fallback_model: str
-  cloud_fallback_api_key: password?
+  cloud_mode: list(free|paid)
+  cloud_free_model: str
+  cloud_paid_model: str
+  cloud_paid_consent: bool
+  cloud_api_key: password?
   model_timeout_seconds: int(10,300)
   mcp_timeout_seconds: int(5,90)
   investigation_timeout_seconds: int(30,1800)
