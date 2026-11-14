@@ -1,5 +1,10 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 14 November 2026 — alpha.80 clock-grounded timed native actions (candidate)
+
+Private source-real evidence showed a requested local-clock target differing from an accepted native driver timer's stored deadline, numeric pre-write drift not surfaced to the UI, and a later model-billing failure obscuring an already completed native write/read sequence. V2 alpha.80 adds only a client-clock read-only structured arithmetic tool, original native deadline-source metadata, a model-led requested-versus-stored deadline comparison, prewrite argument-delta telemetry and client-authored executed-write receipts on later model failures. The model selects the actuator, command, target and any verification reads; no fixed parser/routing, scheduling worker, native one-off writer replacement, permission bypass, or paid-model routing change. The tool may use a hub-reported IANA timezone only when an explicit `hub_get_info` source already returned it; the instantaneous clock remains labelled client-sourced. Full details: [alpha.80 note](HOMEBRAIN-V2-ALPHA80-TIME-GROUNDED-ACTIONS-20261114.md). No source-real accuracy or device execution is proved by this candidate.
+
+
 ## 13 November 2026 — alpha.79 read-only installed-capability verification (candidate)
 
 A PRIVATE installed alpha.78 first answer overclaimed a one-time native automation capability after reading only server guide, application-type inventory and rule listing, without current typed installed-parent identity or exact dated-trigger field contract. The general model-led source-verification review did not run for a natural `Check whether ... Verify ...` request. Alpha.79 broadens this **explicit proof-request** eligibility and clarifies evidence levels (documented, typed installed, exact field contract, accepted, executed); no fixed tool/identity routing and no form-based read-only probing. Passing CI will not prove the installed model now finds the missing sources. [Development and safe acceptance](HOMEBRAIN-V2-ALPHA79-CAPABILITY-SOURCE-VERIFICATION-20261113.md). The alpha.78 one-off writer/cleanup and Gate B programme remain separate.
