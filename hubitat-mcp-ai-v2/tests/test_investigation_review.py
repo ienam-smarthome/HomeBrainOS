@@ -108,6 +108,11 @@ class ReviewDecisionTests(unittest.TestCase):
         self.assertIn("READ-ONLY", SOURCE_REVIEW_PROMPT)
         self.assertIn("no prescribed source order", SOURCE_REVIEW_PROMPT)
         self.assertIn("filtered state history", SOURCE_REVIEW_PROMPT)
+        self.assertIn("requested history", SOURCE_REVIEW_PROMPT)
+        self.assertIn("first/last matching rows", SOURCE_REVIEW_PROMPT)
+        self.assertIn("outside the requested", SOURCE_REVIEW_PROMPT)
+        self.assertIn("independent confirmation", SOURCE_REVIEW_PROMPT)
+        self.assertIn("Current controller settings", SOURCE_REVIEW_PROMPT)
         self.assertNotIn("Bedroom 3", SOURCE_REVIEW_PROMPT)
         self.assertNotIn("7841", SOURCE_REVIEW_PROMPT)
 
