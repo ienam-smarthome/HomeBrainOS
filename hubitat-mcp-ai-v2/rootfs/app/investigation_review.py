@@ -785,7 +785,7 @@ def should_recheck_causal_evidence(
         and is_causal_question(question)
         and available_read_tools
         and not has_action_receipt
-        and first_review_receipt_count >= 0
+        and first_review_receipt_count > 0
         and receipt_count == first_review_receipt_count
         and remaining_seconds > 25
         and isinstance(candidate_answer, str)
