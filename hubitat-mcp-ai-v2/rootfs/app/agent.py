@@ -28,6 +28,7 @@ from control_surface_recovery import (
     DEVICE_ACTION_FOLLOW_THROUGH_PROMPT, should_follow_through_device_action,
 )
 from evidence_scope import model_result_with_scope
+from typed_history_verification import verify_and_project_history
 from investigation_review import (
     should_review_completion,
     is_read_only_review_tool, read_only_review_catalog,
@@ -881,9 +882,26 @@ class Agent:
             })
 
         def completed_answer(answer: str, audit_status: str) -> dict[str, Any]:
+            # Exact ALL-RETURNED-event requests get a typed, source-derived
+            # chronology rather than an unverified model enumeration. This is
+            # an output-only contract: no new tool/model pass, native write or
+            # mutation of original receipts. Never mask any action outcome.
+            if native_action_receipts_seen:
+                verification = {"status": "not_applicable_to_action",
+                                "answer": answer}
+            else:
+                verification = verify_and_project_history(
+                    question, answer, receipts
+                )
+            verified_answer = verification.get("answer", answer)
+            verification_meta = {
+                key: value for key, value in verification.items()
+                if key != "answer"
+            }
             return {
-                "success": bool(answer), "prior_receipts_used": prior_receipts,
-                "answer": answer or "The model returned an empty answer.",
+                "success": bool(verified_answer), "prior_receipts_used": prior_receipts,
+                "answer": verified_answer or "The model returned an empty answer.",
+                "structured_history_verification": verification_meta,
                 "leaf_schema_discoveries": leaf_schema_discoveries,
                 "source_review_invoked": source_review_invoked,
                 "source_review_kind": source_review_kind,
