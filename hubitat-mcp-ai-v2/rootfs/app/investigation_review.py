@@ -181,7 +181,7 @@ _HISTORICAL_PERIOD = re.compile(
     r"\b(?:yesterday|overnight|earlier\s+today|"
     r"last\s+(?:night|evening|morning|afternoon|weekend|"
     r"hour|day|week|month|year|few\s+(?:hours|days|weeks))|"
-    r"(?:past|last)\s+(?:\d+|few|several)\s*(?:minutes?|hours?|days?|weeks?|months?)|"
+    r"(?:past|last|previous)\s+(?:\d+|few|several|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s*(?:minutes?|hours?|days?|weeks?|months?)|"
     r"previous\s+(?:hour|day|week|month|night)|"
     r"this\s+(?:morning|afternoon|evening|week)|"
     r"today|"
@@ -189,7 +189,44 @@ _HISTORICAL_PERIOD = re.compile(
     r"|\b(?:between|from|during)\b[^\n]{0,65}"
     r"\b(?:\d{1,2}:\d{2}|\d{1,2}\s*(?:am|pm)|"
     r"yesterday|today|last\s+night)\b"
-    r"|\b(?:at|around|by)\s*(?:\d{1,2}:\d{2}|\d{1,2}\s*(?:am|pm))\b",
+    r"|\b(?:at|around|by|since)\s*(?:\d{1,2}:\d{2}|\d{1,2}\s*(?:am|pm))\b"
+    r"|\bsince\s+(?:yesterday|last\s+night|\d{4}-\d{2}-\d{2})\b",
+    re.IGNORECASE,
+)
+# Strict read-intent entry for period-wide STATE questions that do not
+# contain measurement verbs such as show/report and do not ask why.
+# This is an eligibility hint only: it cannot select a tool or supply
+# evidence of a continuous physical state.
+_CONTINUITY_READ_START = re.compile(
+    r"^\s*(?:did|do|does|was|were|has|have|had|is|are|"
+    r"check|confirm|verify|establish|determine|investigate|"
+    r"find|show|report|tell|compare|whether)\b", re.IGNORECASE,
+)
+_CONTINUITY_PERSISTENCE = re.compile(
+    r"\b(?:remain(?:ed|ing)?|stay(?:ed|ing)?|"
+    r"continu(?:ous|ously)|uninterrupted|throughout|"
+    r"entire|whole|ever|all\s+(?:night|day|morning|evening)|"
+    r"at\s+any\s+point|"
+    r"(?:been|kept)\s+(?:on|off|active|connected|online|running)|"
+    r"without\s+(?:any\s+)?(?:interruptions?|changes?|outages?|"
+    r"disconnections?)|any\s+(?:interruptions?|changes?|"
+    r"transitions?|outages?|disconnections?|switches?|"
+    r"motion|events?))\b",
+    re.IGNORECASE,
+)
+_CONTINUITY_STATE_SUBJECT = re.compile(
+    r"\b(?:on|off|active|inactive|idle|heating|cooling|running|"
+    r"connected|disconnected|online|offline|powered|power|"
+    r"open|closed|state|status|switch(?:ed|es)?|"
+    r"devices?|sensors?|lights?|thermostats?|plugs?|"
+    r"motors?|motion|temperature|humidity|energy|"
+    r"interruptions?|changes?|transitions?|outages?)\b",
+    re.IGNORECASE,
+)
+_CONTINUITY_FOR_PERIOD = re.compile(
+    r"\bfor\s+(?:the\s+)?(?:last|past|previous)?\s*"
+    r"(?:\d+|few|several|one|two|three|four|five|six|seven|"
+    r"eight|nine|ten|eleven|twelve)\s*(?:minutes?|hours?|days?|weeks?)\b",
     re.IGNORECASE,
 )
 _READ_INTENT = re.compile(
@@ -962,7 +999,25 @@ def is_source_verification_question(question: str) -> bool:
     )
 
 
-def is_historical_measurement_question(question: str) -> bool:
+def is_historical_continuity_question(question: str) -> bool:
+    """Historical persisted-state evidence question, not a device/tool planner.
+
+    Unlike a measurement report, these often start with Did/Was/Has and never
+    contain show/report/history. Require all of read intent, persistence,
+    a state dimension and a concrete past interval. No imperative writes.
+    """
+    return (
+        isinstance(question, str)
+        and not bool(_WRITE_INTENT_AT_START.search(question))
+        and bool(_CONTINUITY_READ_START.search(question))
+        and bool(_CONTINUITY_PERSISTENCE.search(question))
+        and bool(_CONTINUITY_STATE_SUBJECT.search(question))
+        and bool(_HISTORICAL_PERIOD.search(question)
+                 or _CONTINUITY_FOR_PERIOD.search(question))
+    )
+
+
+def is_historical_measurement_question(question: str):
     """General time-scoped data request, not a domain or device-name patch."""
     return (
         isinstance(question, str)
@@ -973,6 +1028,7 @@ def is_historical_measurement_question(question: str) -> bool:
             or bool(_HISTORY_SOURCE_INVENTORY.search(question))
             and bool(_HISTORY_INVENTORY_TARGET.search(question))
             and bool(_HISTORY_INVENTORY_INTENT.search(question))
+            or is_historical_continuity_question(question)
         )
     )
 
