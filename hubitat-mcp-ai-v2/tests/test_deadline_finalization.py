@@ -80,7 +80,7 @@ class DeadlineFinalizeTests(unittest.TestCase):
                 self.assertEqual(mcp.calls, [("hub_get_device", {"deviceId": 101})])
                 self.assertEqual(len(result["tool_calls"]), 1)
                 self.assertTrue(result["tool_calls"][0]["success"])
-                self.assertIn("unknown", result["answer"])
+                self.assertIn("No prior heating state or initiating cause was observed", result["answer"])
             finally:
                 await agent.close()
         asyncio.run(run())
