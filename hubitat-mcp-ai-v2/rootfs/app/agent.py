@@ -1109,7 +1109,7 @@ class Agent:
                 # automatically by this recovery.
                 if enable_source_review and should_review_completion(
                     question, available_tools=any(
-                        item["function"]["name"] != _CATALOG_TOOL
+                        item["function"]["name"] not in (_CATALOG_TOOL, CLOCK_TOOL)
                         for item in read_only_review_catalog(tools)
                     ),
                     already_reviewed=source_review_invoked,
