@@ -1,6 +1,7 @@
 """Offline V2 UI before/after visual fixtures. Never sends real MCP/model calls."""
 from __future__ import annotations
 import json
+import re
 import subprocess
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -35,8 +36,7 @@ def handler(html: str) -> type[BaseHTTPRequestHandler]:
             if path == "/":
                 value, ctype = html.encode(), "text/html; charset=utf-8"
             elif path.endswith("/api/status"):
-                payload = {"version": "2.0.0-alpha.81" if "2.0.0-alpha.81" in html
-                           else "2.0.0-alpha.80", "configured": True,
+                payload = {"version": re.search(r'const UI_VERSION="([^"]+)"', html).group(1), "configured": True,
                            "model": "fictional-model", "device_monitor": {
                                "configured": True, "enabled": True},
                            "tts": {"enabled": False},
@@ -68,6 +68,83 @@ def handler(html: str) -> type[BaseHTTPRequestHandler]:
         def log_message(self, *args):
             pass
     return FixtureHandler
+
+# WCAG relative luminance, measured from real computed browser colours.
+# Only normal-size text/labels on ordinary CSS surfaces are audited here;
+# plot-axis SVG labels are separately protected by the original dark SVG theme.
+CONTRAST_JS = """selectors => {
+  function parseColour(value) {
+    const match = String(value).match(/rgba?\\(([^)]*)\\)/);
+    if (!match) return null;
+    const nums = match[1].split(',').map(v => Number(v.trim()));
+    if (nums.length < 3 || nums.slice(0,3).some(v => !Number.isFinite(v))) return null;
+    return {rgb:nums.slice(0,3), alpha:nums.length>3?nums[3]:1};
+  }
+  function luminance(rgb) {
+    const c = rgb.map(n => {
+      const v = n/255;
+      return v<=0.04045 ? v/12.92 : Math.pow((v+0.055)/1.055,2.4);
+    });
+    return c[0]*0.2126+c[1]*0.7152+c[2]*0.0722;
+  }
+  function background(element) {
+    for (let current=element; current; current=current.parentElement) {
+      const colour=parseColour(getComputedStyle(current).backgroundColor);
+      if (colour && colour.alpha===1) return colour.rgb;
+    }
+    return [255,255,255];
+  }
+  return selectors.map(selector=>{
+    const el=document.querySelector(selector);
+    if (!el) return {selector,missing:true};
+    const fg=parseColour(getComputedStyle(el).color);
+    const bg=background(el);
+    const l1=fg?luminance(fg.rgb):0,l2=luminance(bg);
+    const ratio=(Math.max(l1,l2)+0.05)/(Math.min(l1,l2)+0.05);
+    return {selector,contrast:Math.round(ratio*100)/100,
+            foreground:getComputedStyle(el).color,
+            background:getComputedStyle(el).backgroundColor};
+  });
+}"""
+AUDIT_SELECTORS = {
+    "ask": [
+        "#ask .compose-subtitle",
+        "#ask .voice-privacy",
+        "#ask .overview-tile small",
+        "#ask .feed-empty span",
+    ],
+    "diagnostics": [
+        "#diagnostics #cards .metric small",
+        "#diagnostics #cards .metric strong",
+        "#diagnostics #timelineCard h2",
+        "#diagnostics #timelineMeta",
+        "#diagnostics #timelineCard .legend",
+        "#diagnostics #timelineCard .graph-zoom-hint",
+        "#diagnostics #timelineReadout",
+        "#diagnostics .graph-popout-link",
+    ],
+    "evaluation": [
+        "#evaluation .card h2",
+        "#evaluation .card p.muted",
+        "#evaluation .eval-meta",
+        "#evaluation .eval-upload",
+        "#evaluation .eval-consent span",
+        "#evaluation .eval-review-stage h3",
+    ],
+}
+
+
+def check_contrast(page, area: str, scheme: str, device: str) -> None:
+    samples = page.evaluate(CONTRAST_JS, AUDIT_SELECTORS[area])
+    bad = [sample for sample in samples if sample.get("missing") or
+           sample.get("contrast", 0) < 4.5]
+    if bad:
+        raise AssertionError(
+            f"{area} {scheme} {device}: normal-text contrast below 4.5:1: {bad}"
+        )
+    print(f"PASS: {area} {scheme} {device}: " +
+          ", ".join(f"{x['selector']}={x['contrast']:.2f}:1" for x in samples))
+
 
 def main():
     with sync_playwright() as playwright:
@@ -112,6 +189,25 @@ def main():
                                 path=str(OUT / f"{stage}-{color}-{device}.png"),
                                 full_page=False,
                             )
+                            if stage == "after":
+                                check_contrast(page, "ask", color, device)
+                                page.locator("#diagnosticsTab").click()
+                                page.evaluate("""() => setCards({last:{
+                                  free_os_mb:777.4, java_free_mb:23.3,
+                                  java_allocated_heap_used_pct:92.9,
+                                  native_load_pct:31.5, latency_ms:39.2
+                                }})""")
+                                check_contrast(page, "diagnostics", color, device)
+                                page.screenshot(
+                                    path=str(OUT / f"after-{color}-{device}-diagnostics.png"),
+                                    full_page=False,
+                                )
+                                page.locator("#evaluationTab").click()
+                                check_contrast(page, "evaluation", color, device)
+                                page.screenshot(
+                                    path=str(OUT / f"after-{color}-{device}-evaluation.png"),
+                                    full_page=False,
+                                )
                             context.close()
                 finally:
                     server.shutdown()
@@ -119,7 +215,7 @@ def main():
                     server.server_close()
         finally:
             browser.close()
-    print("Saved eight V2-only synthetic UI screenshots:", OUT)
+    print("Saved before/after V2 Ask and after-Diagnostics/Evaluation fixture screenshots:", OUT)
 
 if __name__ == "__main__":
     main()
