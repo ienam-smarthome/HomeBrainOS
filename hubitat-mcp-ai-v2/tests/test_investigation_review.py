@@ -215,7 +215,8 @@ class ReviewLoopTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result["tool_calls"][0]["success"])
         self.assertIn("read-only", result["tool_calls"][0]["error"])
         self.assertEqual(agent.round_tools[1],
-                         ["hub_read_history", "homebrain_inspect_mcp_catalog"])
+                         ["hub_read_history", "homebrain_inspect_mcp_catalog",
+                          "homebrain_read_clock"])
 
 
 
