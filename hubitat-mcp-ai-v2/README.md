@@ -1,5 +1,7 @@
 # Hubitat MCP AI v2 — native MCP client
 
+**Alpha.84 (14 November 2026) — focused Ask/Chat.** The device overview has moved out of Ask / Chat into a collapsible **Device overview** section within System Health. Ask now has a centred, full-width single conversation column, clearer composer title, improved empty state, more readable newest answer and high-contrast older exchanges. The existing one-shot initial inventory request, manually invoked inventory refresh, source-backed System Health summaries, approval cards, model-led reasoning and diagnostics remain unchanged. No additional Hubitat/Ollama requests; V1 untouched. [Engineering note](../docs/HOMEBRAIN-V2-ALPHA84-FOCUSED-ASK-20261114.md).
+
 **Alpha.83 (14 November 2026) — named read-only overview and System Health.** Nine compact summary tiles show names and source coverage for lights on, active motion, low battery, open contacts, wet sensors, heating, explicitly reported offline, other ON switches and inventory count. **System Health** groups findings and offers Troubleshooting question shortcuts, with no extra Hubitat reads, automatic polling, Ollama invocation or approval changes; expand and prepare are local-only. The same original source inventory powers both UI views. V1 unchanged. [Full note](../docs/HOMEBRAIN-V2-ALPHA83-SYSTEM-HEALTH-SNAPSHOT-20261114.md).
 
 
