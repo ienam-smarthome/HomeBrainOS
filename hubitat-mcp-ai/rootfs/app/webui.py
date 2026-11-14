@@ -107,20 +107,135 @@ def render_page(title: str, version: str) -> str:
 .diag-review-list li{font-size:12px;line-height:1.4}
 .diag-review-stat{font-size:13px;color:#e5e7eb;line-height:1.6;margin:8px 0}
 .diag-review-stat strong{color:white}
+
+/* Command-first shell: prototype geometry, real app data and no network assets. */
+:root{color-scheme:dark;--bg:#0a1220;--card:#111c30;--tile:#16243d;--text:#e8eef8;--muted:#b3c4da;--blue:#4ea3ff;--green:#206448;--red:#9f2937;--amber:#bd8525;--edge:#33476a;--focus:#88c7ff;--accent-ink:#06182e}
+@media(prefers-color-scheme:light){:root{color-scheme:light;--bg:#f3f6fb;--card:#fff;--tile:#eaf0f9;--text:#13203a;--muted:#51627f;--blue:#1769d1;--green:#0e7050;--red:#bd2c3b;--amber:#9b6200;--edge:#c4d0e2;--focus:#005dc5;--accent-ink:#fff}}
+body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:15px;line-height:1.5}
+.wrap{max-width:1100px;padding:0 18px 48px;min-height:100vh}
+.hb-header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 0 10px}
+.hb-header h1{font-size:19px;font-weight:650;margin:0;letter-spacing:-.03em}
+.hb-header h1 small{display:block;font-size:11px;color:var(--muted);font-weight:450;letter-spacing:0}
+.connection-host{position:relative}
+#connectionPill{width:auto;margin:0;background:var(--card);color:var(--text);border:1px solid var(--edge);border-radius:999px;padding:7px 12px;font-size:12px;white-space:nowrap}
+#connectionPill.online{color:var(--text)}
+.connection-panel{position:absolute;z-index:35;right:0;top:42px;width:min(340px,calc(100vw - 36px));padding:13px;background:var(--card);border:1px solid var(--edge);border-radius:13px;box-shadow:0 15px 38px #0005}
+.connection-panel[hidden]{display:none}.connection-panel strong{font-size:13px}
+.connection-panel .status-card{background:none;padding:4px 0;display:flex;margin:10px 0;gap:5px}
+.connection-panel .pill{background:var(--tile);color:var(--text);border:1px solid var(--edge);padding:6px 8px}
+.connection-panel .pill.ok{background:#126143;color:#fff}.connection-panel .pill.error{background:#93303b;color:#fff}
+.connection-panel .pill .muted{color:inherit}.connection-panel .pill strong{font-size:11px}
+.connection-meta{color:var(--muted);font-size:12px;margin:7px 0}
+#checkConnection{width:auto;margin:3px 0;padding:8px 11px;font-size:12px}
+.command-bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--bg);padding:3px 0 11px}
+.command-form{display:flex;align-items:center;gap:10px;background:var(--card);border:1.5px solid var(--edge);border-radius:20px;padding:9px;min-height:78px}
+.command-form:focus-within{border-color:var(--blue)}
+.command-mic{flex:none;touch-action:none;user-select:none;-webkit-user-select:none;width:52px;height:52px;padding:0;margin:0;border-radius:50%;background:var(--blue);color:var(--accent-ink);border:0;font-size:21px}
+.command-mic.listening{background:#b91c1c;color:#fff;box-shadow:0 0 0 3px #b91c1c33}
+#query{flex:1;min-width:0;width:100%;max-height:132px;min-height:44px;height:49px;margin:0;border:0;background:transparent;color:var(--text);font:inherit;font-size:17px;line-height:1.45;resize:none;overflow-y:auto;padding:7px 0}
+#query:focus-visible{outline:0}
+.command-submit{flex:none;width:auto;margin:0;border:0;border-radius:13px;background:var(--tile);color:var(--muted);font-weight:650;padding:13px 18px}
+.command-submit.ready:not(:disabled){background:var(--blue);color:var(--accent-ink)}
+.command-submit:disabled{opacity:.75;cursor:default}
+.command-help{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--muted);padding:6px 3px 0}
+.command-bar .model-tier-picker,.command-bar .answer-options{margin:5px 0 0;gap:7px}
+.command-bar .model-tier-picker select{background:var(--card);color:var(--text);border:1px solid var(--edge);margin:0}
+.command-bar .model-tier-note{margin-top:3px;color:var(--muted)}
+.command-bar .model-tier-picker button{padding:6px 10px;margin:0}
+.command-bar .answer-options{font-size:12px;color:var(--muted)}
+.homebrain-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:18px}
+.overview-rail{grid-row:1;min-width:0}
+#summaryTiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;padding:7px;margin:0;background:transparent}
+#summaryTiles .tile{background:transparent;color:var(--text);border:0;padding:9px 7px;min-width:0;text-align:left;min-height:51px}
+#summaryTiles .tile .big{font-size:20px;line-height:1.2}
+#summaryTiles .tile div:last-child{font-size:12px;color:var(--muted)}
+.overview-note{font-size:11px;color:var(--muted);margin:3px 5px 12px}
+.exchange-feed{grid-row:2;display:flex;flex-direction:column;gap:14px;min-width:0}
+.feed-empty{color:var(--text);margin:10px 3px 16px;font-size:21px;font-weight:600}
+.feed-empty span{display:block;font-weight:400;font-size:14px;color:var(--muted)}
+.exchange{background:var(--card);border:1px solid var(--edge);border-radius:15px;padding:15px 17px;margin:0;min-width:0;overflow-wrap:anywhere}
+.exchange[hidden]{display:none}.exchange.older{opacity:.76}
+.exchange-question{font-size:13px;color:var(--muted);margin:0 0 11px}
+.exchange-question strong{color:var(--text);font-weight:550}
+.exchange .answer-meta{margin:0 0 10px}.exchange .badge{background:var(--tile);color:var(--text);border:1px solid var(--edge)}
+.exchange .answer-text{color:var(--text);font-size:15px;line-height:1.7}
+.exchange .answer-text h2,.exchange .answer-text h3{color:var(--text)}
+.exchange .answer-table-wrap{border-color:var(--edge)}
+.exchange .answer-markdown-table th{background:var(--tile);color:var(--text)}
+.exchange .answer-markdown-table td{color:var(--text)}
+.exchange .answer-markdown-table tbody tr:nth-child(even){background:var(--tile)}
+.exchange .technical pre{background:var(--bg);color:var(--text)}
+.exchange-actions{display:flex;gap:7px;flex-wrap:wrap;margin:12px 0 0}
+.exchange-actions button{width:auto;display:inline-flex;gap:5px;align-items:center;background:var(--tile);border:1px solid var(--edge);color:var(--text);font-size:12px;padding:7px 10px;margin:0}
+.exchange .choice-button{width:auto;margin:5px 6px 5px 0}
+.work-trace{border-left:2px solid var(--edge);margin:9px 0 12px 5px;padding-left:14px;font-size:12px;color:var(--muted)}
+.work-trace li{padding:2px 0;list-style:none;position:relative}
+.work-trace li::before{position:absolute;content:'';height:8px;width:8px;border-radius:50%;background:var(--blue);left:-19px;top:9px}
+.work-trace small{float:right;color:var(--muted);font-size:11px}
+.trace-summary{cursor:pointer;font-size:12px;color:var(--muted)}
+.evidence-drawer{margin-top:12px;border-top:1px solid var(--edge);padding-top:8px}
+.evidence-drawer summary{color:var(--muted);font-size:13px;cursor:pointer}
+.evidence-row{display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid var(--edge);padding:7px 0;font-size:12px;color:var(--text)}
+.evidence-row small{color:var(--muted)}
+.private-warning{font-size:12px;color:var(--muted);margin:7px 0}
+.action-card{border:1px solid var(--edge);border-left:4px solid var(--blue);border-radius:12px;padding:12px;background:var(--tile);margin:12px 0}
+.action-card.destructive_write{border-left-color:#eb7880}.action-card.sensitive_write{border-left-color:#f2b84b}
+.action-card h3{color:var(--text);font-size:15px;margin:0 0 5px}
+.action-card .muted{color:var(--muted)}
+.action-card .action-chips{display:flex;gap:7px;flex-wrap:wrap;margin:8px 0}
+.action-chip{background:var(--card);border:1px solid var(--edge);border-radius:8px;padding:5px 8px;color:var(--text);font-size:12px}
+.action-chip input{width:120px;max-width:180px;margin:0;padding:3px 5px;color:var(--text);background:var(--card);border:1px solid var(--edge)}
+.action-controls{display:flex;gap:7px;flex-wrap:wrap}
+.action-controls button{width:auto;margin:0;padding:8px 13px;font-size:13px;background:var(--card);color:var(--text);border:1px solid var(--edge)}
+.action-controls button.confirm{background:var(--blue);color:var(--accent-ink);border:0}
+.action-note{margin:8px 0 0;color:var(--muted);font-size:12px}
+.monitoring-panels{margin-top:24px;border-top:1px solid var(--edge);padding-top:13px}
+.monitoring-panels summary{cursor:pointer;font-size:13px;color:var(--muted)}
+.monitoring-body{margin-top:14px}.monitoring-body .card{background:var(--card);border:1px solid var(--edge)}
+.monitoring-body .muted,.monitoring-body .journal-small{color:var(--muted)}
+.monitoring-body .health-stat,.monitoring-body .journal-stat{background:var(--tile)}
+.monitoring-body button,.monitoring-body select{color:var(--text)}
+.monitoring-body a{color:var(--blue)}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+@media(min-width:1000px){.homebrain-layout{grid-template-columns:minmax(0,1fr) 200px;column-gap:32px;align-items:start}
+.overview-rail{grid-column:2;grid-row:1/span 2;position:sticky;top:155px;border-left:1px solid var(--edge);padding-left:13px}
+#summaryTiles{grid-template-columns:1fr;gap:10px}#summaryTiles .tile .big{font-size:24px}
+.exchange-feed{grid-column:1;grid-row:1}.command-bar{max-width:calc(100% - 232px)}}
+@media(max-width:520px){.wrap{padding:0 10px 30px}.hb-header h1{font-size:17px}
+.command-form{padding:7px;gap:7px;border-radius:16px}
+.command-mic{width:45px;height:45px}.command-submit{padding:12px 13px}
+#query{font-size:16px}.command-help{font-size:11px}
+#summaryTiles{gap:2px;padding:3px}#summaryTiles .tile{padding:7px 3px}
+#summaryTiles .tile .big{font-size:18px}#summaryTiles .tile div:last-child{font-size:10px}
+.exchange{padding:12px 13px}.exchange-actions button{flex:1 1 auto}
+.overview-note{margin-bottom:10px}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
 </style>
 </head>
-<body><main class="wrap">
-<h1>🏠 <span id="title"></span> <small id="version"></small></h1>
-<section class="card grid top-stats" id="summaryTiles">
-<button class="tile secondary" data-q="Which rooms are active?"><div class="big" id="dashActiveRooms">—</div><div>Active rooms</div><div class="muted" id="dashActiveRoomNames">Motion or lights on</div></button>
-<button class="tile secondary" data-q="Which lights are on?"><div class="big" id="dashLights">—</div><div>Lights on</div><div class="muted">Tap for live details</div></button>
-<button class="tile secondary" data-q="Which motion sensors are active?"><div class="big" id="dashMotion">—</div><div>Motion active</div><div class="muted">Live Hubitat states</div></button>
-<button class="tile secondary" data-q="Which batteries are low?"><div class="big" id="dashBatteries">—</div><div>Low batteries</div><div class="muted">At or below 20%</div></button>
-</section>
-<section class="card">
-<input id="query" placeholder="Ask your Hubitat…" autocomplete="off">
+<body><div class="wrap" id="homebrainApp">
+<header class="hb-header">
+<h1><span id="title"></span><small id="version"></small></h1>
+<div class="connection-host">
+<button id="connectionPill" type="button" aria-expanded="false" aria-controls="connectionPanel">● Connecting…</button>
+<div id="connectionPanel" class="connection-panel" hidden>
+<strong>Connection details</strong>
+<section class="card row status-card"><span class="pill" id="mcp">MCP unknown</span><span class="pill"><span class="muted">MCP tools</span><strong id="tools">—</strong></span><span class="pill" id="ollama">Ollama unknown</span><span class="pill"><span class="muted">Model</span><strong id="model">—</strong></span><span class="pill"><span class="muted">Last route</span><strong id="lastRoute">—</strong></span><span class="pill"><span class="muted">Response</span><strong id="lastTime">—</strong></span></section>
+<p class="connection-meta">Hub: <span id="statusHub">—</span> · Devices inspected: <span id="statusDevices">—</span></p>
+<button id="checkConnection" class="secondary" type="button">Check connection</button>
+<div hidden><span id="dashActiveRooms">—</span><span id="dashActiveRoomNames"></span></div>
+</div>
+</div>
+</header>
+<section class="command-bar" id="commandBar" aria-label="Ask HomeBrain">
+<form id="commandForm" class="command-form">
+<button id="speak" type="button" class="command-mic" aria-label="Start speaking" title="Tap to listen; hold to speak">🎤</button>
+<textarea id="query" rows="2" placeholder="Ask or command…" maxlength="12000" aria-label="Ask HomeBrain"></textarea>
+<button id="ask" type="submit" class="command-submit" disabled>Ask</button>
+</form>
+<div class="command-help"><span id="voiceStatus" role="status">Press / to focus · Enter to send · Shift+Enter for a new line</span><span>Voice input may use a browser speech service.</span></div>
 <div class="model-tier-picker">
-<label for="modelTier">AI model</label>
+<label for="modelTier">Model</label>
 <select id="modelTier" aria-label="AI model for this question">
 <option value="auto">Auto · hybrid routing (may charge)</option>
 <option value="free">Free · Gemma (default)</option>
@@ -130,11 +245,26 @@ def render_page(title: str, version: str) -> str:
 <button class="secondary clear-context" id="resetContext" type="button" title="Start without prior context">New topic</button>
 </div>
 <div class="model-tier-note" id="modelTierNote" role="status">Free is the default. Paid uses Ollama account credits, with no additional HomeBrain budget. Claude bills your Anthropic API account separately.</div>
-<div class="query-actions"><button id="ask">Ask</button><button class="secondary" id="speak">🎤 Speak</button></div>
-<div class="answer-options"><label class="muted"><input id="readAnswers" type="checkbox" style="width:auto"> Read answers aloud</label><button class="secondary browser-shortcut" id="openBrowser" type="button">🌐 Open in browser</button></div>
-<div class="answer" id="answer" role="status" aria-live="polite">Ready for a question.</div>
+<div class="answer-options"><label class="muted"><input id="readAnswers" type="checkbox" style="width:auto"> Read answers aloud automatically</label><button class="secondary browser-shortcut" id="openBrowser" type="button">🌐 Open in browser</button></div>
 </section>
-<section class="card row status-card"><span class="pill" id="mcp">MCP unknown</span><span class="pill"><span class="muted">MCP tools</span><strong id="tools">—</strong></span><span class="pill" id="ollama">Ollama unknown</span><span class="pill"><span class="muted">Model</span><strong id="model">—</strong></span><span class="pill"><span class="muted">Last route</span><strong id="lastRoute">—</strong></span><span class="pill"><span class="muted">Response</span><strong id="lastTime">—</strong></span></section>
+<div class="homebrain-layout">
+<aside class="overview-rail" aria-label="Current home overview">
+<section class="card grid top-stats" id="summaryTiles">
+<button class="tile secondary" data-q="Which lights are on?"><div class="big" id="dashLights">—</div><div>Lights on</div></button>
+<button class="tile secondary" data-q="Which motion sensors are active?"><div class="big" id="dashMotion">—</div><div>Motion active</div></button>
+<button class="tile secondary" data-q="Which batteries are low?"><div class="big" id="dashBatteries">—</div><div>Low batteries</div></button>
+<button class="tile secondary" data-q="How many Hubitat devices were inspected, and is the inventory complete?"><div class="big" id="dashDevices">—</div><div>Devices inspected</div></button>
+</section>
+<p class="overview-note" id="overviewNote">Read-only snapshot · inventory status pending · no device commands</p>
+</aside>
+<main class="exchange-feed" id="exchangeFeed" aria-label="Questions and answers" aria-live="polite">
+<p class="feed-empty" id="feedEmpty">What should the house do? <span>Your newest answer will appear here.</span></p>
+<article class="exchange" id="answer" role="status" hidden></article>
+</main>
+</div>
+<details id="monitoringPanels" class="monitoring-panels">
+<summary>Hub Diagnostics, system checks and historical evidence</summary>
+<div class="monitoring-body">
 <section class="card" id="systemHealthCard">
 <div><div class="health-heading"><strong>System check</strong><span class="health-status-chip health-neutral" id="healthAuditStatus">Not checked</span></div><div class="muted" id="healthAuditMeta">Scheduled morning check loading…</div></div>
 <div class="health-grid">
@@ -278,8 +408,9 @@ def render_page(title: str, version: str) -> str:
 </details>
 </section>
 <p class="muted">Powered by Ollama Online native function calling and Hubitat MCP.</p>
-</main>
-<button id="micFab" class="mic-fab" aria-label="Speak">🎤</button>
+</div></details>
+</div>
+<button id="micFab" class="mic-fab" aria-label="Speak" hidden>🎤</button>
 <script>
 const TITLE=__TITLE__,VERSION=__VERSION__;
 const newSessionId=()=>globalThis.crypto?.randomUUID?.()||`hmcp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
@@ -289,7 +420,44 @@ try{localStorage.removeItem('hmcp_chats_v1');sessionStorage.removeItem('hmcp_ses
   for(let i=sessionStorage.length-1;i>=0;i--){const key=sessionStorage.key(i);
     if(key&&key.startsWith('hmcp_history_'))sessionStorage.removeItem(key)}}catch(error){}
 document.getElementById('title').textContent=TITLE;document.getElementById('version').textContent='v'+VERSION;
-const query=document.getElementById('query'),ask=document.getElementById('ask'),answer=document.getElementById('answer');
+const query=document.getElementById('query'),ask=document.getElementById('ask');
+const feed=document.getElementById('exchangeFeed');
+let answer=document.getElementById('answer'),activeTrace=[],currentQuestion='';
+function syncCommandBar(){
+  query.style.height='auto';query.style.height=Math.min(132,Math.max(44,query.scrollHeight))+'px';
+  const ready=!!query.value.trim();ask.disabled=!ready;ask.classList.toggle('ready',ready);
+}
+function beginExchange(question){
+  const empty=document.getElementById('feedEmpty');if(empty)empty.remove();
+  if(answer&&!answer.hidden){
+    answer.classList.add('older');answer.removeAttribute('id');
+    answer.querySelectorAll('.action-controls button').forEach(button=>button.disabled=true);
+    answer=document.createElement('article');answer.className='exchange';answer.id='answer';
+    answer.setAttribute('role','status');feed.prepend(answer);
+  }
+  answer.hidden=false;answer.dataset.question=question;answer.replaceChildren();
+  const asked=document.createElement('p');asked.className='exchange-question';
+  asked.append('You asked: ');
+  const name=document.createElement('strong');name.textContent=question;asked.appendChild(name);
+  answer.appendChild(asked);
+  const trace=document.createElement('ol');trace.className='work-trace';trace.setAttribute('aria-label','Observed work');
+  answer.appendChild(trace);activeTrace=[];currentQuestion=question;
+  const body=document.createElement('div');body.className='exchange-body';
+  body.textContent='Starting request…';answer.appendChild(body);
+  return answer;
+}
+function recordTrace(stage,elapsed){
+  const value=String(stage||'').trim();if(!value||value==='Waiting for request')return;
+  if(activeTrace.length&&activeTrace[activeTrace.length-1].stage===value)return;
+  activeTrace.push({stage:value,elapsed:typeof elapsed==='number'&&Number.isFinite(elapsed)?elapsed:null});
+  const timeline=answer.querySelector('.work-trace');if(!timeline)return;
+  const li=document.createElement('li');li.textContent=value;
+  if(typeof elapsed==='number'&&Number.isFinite(elapsed)){
+    const time=document.createElement('small');time.textContent='observed '+elapsed.toFixed(1)+'s';li.appendChild(time);
+  }
+  timeline.appendChild(li);
+}
+
 const modelTier=document.getElementById('modelTier'),modelTierNote=document.getElementById('modelTierNote');
 function describeModelTier(){const mode=modelTier.value;modelTierNote.textContent=mode==='free'?'Free: use the configured default model; never upgrade this request to paid.':mode==='paid'?'Paid: DeepSeek Pro only. No Gemma fallback or HomeBrain budget; Ollama account credits apply.':mode==='claude'?'Paid: Claude via the Anthropic API. Anthropic bills separately; no Gemma or DeepSeek fallback.':'Auto: opt-in to existing hybrid routing (may use Ollama paid credits).';}
 modelTier.value='free';modelTier.onchange=describeModelTier;describeModelTier();
@@ -382,7 +550,14 @@ let suggestedAction=null,conversationHistory=[];
 function resetConversation(){
   if(activeRequest){activeRequest.abort();activeRequest=null;requestSequence++}
   stopAudio();suggestedAction=null;conversationHistory=[];sessionId=newSessionId();
-  query.value='';answer.classList.remove('busy');answer.textContent='Ready for a new topic.';
+  query.value='';syncCommandBar();
+  feed.replaceChildren();
+  answer=document.createElement('article');answer.className='exchange';answer.id='answer';answer.hidden=true;
+  answer.setAttribute('role','status');feed.appendChild(answer);
+  const empty=document.createElement('p');empty.className='feed-empty';empty.id='feedEmpty';
+  empty.textContent='What should the house do? ';const sub=document.createElement('span');
+  sub.textContent='Your newest answer will appear here.';empty.appendChild(sub);feed.prepend(empty);
+  activeTrace=[];currentQuestion='';
   document.getElementById('lastRoute').textContent='—';
   document.getElementById('lastTime').textContent='—';query.focus();
 }
@@ -390,8 +565,261 @@ document.getElementById('resetContext').onclick=resetConversation;
 
 function firmwareUpdateAvailable(data,rawMessage){if(data?.update_available===true)return true;const evidence=Array.isArray(data?.evidence)?data.evidence:[];if(evidence.some(item=>item?.update_available===true||item?.data?.update_available===true||item?.result?.update_available===true))return true;return /\bfirmware update is available\b/i.test(rawMessage)||/\bhub firmware\s+\S+\s+is installed and\s+\S+\s+is available\b/i.test(rawMessage)}
 function choicePrompt(question,choice){const original=String(question||'').trim();const directAction=original.match(/^\s*(?:please\s+)?(turn\s+on|turn\s+off|toggle)\b/i)?.[1]||original.match(/^\s*(?:can|could|would|will)\s+you\s+(?:please\s+)?(turn\s+on|turn\s+off|toggle)\b/i)?.[1]||'';if(directAction)return `${directAction} ${choice}`;const attribute=original.match(/\b(temperature|humidity|battery|power)\b/i)?.[1]||'';if(attribute)return `What is the ${choice} ${attribute}?`;return original?`${original} Device clarification: use exactly ${choice}.`:choice}
-function showAnswer(data){answer.replaceChildren();const meta=document.createElement('div');meta.className='answer-meta';const outcome=data.outcome_presentation;if(outcome&&['positive','warning','neutral','critical'].includes(outcome.tone)&&typeof outcome.label==='string'&&outcome.label){const outcomeBadge=document.createElement('span');outcomeBadge.className=`badge outcome-badge outcome-${outcome.tone}`;outcomeBadge.textContent=outcome.label;meta.appendChild(outcomeBadge)}[data.route,data.model_tier_requested&&data.model_tier_requested!=='auto'?'Selected '+data.model_tier_requested:null,data.model,data.elapsed_ms===undefined?null:`${(data.elapsed_ms/1000).toFixed(1)}s`].filter(Boolean).forEach(value=>{const badge=document.createElement('span');badge.className='badge';badge.textContent=value;meta.appendChild(badge)});if(meta.children.length)answer.appendChild(meta);if(data.model_usage){const parts=[];const names=data.model_usage.models||{};for(const [name,n] of Object.entries(names)){if(n>0){const short=/deepseek/i.test(name)?'DeepSeek Pro':/claude/i.test(name)?'Claude':/gemma/i.test(name)?'Gemma':name;parts.push(short+': '+n)}}if(parts.length){const usage=document.createElement('span');usage.className='badge';usage.textContent=parts.join(' · ');meta.appendChild(usage);if(!meta.isConnected)answer.appendChild(meta)}}const rawMessage=data.message||data.detail||'No response';const text=renderMessage(rawMessage);answer.appendChild(text);if(data.route==='automation-status'&&Array.isArray(data.automation_items)&&data.automation_items.length)answer.appendChild(renderAutomationItems(data));if(Array.isArray(data.choices)){const originalQuestion=query.value.trim();data.choices.forEach(choice=>{const option=document.createElement('button');option.className='confirm';option.textContent=choice;option.onclick=()=>submit(choicePrompt(originalQuestion,choice));answer.appendChild(option)})}suggestedAction=firmwareUpdateAvailable(data,rawMessage)?'firmware-update':null;if(suggestedAction==='firmware-update'){const install=document.createElement('button');install.className='confirm';install.textContent='Update hub firmware';install.onclick=()=>submit('Install the available Hubitat firmware update');answer.appendChild(install)}if(data.confirmation_required===true){const confirm=document.createElement('button');confirm.className='confirm';confirm.textContent='Confirm action';confirm.onclick=()=>submit('confirm');answer.appendChild(confirm)}const audioButton=document.createElement('button');audioButton.className='secondary copy-button audio-button';audioButton.textContent='🔊 Read answer';audioButton.onclick=()=>{if(activeSpeech||nativeSpeechActive)stopAudio();else void speakAnswer(rawMessage,audioButton)};answer.appendChild(audioButton);const copy=document.createElement('button');copy.className='secondary copy-button';copy.textContent='Copy answer';copy.onclick=()=>copyText(rawMessage,copy,'Copy answer');answer.appendChild(copy);const details=document.createElement('details');details.className='technical';const summary=document.createElement('summary');summary.textContent='Technical details';const technical=JSON.stringify(data,null,2);const technicalCopy=document.createElement('button');technicalCopy.className='secondary copy-button technical-copy';technicalCopy.textContent='Copy technical';technicalCopy.onclick=event=>{event.preventDefault();copyText(technical,technicalCopy,'Copy technical')};const pre=document.createElement('pre');pre.textContent=technical;details.append(summary,technicalCopy,pre);answer.appendChild(details);document.getElementById('lastRoute').textContent=data.route||'—';document.getElementById('lastTime').textContent=data.elapsed_ms===undefined?'—':`${(data.elapsed_ms/1000).toFixed(1)}s`;if(readAnswers&&speechText(rawMessage).length<1500)void speakAnswer(rawMessage,audioButton)}
-async function status(){try{const data=await jsonResponse(await fetch(apiPath('api/status')));pill('mcp',data.mcp?.online,data.mcp?.online?'MCP online':`MCP offline · ${data.mcp?.error||'unavailable'}`);pill('ollama',data.ollama?.configured,data.ollama?.configured?'Ollama ready':'Ollama API key required');const paidOption=modelTier.querySelector('option[value="paid"]');if(paidOption)paidOption.disabled=data.paid_routing?.enabled===false;const claudeOption=modelTier.querySelector('option[value="claude"]');if(claudeOption)claudeOption.disabled=data.claude?.configured!==true;if((modelTier.value==='paid'&&paidOption?.disabled)||(modelTier.value==='claude'&&claudeOption?.disabled))modelTier.value='free';describeModelTier();document.getElementById('tools').textContent=data.mcp?.tools??'—';document.getElementById('model').textContent=data.ollama?.model||'—'}catch(error){pill('mcp',false,'Status error · '+error.message)}try{const dash=await jsonResponse(await fetch(apiPath('api/dashboard')));document.getElementById('dashLights').textContent=dash.lights_on??'—';document.getElementById('dashMotion').textContent=dash.motion_active??'—';document.getElementById('dashBatteries').textContent=dash.low_batteries??'—';const active=dash.active_rooms||[];const loaded=[dash.lights_on,dash.motion_active,dash.low_batteries].some(value=>value!=null);document.getElementById('dashActiveRooms').textContent=loaded?active.length:'—';document.getElementById('dashActiveRoomNames').textContent=loaded?(active.length?active.map(room=>room.name).join(', '):'No motion or lights on'):'Loading live states…'}catch(error){console.warn('Dashboard unavailable',error)}loadHealthAudit();loadJournal()}
+function durationText(value){
+  const n=Number(value);return Number.isFinite(n)&&n>=0?(n/1000).toFixed(2)+'s':null;
+}
+function renderWorkTrace(data){
+  const trace=answer.querySelector('.work-trace');if(!trace)return;
+  const metrics=data.metrics||{};
+  // Stage descriptions are captured from the actual live progress endpoint.
+  // Only actual provider/model and native tool receipts add rows here.
+  const rounds=Array.isArray(metrics.model_round_details)?metrics.model_round_details:[];
+  const rows=Array.isArray(data.evidence)?data.evidence:[];
+  rounds.forEach((round,index)=>{
+    if(!round||typeof round!=='object')return;
+    const label=(round.model?'Ollama':'Model')+' round '+(index+1)+(round.model?' · '+round.model:'');
+    const duration=durationText(round.elapsed_ms??round.duration_ms);
+    const li=document.createElement('li');li.textContent=label;
+    if(duration){const time=document.createElement('small');time.textContent=duration;li.appendChild(time)}
+    trace.appendChild(li);
+  });
+  rows.forEach((row,index)=>{
+    if(!row||typeof row!=='object')return;
+    const tool=String(row.sub_tool||row.tool||row.name||'native MCP').slice(0,110);
+    const li=document.createElement('li');li.textContent='MCP · '+tool;
+    const duration=durationText(row.elapsed_ms??row.duration_ms);
+    if(duration){const time=document.createElement('small');time.textContent=duration;li.appendChild(time)}
+    trace.appendChild(li);
+  });
+  if(!trace.children.length)trace.hidden=true;
+}
+function downloadPrivateJson(data){
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob),link=document.createElement('a');
+  link.href=url;link.download='PRIVATE-homebrain-technical.json';
+  document.body.appendChild(link);link.click();link.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),3000);
+}
+function renderEvidence(data,host){
+  const rows=Array.isArray(data.evidence)?data.evidence:[];
+  const drawer=document.createElement('details');drawer.className='evidence-drawer';
+  const summary=document.createElement('summary');summary.textContent='Evidence · '+rows.length+' calls';drawer.appendChild(summary);
+  if(!rows.length){const empty=document.createElement('p');empty.className='muted';empty.textContent='No tool-call receipts returned.';drawer.appendChild(empty)}
+  rows.forEach((row,index)=>{
+    if(!row||typeof row!=='object')return;
+    const entry=document.createElement('div');entry.className='evidence-row';
+    const name=document.createElement('span');name.textContent=String(row.sub_tool||row.tool||row.name||'Tool '+(index+1)).slice(0,130);
+    const status=document.createElement('small');
+    status.textContent=(row.success===true?'success':row.success===false?'failed':'status unknown')
+      +' · live claim '+(row.supports_live_claim===true?'supported':'not attested');
+    entry.append(name,status);drawer.appendChild(entry);
+  });
+  const warning=document.createElement('p');warning.className='private-warning';
+  warning.textContent='PRIVATE JSON may contain device IDs, addresses, event logs and other household data. Inspect it before sharing.';
+  drawer.appendChild(warning);
+  const download=document.createElement('button');download.type='button';download.className='secondary copy-button';
+  download.textContent='Download PRIVATE JSON';download.onclick=()=>downloadPrivateJson(data);
+  drawer.appendChild(download);host.appendChild(drawer);
+}
+function actionCardVariant(data){
+  const c=data&&data.pending_action_card;
+  if(data?.confirmation_required!==true||!c||c.status!=='pending_confirmation')return null;
+  return ['routine_write','sensitive_write','destructive_write'].includes(c.effect_class)?c.effect_class:null;
+}
+function renderPendingAction(data,host){
+  if(data.confirmation_required!==true)return;
+  const effect=actionCardVariant(data);
+  const card=document.createElement('section');card.className='action-card '+(effect||'sensitive_write');
+  if(!effect){
+    const p=document.createElement('p');p.textContent='An action is pending but its structured proposal is unavailable. No approval controls are shown.';
+    card.appendChild(p);host.appendChild(card);return;
+  }
+  const proposal=data.pending_action_card;
+  const heading=document.createElement('h3');heading.textContent=
+    effect==='destructive_write'?'Destructive action · approval required':
+    effect==='sensitive_write'?'Sensitive action · approval required':'Routine action · approval required';
+  card.appendChild(heading);
+  const summary=document.createElement('p');summary.className='action-note';
+  summary.textContent=proposal.summary||'Unexecuted native action proposal';card.appendChild(summary);
+  const chips=document.createElement('div');chips.className='action-chips';
+  const inputFields=[];
+  (Array.isArray(proposal.actions)?proposal.actions:[]).forEach(action=>{
+    if(!action||typeof action!=='object')return;
+    const label=document.createElement('span');label.className='action-chip';
+    label.textContent=String(action.command||'native operation')+' · '+String(action.tool||'');
+    chips.appendChild(label);
+    (Array.isArray(action.fields)?action.fields:[]).forEach(field=>{
+      if(!['device','time','days'].includes(field.kind))return;
+      const chip=document.createElement('label');chip.className='action-chip';
+      chip.append(field.kind+' ');
+      const input=document.createElement('input');input.value=String(field.value||'');
+      input.setAttribute('aria-label','Proposed '+field.kind);
+      input.maxLength=70;chip.appendChild(input);chips.appendChild(chip);
+      inputFields.push({kind:field.kind,input});
+    });
+  });
+  card.appendChild(chips);
+  const note=document.createElement('p');note.className='action-note';
+  note.textContent='These are proposed native arguments, not verified physical outcomes. Editing requires a fresh proposal; approval never modifies the queued arguments.';
+  card.appendChild(note);
+  const actions=document.createElement('div');actions.className='action-controls';
+  const approve=document.createElement('button');approve.className='confirm';approve.type='button';approve.textContent='Approve';
+  const edit=document.createElement('button');edit.type='button';edit.textContent='Edit';
+  const dry=document.createElement('button');dry.type='button';dry.textContent='Dry-run';
+  const dismiss=document.createElement('button');dismiss.type='button';dismiss.textContent='Dismiss';
+  const disable=()=>{for(const b of actions.querySelectorAll('button'))b.disabled=true};
+  const originalChipValues=inputFields.map(x=>x.input.value);
+  const checkEditedChips=()=>{
+    const changed=inputFields.some((item,index)=>item.input.value!==originalChipValues[index]);
+    approve.disabled=changed;
+    if(changed)note.textContent='You changed a proposed field. Press Edit to cancel this proposal and request a newly verified one; the old action cannot be approved with altered chips.';
+    else note.textContent='These are proposed native arguments, not verified physical outcomes. Editing requires a fresh proposal; approval never modifies the queued arguments.';
+  };
+  inputFields.forEach(item=>item.input.addEventListener('input',checkEditedChips));
+  approve.onclick=()=>{
+    if(effect!=='routine_write'&&!window.confirm('Approve this exact native proposal? It can change your Hubitat or home.'))return;
+    disable();void submit('confirm');
+  };
+  dry.onclick=()=>{note.textContent='Preview only: this proposal has NOT executed. No native dry-run or outcome simulation is available.'};
+  async function discardProposal(){
+    const response=await fetch(apiPath('api/confirmation/dismiss'),{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({session_id:sessionId}),
+    });
+    if(!response.ok)throw new Error('Unable to dismiss pending action (HTTP '+response.status+')');
+    const result=await response.json();
+    if(result.cancelled!==true)throw new Error('The server did not confirm cancellation');
+    disable();note.textContent='Pending proposal dismissed. No native command was submitted by dismissal.';
+  }
+  dismiss.onclick=async()=>{try{await discardProposal()}catch(error){note.textContent=error.message}};
+  edit.onclick=async()=>{
+    try{
+      await discardProposal();
+      const changed=inputFields.map(x=>x.kind+': '+x.input.value.trim()).filter(Boolean);
+      query.value=currentQuestion+(changed.length?'\nRequested revisions to the unexecuted proposal — '+changed.join('; '):'\nPlease revise the action proposal.');
+      syncCommandBar();query.focus();note.textContent='Review the edited request and press Ask for a fresh proposal. The original proposal is cancelled.';
+    }catch(error){note.textContent=error.message}
+  };
+  actions.append(approve,edit,dry,dismiss);card.appendChild(actions);host.appendChild(card);
+}
+function showAnswer(data){
+  if(answer.hidden)beginExchange(query.value.trim()||currentQuestion||'Request');
+  const body=answer.querySelector('.exchange-body')||answer;body.replaceChildren();
+  const meta=document.createElement('div');meta.className='answer-meta';
+  const outcome=data.outcome_presentation;
+  if(outcome&&['positive','warning','neutral','critical'].includes(outcome.tone)&&typeof outcome.label==='string'&&outcome.label){
+    const outcomeBadge=document.createElement('span');
+    outcomeBadge.className='badge outcome-badge outcome-'+outcome.tone;
+    outcomeBadge.textContent=outcome.label;meta.appendChild(outcomeBadge);
+  }
+  [data.route,data.model_tier_requested&&data.model_tier_requested!=='auto'?'Selected '+data.model_tier_requested:null,
+   data.model,data.elapsed_ms===undefined?null:(data.elapsed_ms/1000).toFixed(1)+'s'].filter(Boolean).forEach(value=>{
+    const badge=document.createElement('span');badge.className='badge';badge.textContent=value;meta.appendChild(badge);
+  });
+  if(data.model_usage){
+    const parts=[],names=data.model_usage.models||{};
+    for(const [name,n] of Object.entries(names)){if(n>0)parts.push(name+': '+n)}
+    if(parts.length){const usage=document.createElement('span');usage.className='badge';usage.textContent=parts.join(' · ');meta.appendChild(usage)}
+  }
+  if(meta.children.length)body.appendChild(meta);
+  const rawMessage=data.message||data.detail||'No response';
+  body.appendChild(renderMessage(rawMessage));
+  if(data.route==='automation-status'&&Array.isArray(data.automation_items)&&data.automation_items.length)
+    body.appendChild(renderAutomationItems(data));
+  if(Array.isArray(data.choices)){
+    const originalQuestion=answer.dataset.question||query.value.trim();
+    data.choices.forEach(choice=>{
+      const option=document.createElement('button');option.className='confirm choice-button';
+      option.textContent=choice;
+      option.onclick=()=>submit(choicePrompt(originalQuestion,choice));body.appendChild(option);
+    });
+  }
+  suggestedAction=firmwareUpdateAvailable(data,rawMessage)?'firmware-update':null;
+  if(suggestedAction==='firmware-update'){
+    const install=document.createElement('button');install.className='confirm choice-button';
+    install.textContent='Review firmware update';install.onclick=()=>submit('Install the available Hubitat firmware update');
+    body.appendChild(install);
+  }
+  if(data.confirmation_required===true)renderPendingAction(data,body);
+  const footer=document.createElement('div');footer.className='exchange-actions';
+  const audioButton=document.createElement('button');audioButton.className='secondary audio-button';
+  audioButton.textContent='🔊 Read aloud';
+  audioButton.onclick=()=>{if(activeSpeech||nativeSpeechActive)stopAudio();else void speakAnswer(rawMessage,audioButton)};
+  const copy=document.createElement('button');copy.className='secondary';copy.textContent='Copy answer';
+  copy.onclick=()=>copyText(rawMessage,copy,'Copy answer');
+  const review=document.createElement('button');review.className='secondary';review.textContent='Copy for review';
+  review.onclick=()=>copyText(
+    'HomeBrainOS PRIVATE first-answer review. Verify against original receipts. No independent Hubitat verification is implied.\n\n'
+    +JSON.stringify({question:answer.dataset.question,response:data},null,2),review,'Copy for review');
+  footer.append(audioButton,copy,review);body.appendChild(footer);
+  renderEvidence(data,body);renderWorkTrace(data);
+  const details=document.createElement('details');details.className='technical';
+  const summary=document.createElement('summary');summary.textContent='Technical details';
+  const technical=JSON.stringify(data,null,2);
+  const technicalCopy=document.createElement('button');technicalCopy.className='secondary copy-button technical-copy';
+  technicalCopy.textContent='Copy technical';technicalCopy.onclick=event=>{
+    event.preventDefault();void copyText(technical,technicalCopy,'Copy technical');
+  };
+  const pre=document.createElement('pre');pre.textContent=technical;
+  details.append(summary,technicalCopy,pre);body.appendChild(details);
+  document.getElementById('lastRoute').textContent=data.route||'—';
+  document.getElementById('lastTime').textContent=data.elapsed_ms===undefined?'—':(data.elapsed_ms/1000).toFixed(1)+'s';
+  if(readAnswers&&speechText(rawMessage).length<1500)void speakAnswer(rawMessage,audioButton);
+}
+async function status(){
+  const pillButton=document.getElementById('connectionPill');
+  try{
+    const data=await jsonResponse(await fetch(apiPath('api/status')));
+    pill('mcp',data.mcp?.online,data.mcp?.online?'MCP online':'MCP offline · '+(data.mcp?.error||'unavailable'));
+    pill('ollama',data.ollama?.configured,data.ollama?.configured?'Ollama ready':'Ollama API key required');
+    const paidOption=modelTier.querySelector('option[value="paid"]');
+    if(paidOption)paidOption.disabled=data.paid_routing?.enabled===false;
+    const claudeOption=modelTier.querySelector('option[value="claude"]');
+    if(claudeOption)claudeOption.disabled=data.claude?.configured!==true;
+    if((modelTier.value==='paid'&&paidOption?.disabled)||(modelTier.value==='claude'&&claudeOption?.disabled))modelTier.value='free';
+    describeModelTier();
+    document.getElementById('tools').textContent=data.mcp?.tools??'—';
+    document.getElementById('model').textContent=data.ollama?.model||'—';
+    const online=data.mcp?.online===true;
+    pillButton.textContent=(online?'● Connected':'● Offline')+' · '+String(data.ollama?.model||'model unavailable');
+    pillButton.classList.toggle('online',online);
+  }catch(error){
+    pill('mcp',false,'Status error · '+error.message);
+    pillButton.textContent='● Connection unknown';
+  }
+  try{
+    const dash=await jsonResponse(await fetch(apiPath('api/dashboard')));
+    document.getElementById('dashLights').textContent=dash.lights_on??'—';
+    document.getElementById('dashMotion').textContent=dash.motion_active??'—';
+    document.getElementById('dashBatteries').textContent=dash.low_batteries??'—';
+    document.getElementById('dashDevices').textContent=dash.devices??'—';
+    document.getElementById('statusDevices').textContent=dash.devices??'—';
+    document.getElementById('statusHub').textContent=dash.hub_info?.name||dash.hub_info?.model||'Hubitat';
+    const active=dash.active_rooms||[];
+    const loaded=dash.success===true;
+    document.getElementById('dashActiveRooms').textContent=loaded?active.length:'—';
+    document.getElementById('dashActiveRoomNames').textContent=loaded?(active.length?active.map(room=>room.name).join(', '):'No motion or lights on'):'Live states unavailable';
+    document.getElementById('overviewNote').textContent=loaded?
+      'Read-only snapshot · inventory reconciled ('+String(dash.source||'live inventory')+') · no device commands':
+      'Snapshot unavailable · no device commands';
+  }catch(error){
+    document.getElementById('overviewNote').textContent='Snapshot unavailable · no device commands';
+    console.warn('Dashboard unavailable',error);
+  }
+  loadHealthAudit();loadJournal();
+}
+document.getElementById('connectionPill').onclick=()=>{
+  const panel=document.getElementById('connectionPanel');
+  panel.hidden=!panel.hidden;
+  document.getElementById('connectionPill').setAttribute('aria-expanded',String(!panel.hidden));
+};
+document.getElementById('checkConnection').onclick=()=>void status();
+document.addEventListener('keydown',event=>{
+  if(event.key==='Escape'){
+    const panel=document.getElementById('connectionPanel');panel.hidden=true;
+    document.getElementById('connectionPill').setAttribute('aria-expanded','false');
+  }
+});
 const MAX_CHAT_PROMPT_CHARS=12000;
 function askApiErrorMessage(response,data,length){
   if(response.status===422&&Array.isArray(data?.detail)){
@@ -410,8 +838,9 @@ function askApiErrorMessage(response,data,length){
 async function submit(text){
   const incidentAI=text&&typeof text==='object'?text.incidentAI||null:null;
   text=(incidentAI?text.text:text||query.value).trim();if(!text)return;
+  beginExchange(text);
   if(text.length>MAX_CHAT_PROMPT_CHARS){
-    query.value=text;
+    query.value=text;syncCommandBar();
     showAnswer({success:false,route:'validation-error',
       message:'Question exceeds the '+MAX_CHAT_PROMPT_CHARS.toLocaleString()+
         '-character limit ('+text.length.toLocaleString()+
@@ -420,21 +849,25 @@ async function submit(text){
   }
   const normalized=text.toLowerCase().replace(/[.!]/g,'').trim();
   if(suggestedAction==='firmware-update'&&['yes','yes please','proceed','do it'].includes(normalized))text='Install the available Hubitat firmware update';
-  suggestedAction=null;stopAudio();query.value=text;
+  suggestedAction=null;stopAudio();query.value='';syncCommandBar();
   if(activeRequest)activeRequest.abort();
   const controller=new AbortController();activeRequest=controller;
   const sequence=++requestSequence,requestId=newSessionId(),requestSessionId=sessionId;
   const selectedTier=modelTier.value;
   const history=conversationHistory.slice(-8);
-  answer.classList.add('busy');answer.textContent='Starting request… Ask another question to replace this request.';
+  answer.classList.add('busy');recordTrace('Starting request',0);
+  const body=answer.querySelector('.exchange-body');
+  if(body)body.textContent='Starting request… Ask another question to replace this request.';
   const progressTimer=setInterval(async()=>{
     if(sequence!==requestSequence||controller.signal.aborted)return;
     try{
       const response=await fetch(apiPath('api/request-progress')+'?session_id='+encodeURIComponent(requestSessionId)+'&request_id='+encodeURIComponent(requestId),{signal:controller.signal});
       if(!response.ok)return;
       const progress=await response.json();
-      if(sequence===requestSequence&&activeRequest===controller&&!progress.completed&&progress.stage&&progress.stage!=='Waiting for request')
-        answer.textContent=progress.stage+' · '+(progress.elapsed_seconds||0).toFixed(0)+'s elapsed';
+      if(sequence===requestSequence&&activeRequest===controller&&!progress.completed&&progress.stage&&progress.stage!=='Waiting for request'){
+        recordTrace(progress.stage,Number(progress.elapsed_seconds));
+        const body=answer.querySelector('.exchange-body');if(body)body.textContent=progress.stage;
+      }
     }catch(error){}
   },1500);
   try{
@@ -518,11 +951,91 @@ async function submit(text){
     }
   }
 }
-ask.onclick=()=>submit();query.onkeydown=event=>{if(event.key==='Enter')submit()};document.querySelectorAll('[data-q]').forEach(button=>button.onclick=()=>submit(button.dataset.q));
+document.getElementById('commandForm').onsubmit=event=>{event.preventDefault();void submit()};
+query.addEventListener('input',syncCommandBar);
+query.onkeydown=event=>{
+  if(event.isComposing)return;
+  if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();void submit()}
+  if(event.key==='Escape'){event.preventDefault();query.value='';syncCommandBar();query.blur()}
+};
+document.addEventListener('keydown',event=>{
+  if(event.key==='/'&&!event.altKey&&!event.ctrlKey&&!event.metaKey
+    &&document.activeElement!==query&&!document.activeElement?.isContentEditable
+    &&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)){
+      event.preventDefault();query.focus();
+  }
+});
+document.querySelectorAll('[data-q]').forEach(button=>button.onclick=()=>void submit(button.dataset.q));
+syncCommandBar();
+
+let activeRecognition=null,voiceStopToSend=false,voiceDownAt=0,voiceFinal='';
+const mic=document.getElementById('speak'),voiceStatus=document.getElementById('voiceStatus');
+function finishVoice(send){
+  if(!activeRecognition)return;
+  voiceStopToSend=send;
+  try{activeRecognition.stop()}catch(error){voiceStatus.textContent='Voice could not stop: '+error.message}
+}
+function startVoice(){
+  stopAudio();
+  if(activeRecognition){finishVoice(true);return}
+  const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!Recognition){
+    voiceStatus.textContent='Voice unavailable in this browser. Type your question instead.';
+    return;
+  }
+  try{
+    const recognition=new Recognition();activeRecognition=recognition;
+    voiceStopToSend=false;voiceFinal='';recognition.lang='en-GB';
+    recognition.interimResults=true;recognition.continuous=true;
+    recognition.onstart=()=>{
+      mic.classList.add('listening');mic.setAttribute('aria-label','Stop and send spoken question');
+      voiceStatus.textContent='Listening… tap again to send, or release after a long hold.';
+    };
+    recognition.onresult=event=>{
+      let draft='';for(const result of Array.from(event.results)){
+        draft+=String(result[0]?.transcript||'')+' ';
+      }
+      voiceFinal=draft.trim();query.value=voiceFinal;syncCommandBar();
+    };
+    recognition.onerror=event=>{
+      voiceStopToSend=false;
+      voiceStatus.textContent='Voice error: '+String(event.error||'unavailable')+'. Type instead.';
+    };
+    recognition.onend=()=>{
+      const send=voiceStopToSend;activeRecognition=null;voiceStopToSend=false;
+      mic.classList.remove('listening');mic.setAttribute('aria-label','Start speaking');
+      if(send&&query.value.trim()){voiceStatus.textContent='Sending spoken question…';void submit(query.value)}
+      else if(!voiceStatus.textContent.startsWith('Voice error'))voiceStatus.textContent=
+        voiceFinal?'Speech captured; press Ask to send.':'Voice stopped. Type or tap the mic to try again.';
+    };
+    recognition.start();
+  }catch(error){
+    activeRecognition=null;mic.classList.remove('listening');
+    voiceStatus.textContent='Voice could not start. Type instead.';
+  }
+}
+mic.addEventListener('pointerdown',event=>{
+  if(event.button!==0)return;
+  event.preventDefault();
+  if(activeRecognition){voiceDownAt=0;finishVoice(true);return}
+  voiceDownAt=Date.now();startVoice();
+});
+const releaseMic=()=>{
+  if(!voiceDownAt)return;
+  const held=Date.now()-voiceDownAt;voiceDownAt=0;
+  if(held>400&&activeRecognition)finishVoice(true);
+};
+mic.addEventListener('pointerup',releaseMic);
+mic.addEventListener('pointercancel',releaseMic);
+mic.addEventListener('pointerleave',releaseMic);
+mic.addEventListener('click',event=>{if(event.detail===0)startVoice()});
+mic.addEventListener('contextmenu',event=>event.preventDefault());
+// Retained only for old DOM contract tests; never a second on-screen mic.
+document.getElementById('micFab').hidden=true;
+
 document.getElementById('runHealthAudit').onclick=async()=>{const button=document.getElementById('runHealthAudit');button.disabled=true;button.textContent='🩺 Checking…';try{const data=await jsonResponse(await fetch(apiPath('api/health-audit/run'),{method:'POST'}));renderHealthAuditV2(data);document.getElementById('healthAuditDetails').open=true}catch(error){document.getElementById('healthAuditMeta').textContent='System check failed: '+error.message}finally{button.disabled=false;button.textContent='🩺 Run system check now'}};
 document.getElementById('sendPushoverReport').onclick=async()=>{const button=document.getElementById('sendPushoverReport'),meta=document.getElementById('healthAuditMeta');button.disabled=true;button.textContent='📲 Sending report…';try{const response=await fetch(apiPath('api/pushover/report'),{method:'POST'}),data=await jsonResponse(response);if(!response.ok||!data.success)throw new Error(data.detail||'Pushover rejected the report');meta.textContent=data.message||'Latest System Check report sent to Pushover.';button.textContent='✅ Report sent'}catch(error){meta.textContent='Pushover report failed: '+error.message;button.textContent='❌ Send failed'}finally{setTimeout(()=>{button.disabled=false;button.textContent='📲 Send report to Pushover'},1800)}};
-let activeRecognition=null;function startVoice(){stopAudio();if(activeRecognition){activeRecognition.stop();return}const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;if(!Recognition){answer.textContent='Speech recognition is unavailable in this browser.';return}const recognition=new Recognition();activeRecognition=recognition;recognition.lang='en-GB';const fab=document.getElementById('micFab');fab.classList.add('listening');fab.textContent='■';recognition.onresult=event=>submit(event.results[0][0].transcript);recognition.onerror=event=>{answer.textContent='Speech recognition error: '+event.error};recognition.onend=()=>{activeRecognition=null;fab.classList.remove('listening');fab.textContent='🎤'};recognition.start()}
-document.getElementById('speak').onclick=startVoice;document.getElementById('micFab').onclick=startVoice;
+
 
 let journalBrowseOffset=0;
 function journalBrowseParameters(){

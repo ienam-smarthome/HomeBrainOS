@@ -186,9 +186,11 @@ class ConfirmationPolicy:
         *,
         enabled: bool = True,
         max_actions: int = DEFAULT_MAX_CONFIRMATION_ACTIONS,
+        confirm_routine_writes: bool = False,
     ) -> None:
         self.enabled = bool(enabled)
         self.max_actions = max(1, int(max_actions))
+        self.confirm_routine_writes = bool(confirm_routine_writes)
 
     def requires_confirmation(
         self,
@@ -196,16 +198,22 @@ class ConfirmationPolicy:
         *,
         declared: bool = True,
     ) -> bool:
-        """Confirm only declared calls with a confirmation-bearing effect."""
+        """Opt-in routine approvals while retaining non-UI agent defaults.
 
-        return self.enabled and declared and effect.requires_confirmation
+        The configured web add-on explicitly opts in so a browser approval
+        card can only represent an unexecuted, session-queued native write.
+        """
+
+        return (self.enabled and declared and
+                (effect.requires_confirmation or
+                 (self.confirm_routine_writes and effect is ToolEffect.ROUTINE_WRITE)))
 
     def decide(
         self,
         session_id: str,
         actions: list[tuple[str, dict[str, Any]]],
     ) -> ConfirmationDecision:
-        """Validate a sensitive action group and render its queue prompt."""
+        """Validate a structured mutation group and render its queue prompt."""
 
         if not actions or not self.enabled:
             return ConfirmationDecision(ConfirmationAction.BYPASS)

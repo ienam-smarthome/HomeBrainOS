@@ -14,7 +14,7 @@ def test_rendered_webui_consumes_api_outcome_presentation() -> None:
 
     assert "const outcome=data.outcome_presentation" in page
     assert "outcomeBadge.textContent=outcome.label" in page
-    assert "outcome-${outcome.tone}" in page
+    assert "'badge outcome-badge outcome-'+outcome.tone" in page
 
 
 def test_rendered_webui_supports_every_fixed_tone() -> None:

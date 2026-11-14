@@ -6,6 +6,7 @@ The repository drift test compares this table directly with the live directory. 
 
 | Module | Role |
 | --- | --- |
+| `action_card_projection.py` | Pure safe preview of already queued native actions for UI cards; source structured effect classes, no writes or prompt parsing. |
 | `agent_prompt_policy.py` | Builds the system prompt and optional identity manifests. |
 | `aggregate_fallback_policy.py` | Keeps generic value/valueStr aggregate fallbacks request-local and suppresses them after complete non-empty canonical meter evidence. |
 | `api_response_builder.py` | Builds the stable API response and presented metrics. |

@@ -20,6 +20,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field, model_validator
 
+from action_card_projection import queued_action_card
 from api_response_builder import build_agent_response
 from automation_ideas_service import suggest_new_automations
 from automation_status_service import AutomationStatusService
@@ -413,6 +414,11 @@ agent = UnifiedMCPAgent(
         OPTIONS.get("semantic_default_temperature_step") or 1.0
     ),
 )
+# WebUI opts in to routine approval without changing the standalone agent's
+# backwards-compatible confirmation policy. The queued action still runs
+# exclusively through ConfirmedActionCoordinator after explicit approval.
+agent.confirmation_policy.confirm_routine_writes = True
+
 cloud_benchmark = CloudBenchmark()
 cloud_connection_diagnostics = CloudConnectionDiagnostics()
 stage5_benchmark = Stage5Benchmark()
@@ -2025,6 +2031,17 @@ async def chat(request: ChatRequest, connection: Request) -> dict[str, Any]:
     return {"response": await _answer(request, connection)}
 
 
+class DismissConfirmation(BaseModel):
+    session_id: str = Field(min_length=8, max_length=128)
+
+
+@app.post("/api/confirmation/dismiss")
+async def dismiss_confirmation(payload: DismissConfirmation) -> dict[str, Any]:
+    """Cancel only an existing pending proposal, never send a Hubitat write."""
+    agent.confirmations.cancel(payload.session_id)
+    return {"success": True, "cancelled": True, "native_write_submitted": False}
+
+
 @app.post("/api/ask")
 async def ask(request: ChatRequest, connection: Request) -> dict[str, Any]:
     started = time.perf_counter()
@@ -2038,6 +2055,14 @@ async def ask(request: ChatRequest, connection: Request) -> dict[str, Any]:
     )
     result["model_tier_requested"] = request.model_tier
     result.update(guard_unresolved_causal_publication(result))
+    if result.get("confirmation_required") is True:
+        # Read only the SAME session's already-queued native proposal.
+        # Never serialize immutable tool arguments or credentials.
+        pending = agent.confirmations.pending.get(request.session_id)
+        if pending is not None:
+            projection = queued_action_card(pending.actions)
+            if projection is not None:
+                result["pending_action_card"] = projection
     return result
 
 

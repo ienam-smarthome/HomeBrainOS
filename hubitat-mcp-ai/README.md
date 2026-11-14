@@ -3,7 +3,9 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.18.459**.
+Current add-on version: **0.18.460**.
+
+**Command-first UI (v0.18.460):** Always-visible Ask/voice command bar, newest-first answers, actual receipt drawers and stage observations, read-only overview and status popover, plus structured approval cards for queued routine/sensitive/destructive writes. Approve uses the existing immutable confirmation coordinator; no fake simulation or pre-approval execution. [Details](CHANGELOG-0.18.460.md).
 
 **Recoverable source discovery and multi-part history (v0.18.459):** Autonomous history reads recover a rejected attribute by discovering actual events on the same verified device, keeping the mismatch explicit. Plans may request raw discovery instead of assuming switch. Reported heating/idle intervals use source timestamps and remain distinct from configured heat mode or physical boiler proof. The first successful interval no longer ends a multi-part autonomous question before related-device evidence can be read. No provider/paid-route or write-permission change. [Details](CHANGELOG-0.18.459.md).
 

@@ -45,10 +45,10 @@ def test_webui_dashboard_tiles_drop_switches_and_reorder_the_remaining_four() ->
     assert "switches_on" not in page
 
     order = [
-        page.index(">Active rooms<"),
         page.index(">Lights on<"),
         page.index(">Motion active<"),
         page.index(">Low batteries<"),
+        page.index(">Devices inspected<"),
     ]
     assert order == sorted(order), order
 
@@ -119,12 +119,12 @@ def test_read_answer_speech_normalizes_visual_arrows_and_percentages() -> None:
 
 def test_webui_compact_tiles_are_above_query_and_monitoring() -> None:
     page = render_page("HomeBrain", "0.18.429")
-    title = page.index("<h1>")
+    title = page.index("<h1")
     summary = page.index('id="summaryTiles"')
     query = page.index('id="query"')
     health = page.index('id="systemHealthCard"')
     diagnostics = page.index('id="hubDiagnosticsCard"')
-    assert title < summary < query < health < diagnostics
+    assert title < query < summary < health < diagnostics
     assert 'class="card grid top-stats"' in page
     assert "repeat(4,minmax(0,1fr))" in page
     assert 'hub2/createFullLocalBackup' not in page
