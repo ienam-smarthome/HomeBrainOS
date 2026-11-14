@@ -668,6 +668,14 @@ function renderPendingAction(data,host){
   const dry=document.createElement('button');dry.type='button';dry.textContent='Dry-run';
   const dismiss=document.createElement('button');dismiss.type='button';dismiss.textContent='Dismiss';
   const disable=()=>{for(const b of actions.querySelectorAll('button'))b.disabled=true};
+  const originalChipValues=inputFields.map(x=>x.input.value);
+  const checkEditedChips=()=>{
+    const changed=inputFields.some((item,index)=>item.input.value!==originalChipValues[index]);
+    approve.disabled=changed;
+    if(changed)note.textContent='You changed a proposed field. Press Edit to cancel this proposal and request a newly verified one; the old action cannot be approved with altered chips.';
+    else note.textContent='These are proposed native arguments, not verified physical outcomes. Editing requires a fresh proposal; approval never modifies the queued arguments.';
+  };
+  inputFields.forEach(item=>item.input.addEventListener('input',checkEditedChips));
   approve.onclick=()=>{
     if(effect!=='routine_write'&&!window.confirm('Approve this exact native proposal? It can change your Hubitat or home.'))return;
     disable();void submit('confirm');
