@@ -350,6 +350,67 @@ button,textarea,select{color:var(--hb-text);border-color:var(--hb-edge);backgrou
 #ask pre{background:#edf2f9;color:var(--hb-text)}
 #ask .overview-shell .overview-limits p{color:var(--hb-sub)}
 }
+/* alpha.82: fix alpha.81 legacy dark-panel / light-text-token collision.
+   Preserve dark, source-colored SVG/canvas plots but give their surrounding
+   metric cards, legend, controls and evaluation forms a true light surface. */
+@media(prefers-color-scheme:light){
+  :root{
+    --bg:#f2f5fa;--panel:#ffffff;--edge:#c9d4e4;
+    --txt:#182640;--muted:#52617a;--blue:#165da9;
+    --green:#0c6950;--amber:#90600b;
+  }
+  #diagnostics .metric,#diagnostics .card,#evaluation .card{
+    background:#ffffff;color:#182640;border-color:#c9d4e4;
+    box-shadow:0 5px 20px #263b5610;
+  }
+  #diagnostics .metric strong,#diagnostics .card h2,
+  #evaluation .card h2,#evaluation .card h3{
+    color:#182640;
+  }
+  #diagnostics .metric small,#diagnostics .muted,#diagnostics .timeline-meta,
+  #diagnostics .timeline-readout,#diagnostics .plot-stats,
+  #diagnostics .legend,#diagnostics .graph-zoom-hint,#diagnostics .session-note,
+  #diagnostics .diag-controls label,#diagnostics .timeline-event,
+  #diagnostics #source,#evaluation .muted,#evaluation .eval-meta,
+  #evaluation .eval-upload,#evaluation .eval-consent,
+  #evaluation .eval-review-summary,#evaluation .eval-review-case,
+  #evaluation .eval-review-stage label,#evaluation .eval-claim-item label{
+    color:#52617a;
+  }
+  #diagnostics .metric small{font-size:12px}
+  #diagnostics .metric strong{font-weight:750;font-size:23px}
+  #diagnostics .timeline-readout,#diagnostics .timeline-event{
+    background:#edf2f9;border-color:#c9d4e4;
+  }
+  #diagnostics .graph-popout-link,#diagnostics .graph-popout-return{
+    color:#175795;background:#e7effa;border-color:#b9cce2;
+  }
+  #diagnostics .graph-popout-link:hover,#diagnostics .graph-popout-return:hover{
+    background:#d8e6f8;color:#164b85;
+  }
+  #diagnostics #hint{color:#f1f7ff;border-color:#405a79}
+  #diagnostics pre,#evaluation pre{background:#edf2f9;color:#182640;border:1px solid #cfdae8}
+  #diagnostics .timeline-scroll{background:#101b2b}
+  #evaluation .eval-review-stage,#evaluation .eval-claim-item{
+    background:#edf2f9;color:#182640;border-color:#c9d4e4;
+  }
+  #evaluation .eval-review-stage select,#evaluation .eval-claim-item input,
+  #evaluation .eval-claim-item select,#evaluation .eval-review-case select,
+  #evaluation #evalFile{
+    color:#182640;background:#fff;border-color:#b7c6db;
+  }
+  #evaluation button.primary:not(:disabled){
+    color:#fff;background:#165da9;border-color:#165da9;
+  }
+  #evaluation button:disabled{
+    opacity:1;background:#e4eaf3;color:#566780;border-color:#c9d4e4;
+  }
+  #evaluation button:not(.primary):not(:disabled){
+    color:#182640;background:#fff;border-color:#b7c6db;
+  }
+  #evaluation .eval-consent input{accent-color:#165da9}
+}
+/* Do not apply light-mode text to dark plotting surfaces or graph tooltip. */
 button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-visible,.overview-tile:focus-visible{outline:3px solid var(--hb-accent);outline-offset:2px}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
 
@@ -502,7 +563,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 </section>
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.81";
+const UI_VERSION="2.0.0-alpha.82";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
