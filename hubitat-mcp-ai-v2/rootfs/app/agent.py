@@ -596,11 +596,16 @@ class ModelEndpointUnavailable(RuntimeError):
 
 
 class Agent:
-    def __init__(self, base_url: str, model: str, api_key: str, model_timeout: int, cpu_cores: int = 4):
+    def __init__(self, base_url: str, model: str, api_key: str, model_timeout: int,
+                 cpu_cores: int = 4, *, local_think: bool | None = None,
+                 local_num_ctx: int | None = None):
         self.base_url = base_url.rstrip("/")
         self.model = model.removesuffix("-cloud")
         self.timeout = max(10, int(model_timeout))
         self.cpu_cores = max(1, min(64, int(cpu_cores)))
+        # None preserves the original Ollama Cloud/custom endpoint contract.
+        self.local_think = local_think
+        self.local_num_ctx = local_num_ctx
         self.client = httpx.AsyncClient(
             timeout=httpx.Timeout(float(self.timeout), connect=3.0),
             follow_redirects=False,
@@ -677,6 +682,10 @@ class Agent:
                         "messages": messages,
                         "tools": tools,
                         "stream": False,
+                        **({"think": self.local_think}
+                           if self.local_think is not None else {}),
+                        **({"options": {"num_ctx": self.local_num_ctx}}
+                           if self.local_num_ctx is not None else {}),
                     },
                 ),
                 timeout=min(self.timeout, remaining),
@@ -697,7 +706,20 @@ class Agent:
         message = data.get("message") if isinstance(data, dict) else None
         if not isinstance(message, dict):
             raise RuntimeError("Model response contained no assistant message")
-        return message
+        # Official Ollama timings are per completed model round, in
+        # nanoseconds. Publish only numeric performance counters, never
+        # raw prompts or internal thinking text, to private Technical JSON.
+        counters: dict[str, int | float] = {}
+        for key in ("total_duration", "load_duration", "prompt_eval_duration",
+                    "eval_duration"):
+            value = data.get(key)
+            if type(value) is int and value >= 0:
+                counters[key.removesuffix("_duration") + "_ms"] = round(value / 1e6, 2)
+        for key in ("prompt_eval_count", "eval_count"):
+            value = data.get(key)
+            if type(value) is int and value >= 0:
+                counters[key] = value
+        return {**message, **({"_inference_metrics": counters} if counters else {})}
 
     async def answer(
         self, question: str, history: list[dict], mcp: MCPClient,
@@ -797,6 +819,7 @@ class Agent:
         ]
         receipts: list[dict] = []
         rounds = 0
+        model_round_metrics: list[dict] = []
         leaf_schema_discoveries = 0
         source_review_invoked = False
         source_review_kind = None
@@ -866,6 +889,7 @@ class Agent:
                 "file_read_coverage": file_reads.snapshot(),
                 "tool_calls": receipts,
                 "rounds": rounds,
+                "model_round_metrics": model_round_metrics,
                 "elapsed_ms": round((time.monotonic() - started) * 1000),
             }
 
@@ -918,6 +942,7 @@ class Agent:
                     **(evidence if notice else {}),
                     "error": "model", "model_error_kind": model_error_kind(exc),
                     "tool_calls": receipts, "rounds": rounds,
+                    "model_round_metrics": model_round_metrics,
                     "prior_receipts_used": prior_receipts,
                     "prewrite_model_review_invoked": prewrite_model_review_invoked,
                     "prewrite_unsent_proposals": prewrite_unsent_proposals,
@@ -927,6 +952,9 @@ class Agent:
                     "elapsed_ms": round((time.monotonic() - started) * 1000),
                 }
             rounds += 1
+            metrics = message.get("_inference_metrics")
+            if isinstance(metrics, dict) and len(model_round_metrics) < 40:
+                model_round_metrics.append({"round": rounds, **metrics})
             calls = message.get("tool_calls") or []
             text = str(message.get("content") or "").strip()
             if not isinstance(calls, list):
