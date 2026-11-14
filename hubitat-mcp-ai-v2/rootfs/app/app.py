@@ -389,7 +389,9 @@ async def ask(request: AskRequest, http_request: Request):
     request_id = str(request.request_id)
     if request_id in app.state.interactions:
         raise HTTPException(409, "This request is already active")
-    interaction = Interaction()
+    # The V2 web UI requires approval for ALL selected native write calls.
+    # Same-session Interaction owns decisions; read-only calls bypass it.
+    interaction = Interaction(require_native_write_approval=True)
     app.state.interactions[request_id] = interaction
     try:
         async with app.state.ask_lock:
