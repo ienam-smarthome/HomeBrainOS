@@ -263,6 +263,15 @@ main{max-width:1280px}
 .command-form{display:flex;gap:10px;align-items:center;background:var(--hb-panel);border:1.5px solid var(--hb-edge);border-radius:16px;padding:9px}
 .command-form:focus-within{border-color:var(--hb-accent)}
 #ask #question{background:transparent;flex:1;min-width:0;width:auto;height:48px;min-height:45px;max-height:138px;border:0;box-shadow:none;outline:0;padding:8px 0;resize:none;font-size:16px;color:var(--hb-text);line-height:1.45}
+/* Keep long prompts scrollable without a distracting OS-sized arrow scrollbar.
+   Use thin native scrollbars where supported; do not hide keyboard or wheel access. */
+#ask #question{overflow-y:auto;scrollbar-width:thin;scrollbar-color:#506b88 transparent}
+#ask #question::-webkit-scrollbar{width:7px}
+#ask #question::-webkit-scrollbar-track{background:transparent}
+#ask #question::-webkit-scrollbar-thumb{background:#506b88;border-radius:999px}
+#ask #question::-webkit-scrollbar-thumb:hover{background:#81a5c8}
+#ask #question::-webkit-scrollbar-button{display:none;width:0;height:0}
+@media(forced-colors:active){#ask #question{scrollbar-color:auto}}
 #ask #question::placeholder{color:var(--hb-sub)}
 .mic-round{flex:0 0 51px;width:51px;height:51px;border-radius:50%;border:0;background:#286fac;color:#fff;font-size:20px;padding:0;touch-action:none;user-select:none;-webkit-user-select:none}
 .mic-round.listening{background:#b12434;color:#fff;box-shadow:0 0 0 3px #b1243433}
@@ -665,7 +674,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 </section>
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.92";
+const UI_VERSION="2.0.0-alpha.93";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();

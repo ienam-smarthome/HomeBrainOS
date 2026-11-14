@@ -1,5 +1,9 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## Alpha.93 V2 UI check
+
+Confirm the Ask composer with a several-line read-only query: the scrollbar should be narrow and subtle, without bulky arrow buttons, while preserving the input's max height, wheel/touch/keyboard scrolling, paste, Enter-to-send and Shift+Enter newlines. This is cosmetic and should not change model tokens or MCP results. Continue to evaluate source-real alpha.92 causal evidence quality separately; the source-real read of Bathroom Light 2 had 8 successful MCP calls and a failed app-history read, with a plausible but unverified inactive-motion cause and an unusually long 299s response.
+
 ## Alpha.92 source-real acceptance
 
 After V2 Preview alpha.92 installation, ask genuinely new read-only causal questions and compare first answers with ORIGINAL private MCP receipts. Check (a) exact per-event-name counts for all/none/only-one claims, (b) requested log window vs source matched count vs actual returned rows/timestamps, (c) all relevant controller selected inputs/override references already in retrieved configuration, and (d) reporter vs command issuer vs the still-unknown internal callback. Confirm no new compulsory model round was added, record actual token usage/latency, and verify V1 and native approval rules remain unaffected. [Design](HOMEBRAIN-V2-ALPHA92-SOURCE-COVERAGE-AUDIT-20261114.md).
