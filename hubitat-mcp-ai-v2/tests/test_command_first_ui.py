@@ -124,9 +124,17 @@ class UIContracts(unittest.TestCase):
             'duration>400&&activeRecognition',
             '@media(prefers-color-scheme:light)',
             '@media(prefers-reduced-motion:reduce)',
-            '2.0.0-alpha.83',
+            '2.0.0-alpha.84',
         ):
             self.assertIn(needle, HTML, needle)
+        # System Health owns the inventory; chat stays a full-width conversation.
+        ask = HTML.split('<section id="ask"')[1].split('<section id="systemHealth"')[0]
+        health = HTML.split('<section id="systemHealth"')[1].split('<section id="diagnostics"')[0]
+        self.assertNotIn('class="overview-aside"', ask)
+        self.assertIn('id="healthInventoryDetails"', health)
+        self.assertIn('class="overview-aside"', health)
+        self.assertIn('<h2>Latest answer</h2>', ask)
+        self.assertIn('grid-row:2', HTML)
         self.assertNotIn('data-question="Block ', HTML)
         self.assertNotIn('font-family:var(--external-font)', HTML)
 
@@ -138,7 +146,7 @@ class UIContracts(unittest.TestCase):
             'Array.isArray(response?.answer_stage_trace)',
             'observed_after_ms',
             'Original MCP receipt',
-            'UI_VERSION="2.0.0-alpha.83"',
+            'UI_VERSION="2.0.0-alpha.84"',
             "api/activity/",
             'pendingApproval.effect_class',
             'void submitAsk()',
