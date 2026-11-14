@@ -943,11 +943,87 @@ async function submit(text){
     }
   }
 }
-ask.onclick=()=>submit();query.onkeydown=event=>{if(event.key==='Enter')submit()};document.querySelectorAll('[data-q]').forEach(button=>button.onclick=()=>submit(button.dataset.q));
-document.getElementById('runHealthAudit').onclick=async()=>{const button=document.getElementById('runHealthAudit');button.disabled=true;button.textContent='🩺 Checking…';try{const data=await jsonResponse(await fetch(apiPath('api/health-audit/run'),{method:'POST'}));renderHealthAuditV2(data);document.getElementById('healthAuditDetails').open=true}catch(error){document.getElementById('healthAuditMeta').textContent='System check failed: '+error.message}finally{button.disabled=false;button.textContent='🩺 Run system check now'}};
-document.getElementById('sendPushoverReport').onclick=async()=>{const button=document.getElementById('sendPushoverReport'),meta=document.getElementById('healthAuditMeta');button.disabled=true;button.textContent='📲 Sending report…';try{const response=await fetch(apiPath('api/pushover/report'),{method:'POST'}),data=await jsonResponse(response);if(!response.ok||!data.success)throw new Error(data.detail||'Pushover rejected the report');meta.textContent=data.message||'Latest System Check report sent to Pushover.';button.textContent='✅ Report sent'}catch(error){meta.textContent='Pushover report failed: '+error.message;button.textContent='❌ Send failed'}finally{setTimeout(()=>{button.disabled=false;button.textContent='📲 Send report to Pushover'},1800)}};
-let activeRecognition=null;function startVoice(){stopAudio();if(activeRecognition){activeRecognition.stop();return}const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;if(!Recognition){answer.textContent='Speech recognition is unavailable in this browser.';return}const recognition=new Recognition();activeRecognition=recognition;recognition.lang='en-GB';const fab=document.getElementById('micFab');fab.classList.add('listening');fab.textContent='■';recognition.onresult=event=>submit(event.results[0][0].transcript);recognition.onerror=event=>{answer.textContent='Speech recognition error: '+event.error};recognition.onend=()=>{activeRecognition=null;fab.classList.remove('listening');fab.textContent='🎤'};recognition.start()}
-document.getElementById('speak').onclick=startVoice;document.getElementById('micFab').onclick=startVoice;
+document.getElementById('commandForm').onsubmit=event=>{event.preventDefault();void submit()};
+query.addEventListener('input',syncCommandBar);
+query.onkeydown=event=>{
+  if(event.isComposing)return;
+  if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();void submit()}
+  if(event.key==='Escape'){event.preventDefault();query.value='';syncCommandBar();query.blur()}
+};
+document.addEventListener('keydown',event=>{
+  if(event.key==='/'&&!event.altKey&&!event.ctrlKey&&!event.metaKey
+    &&document.activeElement!==query&&!document.activeElement?.isContentEditable
+    &&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)){
+      event.preventDefault();query.focus();
+  }
+});
+document.querySelectorAll('[data-q]').forEach(button=>button.onclick=()=>void submit(button.dataset.q));
+syncCommandBar();
+
+let activeRecognition=null,voiceStopToSend=false,voiceDownAt=0,voiceFinal='';
+const mic=document.getElementById('speak'),voiceStatus=document.getElementById('voiceStatus');
+function finishVoice(send){
+  if(!activeRecognition)return;
+  voiceStopToSend=send;
+  try{activeRecognition.stop()}catch(error){voiceStatus.textContent='Voice could not stop: '+error.message}
+}
+function startVoice(){
+  stopAudio();
+  if(activeRecognition){finishVoice(true);return}
+  const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!Recognition){
+    voiceStatus.textContent='Voice unavailable in this browser. Type your question instead.';
+    return;
+  }
+  try{
+    const recognition=new Recognition();activeRecognition=recognition;
+    voiceStopToSend=false;voiceFinal='';recognition.lang='en-GB';
+    recognition.interimResults=true;recognition.continuous=true;
+    recognition.onstart=()=>{
+      mic.classList.add('listening');mic.setAttribute('aria-label','Stop and send spoken question');
+      voiceStatus.textContent='Listening… tap again to send, or release after a long hold.';
+    };
+    recognition.onresult=event=>{
+      let draft='';for(const result of Array.from(event.results)){
+        draft+=String(result[0]?.transcript||'')+' ';
+      }
+      voiceFinal=draft.trim();query.value=voiceFinal;syncCommandBar();
+    };
+    recognition.onerror=event=>{
+      voiceStopToSend=false;
+      voiceStatus.textContent='Voice error: '+String(event.error||'unavailable')+'. Type instead.';
+    };
+    recognition.onend=()=>{
+      const send=voiceStopToSend;activeRecognition=null;voiceStopToSend=false;
+      mic.classList.remove('listening');mic.setAttribute('aria-label','Start speaking');
+      if(send&&query.value.trim()){voiceStatus.textContent='Sending spoken question…';void submit(query.value)}
+      else if(!voiceStatus.textContent.startsWith('Voice error'))voiceStatus.textContent=
+        voiceFinal?'Speech captured; press Ask to send.':'Voice stopped. Type or tap the mic to try again.';
+    };
+    recognition.start();
+  }catch(error){
+    activeRecognition=null;mic.classList.remove('listening');
+    voiceStatus.textContent='Voice could not start. Type instead.';
+  }
+}
+mic.addEventListener('pointerdown',event=>{
+  if(event.button!==0)return;
+  event.preventDefault();
+  if(activeRecognition){voiceDownAt=0;finishVoice(true);return}
+  voiceDownAt=Date.now();startVoice();
+});
+const releaseMic=()=>{
+  if(!voiceDownAt)return;
+  const held=Date.now()-voiceDownAt;voiceDownAt=0;
+  if(held>400&&activeRecognition)finishVoice(true);
+};
+mic.addEventListener('pointerup',releaseMic);
+mic.addEventListener('pointercancel',releaseMic);
+mic.addEventListener('pointerleave',releaseMic);
+mic.addEventListener('click',event=>{if(event.detail===0)startVoice()});
+mic.addEventListener('contextmenu',event=>event.preventDefault());
+// Retained only for old DOM contract tests; never a second on-screen mic.
+document.getElementById('micFab').hidden=true;
 
 let journalBrowseOffset=0;
 function journalBrowseParameters(){
