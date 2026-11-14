@@ -585,6 +585,16 @@ def cpu_load_context(result: dict, core_count: int) -> dict | None:
     }
 
 
+class ModelEndpointUnavailable(RuntimeError):
+    """Primary model cannot be contacted before receiving a model response.
+
+    Only connection refusal, DNS/network routing failure or CONNECT timeout
+    qualify for local-to-cloud fallback. Read/generation timeouts and HTTP
+    response errors remain ordinary model failures; never replay those.
+    """
+
+
+
 class Agent:
     def __init__(self, base_url: str, model: str, api_key: str, model_timeout: int, cpu_cores: int = 4):
         self.base_url = base_url.rstrip("/")
@@ -592,7 +602,7 @@ class Agent:
         self.timeout = max(10, int(model_timeout))
         self.cpu_cores = max(1, min(64, int(cpu_cores)))
         self.client = httpx.AsyncClient(
-            timeout=httpx.Timeout(float(self.timeout)),
+            timeout=httpx.Timeout(float(self.timeout), connect=3.0),
             follow_redirects=False,
             trust_env=False,
             headers={
@@ -674,6 +684,8 @@ class Agent:
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
             raise RuntimeError(f"Model API returned HTTP {exc.response.status_code}") from None
+        except (httpx.ConnectError, httpx.ConnectTimeout):
+            raise ModelEndpointUnavailable("Could not connect to the local model endpoint") from None
         except (asyncio.TimeoutError, httpx.TimeoutException):
             raise RuntimeError("Model request timed out") from None
         except httpx.RequestError:
