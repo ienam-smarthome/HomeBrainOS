@@ -42,6 +42,7 @@ from retrieval_coverage import FileReadCoverage, file_chunk_scope, event_attribu
 from time_evidence import (
     TOOL_NAME as CLOCK_TOOL, TOOL_DEFINITION as CLOCK_TOOL_DEFINITION,
     clock_facts, deadline_facts, hub_clock_source, reported_hub_skew,
+    write_hub_clock_skew,
 )
 from write_receipt_evidence import (
     model_error_kind, model_failure_notice, write_failure_evidence,
@@ -1458,6 +1459,10 @@ class Agent:
                             record["deadline_facts"] = deadline_note
                             model_result["client_deadline_facts"] = deadline_note
                         if native_action_result:
+                            write_skew = write_hub_clock_skew(result)
+                            if write_skew is not None:
+                                record["hub_clock_skew_notice"] = write_skew
+                                model_result["client_hub_clock_skew_notice"] = write_skew
                             model_result["client_write_snapshot_scope"] = {
                                 "snapshot_in_write_response_is_independent_readback": False,
                                 "separate_followup_read_required_for_independent_readback": True,
