@@ -963,6 +963,8 @@ function overviewPreview(metric,kind){
  return names.slice(0,2).join(' · ')+(count>2?' · +'+(count-2)+' more':'');
 }
 function clearOverviewCounts(){
+ cachedHealthOverview=null;
+ renderSystemHealth(null);
  for(const [,countId,scopeId,listId,previewId] of OVERVIEW_METRICS){
   byId(countId).textContent='—';
   byId(scopeId).textContent='Source scope unavailable';
@@ -978,6 +980,8 @@ function clearOverviewCounts(){
  }
 }
 function setOverviewCounts(data){
+ cachedHealthOverview=data;
+ renderSystemHealth(data);
  const metrics=data.metrics||{};
  for(const [key,countId,scopeId,listId,previewId,kind] of OVERVIEW_METRICS){
   const metric=metrics[key]||{};
@@ -1000,6 +1004,96 @@ function setOverviewCounts(data){
  byId('overviewStatus').textContent='Snapshot '+time+' UK · '+
   (data.inventory_full_coverage_verified?'inventory count reconciled':'inventory may be partial')+
   ' · one read-only inventory request · no device commands or AI';
+}
+const HEALTH_ATTENTION=[
+ ["battery_low","Low batteries","battery"],
+ ["contact_open","Open contacts","contact"],
+ ["water_wet","Water detected","water"],
+ ["reported_offline","Reported offline","health"]
+];
+const HEALTH_ACTIVE=[
+ ["lights_on","Lights ON","light"],
+ ["motion_active","Motion active","motion"],
+ ["heating_active","Heating reported","heat"],
+ ["other_switches_on","Other ON switches","switch"]
+];
+function prepareHealthQuestion(question){
+ // Preparing an investigation does not dispatch /api/ask, native MCP or AI.
+ if(activeRequest)return;
+ if(typeof question!=='string'||!question.trim())return;
+ tab('ask');
+ byId('question').value=question.slice(0,4000);
+ syncCommandBar();
+ byId('question').focus();
+}
+function healthSnapshotCard(metric,key,label,kind){
+ const article=document.createElement('article');article.className='health-card';
+ const heading=document.createElement('div');heading.className='health-card-heading';
+ const name=document.createElement('span');name.textContent=label;
+ const value=document.createElement('strong');value.className='health-count';
+ const covered=Number.isInteger(metric?.devices_with_state)?metric.devices_with_state:null;
+ const count=Number.isInteger(metric?.count)?metric.count:null;
+ value.textContent=covered===null||covered===0||count===null?'—':String(count);
+ if(count!==null&&count>0&&covered>0&&["water_wet","reported_offline","battery_low","contact_open"].includes(key))
+  article.classList.add('needs-review');
+ heading.append(name,value);article.appendChild(heading);
+ const scope=document.createElement('p');scope.className='health-card-scope';
+ scope.textContent=covered===null?'Attribute coverage unavailable':
+  covered===0?'No supported state readings':
+  'Based on '+covered+' reported attribute value'+(covered===1?'':'s');
+ article.appendChild(scope);
+ const names=Array.isArray(metric?.members)?metric.members.map(item=>overviewMemberLabel(item,kind)).filter(Boolean):[];
+ const summary=document.createElement('p');summary.className='health-card-preview';
+ summary.textContent=overviewPreview(metric,kind);article.appendChild(summary);
+ if(count>0&&names.length){
+  const detail=document.createElement('details');detail.className='health-members';
+  const toggle=document.createElement('summary');
+  toggle.textContent='Show '+names.length+' reported name'+(names.length===1?'':'s')+
+   (Number.isInteger(metric?.members_omitted)&&metric.members_omitted>0?' (list limited)':'');
+  detail.appendChild(toggle);
+  const list=document.createElement('ul');
+  for(const text of names){
+   const item=document.createElement('li');item.textContent=text;list.appendChild(item);
+  }
+  detail.appendChild(list);article.appendChild(detail);
+ }
+ if(Number.isInteger(metric?.members_omitted)&&metric.members_omitted>0){
+  const note=document.createElement('small');note.className='health-omitted';
+  note.textContent=metric.members_omitted+' names omitted from source projection';
+  article.appendChild(note);
+ }
+ return article;
+}
+function renderSystemHealth(snapshot){
+ const title=byId('healthSnapshotTitle'),notes=byId('healthSnapshotNotes');
+ const covered=byId('healthCoverage');
+ const attention=byId('healthAttention'),active=byId('healthActive');
+ attention.replaceChildren();active.replaceChildren();
+ if(!snapshot||snapshot.available!==true||snapshot.read_only!==true){
+  title.textContent='No confirmed Home Overview snapshot available';
+  notes.textContent='This tab does not trigger inventory reads. The initial Home Overview refresh is unchanged; unavailable readings remain unknown.';
+  covered.textContent='Source coverage unavailable';
+  const empty=document.createElement('p');empty.className='health-empty';
+  empty.textContent='No source-backed findings to display. Return to Ask / Chat to see the current overview state.';
+  attention.appendChild(empty);return;
+ }
+ const when=snapshot.observed_at_utc?new Date(snapshot.observed_at_utc):null;
+ const valid=when&&!Number.isNaN(when.getTime());
+ const stamp=valid?when.toLocaleString('en-GB',{timeZone:'Europe/London',
+   day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'time unavailable';
+ title.textContent='Snapshot · '+stamp+' UK';
+ notes.textContent='No new scan on this tab. Indicators come only from explicit native device state values already returned in the Home Overview inventory.';
+ const returned=Number.isInteger(snapshot.returned_devices)?snapshot.returned_devices:null;
+ const declared=Number.isInteger(snapshot.source_declared_total)?snapshot.source_declared_total:null;
+ covered.textContent=(returned===null?'Count unavailable':returned+' devices inspected')+
+  (declared!==null?' of '+declared+' declared':'')+
+  (snapshot.inventory_full_coverage_verified?' · inventory count reconciled':' · coverage not fully verified')+
+  ' · no model calls';
+ const metrics=snapshot.metrics||{};
+ for(const [key,label,kind] of HEALTH_ATTENTION)
+  attention.appendChild(healthSnapshotCard(metrics[key],key,label,kind));
+ for(const [key,label,kind] of HEALTH_ACTIVE)
+  active.appendChild(healthSnapshotCard(metrics[key],key,label,kind));
 }
 function setRecorderOverview(recorder){
  const r=recorder||{},last=r.last||{};
