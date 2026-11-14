@@ -1,5 +1,9 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 14 November 2026 — alpha.94 evidence contradictions, source failures and concise final response
+
+V2's existing source review and tool-free audit now surface current explicitly null/empty capability inputs separately from absent or selected input fields. This helps the model challenge internal-cause hypotheses that fit timestamps but conflict with returned configuration, without implying historic absence. A failed MCP read is indexed with a safe status (including HTTP status when known) and cannot be silently recast as zero matching records. A concise final-output target may reduce redundant paid-model generation but has no guaranteed speedup and is not a hard token cap. No new model rounds, forced MCP reads, local model, write approval changes, cloud routing changes or V1 edits. [Design](HOMEBRAIN-V2-ALPHA94-EVIDENCE-CONTRADICTION-ERROR-20261114.md).
+
 ## 14 November 2026 — alpha.93 V2 question composer scrollbar
 
 V2 Ask/Chat auto-expanding textarea retains its 138px height cap but now uses accessible thin scrollbars (Firefox/native support and WebKit fallback), a subdued thumb and no oversized arrow buttons. It remains wheel, touch and keyboard scrollable; high-contrast forced-colors restore the system scrollbar. No changes to AI prompts, tool calls, native approval, paid provider selection or V1. Synthetic source-contract tests ensure the input, submission and keyboard shortcuts remain present.
