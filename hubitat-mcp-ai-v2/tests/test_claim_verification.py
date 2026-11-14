@@ -247,7 +247,7 @@ class VerificationRoundtripTests(unittest.IsolatedAsyncioTestCase):
                          ["hub_get_app_config", "hub_get_app_status"])
         self.assertEqual(model.catalog_seen[2],
                          ["hub_get_app_config", "hub_get_app_status",
-                          "homebrain_inspect_mcp_catalog"])
+                          "homebrain_inspect_mcp_catalog", "homebrain_read_clock"])
         self.assertIn("verification checkpoint", model.seen[2][-1]["content"])
         self.assertIn("paused=false", reply["answer"])
         self.assertTrue(all(x["success"] for x in reply["tool_calls"]))
