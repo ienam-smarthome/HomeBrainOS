@@ -18,6 +18,7 @@ from action_proposal_review import PREWRITE_PROPOSAL_PROMPT
 from investigation_review import ACTION_OUTCOME_REVIEW_PROMPT, is_read_only_review_tool
 from time_evidence import (
     TOOL_NAME, clock_facts, deadline_facts, hub_clock_source, reported_hub_skew,
+    write_hub_clock_skew,
 )
 from write_receipt_evidence import model_error_kind, write_failure_evidence
 
@@ -101,6 +102,15 @@ class ClockEvidenceTests(unittest.TestCase):
         skew = reported_hub_skew(src, now=at("2026-11-13T01:00:00Z"))
         self.assertEqual(skew["hub_minus_client_seconds"], 180)
         self.assertIsNone(reported_hub_skew(src, now=at("2026-11-13T01:02:55Z")))
+
+    def test_write_receipt_skew_requires_explicit_server_clock(self):
+        now = at("2026-11-13T00:46:00Z")
+        self.assertEqual(write_hub_clock_skew(native({
+            "success": True, "serverTime": "2026-11-13T00:49:00Z",
+        }), now=now)["hub_minus_client_seconds"], 180)
+        self.assertIsNone(write_hub_clock_skew(native({
+            "success": True, "lastEventAt": "2026-11-13T00:49:00Z",
+        }), now=now))
 
     def test_deadline_future_only_and_not_a_readback(self):
         now = at("2026-11-13T00:46:00Z")
