@@ -82,7 +82,7 @@ class TemporalReceiptFidelityTests(unittest.TestCase):
             "date": "2026-01-02T12:15:09+0000",
         }])
         self.assertIsNone(temporal_receipt_fidelity_index(
-            [{"name": "hub_list_devices", **receipt}], "At 12:15:09 active"))
+            [{**receipt, "name": "hub_list_devices"}], "At 12:15:09 active"))
         index = temporal_receipt_fidelity_index([receipt], "At 12:00:01 absent")
         self.assertFalse(index["draft_clock_anchors"][0]
                          ["exact_returned_event_clock_found"])
