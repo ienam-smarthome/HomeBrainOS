@@ -41,6 +41,8 @@ DEFAULTS: dict[str, Any] = {
     "model_base_url": "https://ollama.com",
     "model_name": "gemma4:31b-cloud",
     "model_api_key": "",
+    "local_ollama_think": False,
+    "local_ollama_num_ctx": 8192,
     "cloud_fallback_enabled": False,
     "cloud_fallback_model": "openrouter/free",
     "cloud_fallback_api_key": "",
@@ -135,6 +137,8 @@ async def lifecycle(app: FastAPI):
             cloud_fallback_enabled=bool(options["cloud_fallback_enabled"]),
             cloud_fallback_model=str(options["cloud_fallback_model"]),
             cloud_fallback_api_key=str(options["cloud_fallback_api_key"]),
+            local_ollama_think=bool(options["local_ollama_think"]),
+            local_ollama_num_ctx=int(options["local_ollama_num_ctx"]),
         )
         app.state.model.hub_timezone = str(options["hub_timezone"])
         if str(options["hubitat_mcp_url"]).strip():
@@ -203,7 +207,7 @@ async def lifecycle(app: FastAPI):
             await app.state.model.close()
 
 
-app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.86", lifespan=lifecycle)
+app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.87", lifespan=lifecycle)
 app.include_router(benchmark_router)
 app.include_router(autonomous_router)
 app.include_router(reasoning_router)
