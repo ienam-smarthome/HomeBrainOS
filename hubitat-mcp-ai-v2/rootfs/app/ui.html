@@ -770,8 +770,8 @@ async function loadStatus(){
   setRecorderOverview(d.recorder);
   byId('state').textContent=d.configured?'● Connected · '+d.version:'● Setup required · '+d.version;
   byId('statusMeta').textContent='Version: '+d.version+' · Model: '+(d.model||'unknown')
-   +' · MCP: '+(d.configured?'configured':'not ready')
-   +' · Hub: '+(d.hub||'connected native source; name unavailable')
+   +' · MCP: '+(d.configured?'configured (connection not independently probed)':'not ready')
+   +' · Hub: '+(d.hub||'name unavailable from status source')
    +' · Devices: '+byId('overviewDevices').textContent;
   return true;
  }catch(e){byId('state').textContent=String(e.message);return false;}
@@ -906,6 +906,8 @@ function toggleStatusPill(){
  const panel=byId('statusPanel');panel.hidden=!panel.hidden;
  byId('statusPill').setAttribute('aria-expanded',String(!panel.hidden));
  if(!panel.hidden){
+  const meta=byId('statusMeta');
+  meta.textContent=meta.textContent.replace(/ · Devices: [^·]*$/, ' · Devices: '+byId('overviewDevices').textContent);
   const row=byId('checkMonitor').parentElement;
   if(row){row.hidden=false;byId('statusMonitor').appendChild(row);}
  }
