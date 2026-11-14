@@ -472,5 +472,86 @@ class InteractionTests(unittest.TestCase):
         asyncio.run(run())
 
 
+class InitialCatalogFailureVisibilityTests(unittest.TestCase):
+    def test_failing_catalog_is_not_model_reasoning_or_empty_native_history(self):
+        import app as runtime
+        from conversation import ConversationEvidence
+
+        class OfflineCatalog:
+            def __init__(self, message):
+                self.message = message
+                self.attempts = 0
+                self.domain_calls = 0
+            async def list_tools(self, refresh=False):
+                self.attempts += 1
+                self.assert_refresh = refresh
+                raise MCPError(self.message)
+            async def call(self, name, args):
+                self.domain_calls += 1
+                raise AssertionError("No native read or write permitted after catalog failure")
+
+        class NoInferenceAgent(Agent):
+            def __init__(self):
+                super().__init__("http://127.0.0.1:11434", "fixture", "", 20)
+                self.round_calls = 0
+            async def round(self, messages, tools, remaining):
+                self.round_calls += 1
+                raise AssertionError("Model must not be invoked if catalog failed")
+
+        async def run():
+            original = dict(runtime.app.state._state)
+            model = NoInferenceAgent()
+            try:
+                runtime.app.state.interactions = {}
+                runtime.app.state.ask_lock = asyncio.Lock()
+                runtime.app.state.configuration_error = None
+                runtime.app.state.options = {"investigation_timeout_seconds": 60}
+                runtime.app.state.conversations = ConversationEvidence()
+                runtime.app.state.model = model
+                cases = [
+                    ("MCP HTTP 503", "http", 503),
+                    ("MCP timed out", "timeout", None),
+                    ("MCP transport failed", "transport", None),
+                    ("Invalid MCP tool catalog", "catalog_error", None),
+                    ("MCP HTTP 401", "http", 401),
+                    ("MCP bad access_token=FAKE-SECRET-DO-NOT-PUBLISH",
+                     "catalog_error", None),
+                ]
+                async with httpx.AsyncClient(
+                        transport=httpx.ASGITransport(app=runtime.app),
+                        base_url="http://test") as client:
+                    for raw_error, kind, status in cases:
+                        with self.subTest(kind=kind, status=status):
+                            failed = OfflineCatalog(raw_error)
+                            runtime.app.state.mcp = failed
+                            response = await client.post(
+                                "/api/ask", headers={"X-Homebrain-Request": "1"},
+                                json={"question": "Inspect a fictional sensor; do not change anything."})
+                            self.assertEqual(response.status_code, 200)
+                            result = response.json()
+                            self.assertFalse(result["success"])
+                            self.assertEqual(result["error"], "mcp")
+                            self.assertEqual(result["rounds"], 0)
+                            self.assertEqual(result["tool_calls"], [])
+                            self.assertEqual(result["mcp_failure"], {
+                                "phase": "initial_catalog", "error_kind": kind,
+                                "http_status": status, "model_invoked": False,
+                                "native_domain_calls": 0, "automatic_retry": False,
+                            })
+                            self.assertIn("before investigation", result["answer"])
+                            self.assertEqual(failed.attempts, 1)
+                            self.assertTrue(failed.assert_refresh)
+                            self.assertEqual(failed.domain_calls, 0)
+                            self.assertEqual(model.round_calls, 0)
+                            self.assertNotIn("FAKE-SECRET", json.dumps(result))
+                            self.assertEqual(runtime.app.state.interactions, {})
+            finally:
+                runtime.app.state._state.clear()
+                runtime.app.state._state.update(original)
+                await model.close()
+
+        asyncio.run(run())
+
+
 if __name__ == "__main__":
     unittest.main()
