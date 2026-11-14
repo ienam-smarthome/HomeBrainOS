@@ -1,5 +1,9 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## Alpha.96 read-only deadline completion acceptance
+
+After hub stability is confirmed, evaluate one independent source-real long read-only causal investigation with original MCP receipts. Verify that a request approaching its configured time budget, with at least one successful native read and no writes, finishes with one **existing** model round offered no tools; capture `deadline_finalization_invoked`, `final_claim_audit_status`, source lookback/row caps, failure receipts, provider model rounds and total elapsed. Inspect whether the answer remains source-grounded and differentiates reporter from initiator. A model timeout or unoffered tool attempt still fails, with no extra native calls. The earlier 300-second timeout screenshot does not provide original source receipts, so cannot establish cause or actual over-querying. [Design and synthetic contract](HOMEBRAIN-V2-ALPHA96-DEADLINE-READONLY-FINALIZATION-20261114.md).
+
 ## Alpha.95 transport visibility and cautious read-only acceptance
 
 The installed alpha.94 request that returned MCP HTTP 503 in approximately 0.1 seconds contained zero native tool receipts, no model execution and no causal evidence. It is an **infrastructure/source-access failure**, not a valid model-quality score or a proven hub-overload diagnosis. Alpha.95's new `mcp_failure.phase=initial_catalog` must describe this path with no new requests, model rounds, automatic retries, secrets or device changes. A reoccurrence is not a reason to repeatedly probe an unstable hub.
