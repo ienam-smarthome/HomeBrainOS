@@ -203,6 +203,18 @@ def main():
                                     full_page=False,
                                 )
                                 page.locator("#evaluationTab").click()
+                                # The claim review creates these sections only
+                                # after a real model comparison. Populate only
+                                # their inert heading for computed-style checks.
+                                page.evaluate("""() => {
+                                  const review=document.querySelector('#evalReviewCard');
+                                  const stage=document.createElement('div');
+                                  stage.className='eval-review-stage';
+                                  const title=document.createElement('h3');
+                                  title.textContent='Fictional human-review stage';
+                                  stage.appendChild(title);
+                                  review.appendChild(stage);
+                                }""")
                                 check_contrast(page, "evaluation", color, device)
                                 page.screenshot(
                                     path=str(OUT / f"after-{color}-{device}-evaluation.png"),
