@@ -1,5 +1,9 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 14 November 2026 — alpha.93 V2 question composer scrollbar
+
+V2 Ask/Chat auto-expanding textarea retains its 138px height cap but now uses accessible thin scrollbars (Firefox/native support and WebKit fallback), a subdued thumb and no oversized arrow buttons. It remains wheel, touch and keyboard scrollable; high-contrast forced-colors restore the system scrollbar. No changes to AI prompts, tool calls, native approval, paid provider selection or V1. Synthetic source-contract tests ensure the input, submission and keyboard shortcuts remain present.
+
 ## 14 November 2026 — alpha.92 original-receipt coverage audit
 
 V2's existing source review and tool-free final audit now get bounded navigation metadata for **exact returned event-name counts**, **hub-log matched vs actually returned rows and their as-reported times**, and **all already-returned selected controller inputs**. This addresses first-answer contradictions where a model claims only one command or full-window log coverage while original receipts contain multiple commands or a capped log page, or asserts an internal trigger from current configuration plus one sensor. The new metadata is not independent evidence and does not infer timestamp timezone, historic input state or cause. No additional forced cloud round, source read, V1 change, paid-provider change or native write. [Design and source-real acceptance](HOMEBRAIN-V2-ALPHA92-SOURCE-COVERAGE-AUDIT-20261114.md).
