@@ -24,7 +24,7 @@ def test_requires_confirmation_uses_structured_effect_and_declared_state():
 
     assert policy.requires_confirmation(ToolEffect.SENSITIVE_WRITE)
     assert policy.requires_confirmation(ToolEffect.DESTRUCTIVE_WRITE)
-    assert not policy.requires_confirmation(ToolEffect.ROUTINE_WRITE)
+    assert policy.requires_confirmation(ToolEffect.ROUTINE_WRITE)
     assert not policy.requires_confirmation(ToolEffect.READ)
     assert not policy.requires_confirmation(
         ToolEffect.SENSITIVE_WRITE,
@@ -63,7 +63,7 @@ def test_action_group_limit_is_bounded_and_exact_limit_is_allowed():
 
     assert allowed.action is ConfirmationAction.QUEUE
     assert rejected.action is ConfirmationAction.REJECT
-    assert "more than 12 sensitive actions" in str(rejected.message)
+    assert "more than 12 queued actions" in str(rejected.message)
 
 
 def test_single_sensitive_action_names_the_gateway():
@@ -71,7 +71,7 @@ def test_single_sensitive_action_names_the_gateway():
 
     assert decision.action is ConfirmationAction.QUEUE
     assert decision.message == (
-        "Please confirm before I run the sensitive Hubitat action `hub_restart`."
+        "Please confirm before I run the queued Hubitat action `hub_restart`."
     )
 
 
@@ -129,7 +129,7 @@ def test_multiple_actions_use_count_and_sorted_unique_gateway_names():
     )
 
     assert decision.message == (
-        "Please confirm before I run 3 sensitive Hubitat actions through "
+        "Please confirm before I run 3 queued Hubitat actions through "
         "`hub_restart, hub_shutdown`."
     )
 
