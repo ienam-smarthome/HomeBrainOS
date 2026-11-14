@@ -27,11 +27,11 @@ jobs:
         run: |
           python -m pip install playwright==1.56.0
           python -m playwright install --with-deps chromium
-      - name: Capture V2 before/after light/dark desktop and 390 px mobile
+      - name: Audit computed light/dark text contrast and capture desktop/mobile screenshots
         run: python scripts/capture_v2_command_ui_screenshots.py
       - uses: actions/upload-artifact@v4
         with:
-          name: homebrain-v2-alpha81-ui-before-after-fictional
+          name: homebrain-v2-alpha82-contrast-fixtures
           path: ui-screenshots-v2/*.png
           if-no-files-found: error
           retention-days: 14

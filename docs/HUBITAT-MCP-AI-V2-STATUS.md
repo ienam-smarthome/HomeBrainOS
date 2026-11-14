@@ -1,5 +1,9 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 14 November 2026 — alpha.82 V2 light-theme contrast correction
+
+Installed alpha.81 screenshots exposed dark legacy Diagnostics and AI Evaluation surfaces combined with light-mode dark text. Alpha.82 reconciles the colour tokens and updates form/panel surfaces **only under the light media query**; dark SVG/canvas plots and their source traces remain unchanged. Browser fixture checks audit computed label/value contrast against the 4.5:1 normal-text threshold in light and dark at desktop and mobile. No Hubitat or Home Assistant calls and no V1 code changes. [Details](HOMEBRAIN-V2-ALPHA82-LIGHT-THEME-CONTRAST-20261114.md).
+
 ## 14 November 2026 — alpha.81 V2-only command-first UI candidate
 
 The UI redesign has been applied to **`hubitat-mcp-ai-v2/rootfs/app/ui.html`**, not to the separate V1 add-on. It preserves the V2 model-led agent, native `/api/ask`, source-scoped overview, request UUID confirmation, original receipts, diagnostics and AI Evaluation. Newest-first answer cards, real stage/receipt timelines, voice and responsive overview are presentation changes. The V2 web interaction now opts into approval for all selected native writes (reads bypass); edited action chips cannot modify stored tool arguments. Synthetic CI is structural, not live Hubitat or browser microphone acceptance. [Details](HOMEBRAIN-V2-ALPHA81-COMMAND-FIRST-UI-20261114.md).

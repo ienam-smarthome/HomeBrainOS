@@ -124,7 +124,7 @@ class UIContracts(unittest.TestCase):
             'duration>400&&activeRecognition',
             '@media(prefers-color-scheme:light)',
             '@media(prefers-reduced-motion:reduce)',
-            '2.0.0-alpha.81',
+            '2.0.0-alpha.82',
         ):
             self.assertIn(needle, HTML, needle)
         self.assertNotIn('data-question="Block ', HTML)
@@ -138,7 +138,7 @@ class UIContracts(unittest.TestCase):
             'Array.isArray(response?.answer_stage_trace)',
             'observed_after_ms',
             'Original MCP receipt',
-            'UI_VERSION="2.0.0-alpha.81"',
+            'UI_VERSION="2.0.0-alpha.82"',
             "api/activity/",
             'pendingApproval.effect_class',
             'void submitAsk()',

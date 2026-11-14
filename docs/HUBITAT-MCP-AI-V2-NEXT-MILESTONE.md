@@ -1,5 +1,9 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## Alpha.82 installed theme acceptance
+
+After updating the V2 add-on, compare **light and dark** rendering across Ask / Chat, Hub Diagnostics and AI Evaluation, including numerical metric values, graph legends/readouts and evaluation consent/help text. Verify graph plot and popout behaviour has not changed and review 390px/mobile wrapping. The CI contrast audit checks static and fixture-rendered text but actual browser rendering should also be inspected. No native writes are necessary. This is coached UI acceptance, not a blind first-answer sample. V1 remains unchanged.
+
 ## Alpha.81 V2-only command-first acceptance
 
 After installing alpha.81, use one fresh read-only question to inspect newest-answer/evidence/trace rendering, the four source-scoped overview counts and status popover. Test the new voice hold/tap behaviour in a supported browser with microphone permission. Only with a user-authorised noncritical target, verify that a real native proposed write remains pending until explicit Approve, that Dismiss sends no native action and that an edited chip cannot approve stale arguments. Existing Hub Diagnostics and AI Evaluation must remain accessible. This is coached installed UI acceptance, not an independent first-answer Gate B sample. V1 remains unchanged.
