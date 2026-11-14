@@ -107,20 +107,135 @@ def render_page(title: str, version: str) -> str:
 .diag-review-list li{font-size:12px;line-height:1.4}
 .diag-review-stat{font-size:13px;color:#e5e7eb;line-height:1.6;margin:8px 0}
 .diag-review-stat strong{color:white}
+
+/* Command-first shell: prototype geometry, real app data and no network assets. */
+:root{color-scheme:dark;--bg:#0a1220;--card:#111c30;--tile:#16243d;--text:#e8eef8;--muted:#b3c4da;--blue:#4ea3ff;--green:#206448;--red:#9f2937;--amber:#bd8525;--edge:#33476a;--focus:#88c7ff;--accent-ink:#06182e}
+@media(prefers-color-scheme:light){:root{color-scheme:light;--bg:#f3f6fb;--card:#fff;--tile:#eaf0f9;--text:#13203a;--muted:#51627f;--blue:#1769d1;--green:#0e7050;--red:#bd2c3b;--amber:#9b6200;--edge:#c4d0e2;--focus:#005dc5;--accent-ink:#fff}}
+body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:15px;line-height:1.5}
+.wrap{max-width:1100px;padding:0 18px 48px;min-height:100vh}
+.hb-header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 0 10px}
+.hb-header h1{font-size:19px;font-weight:650;margin:0;letter-spacing:-.03em}
+.hb-header h1 small{display:block;font-size:11px;color:var(--muted);font-weight:450;letter-spacing:0}
+.connection-host{position:relative}
+#connectionPill{width:auto;margin:0;background:var(--card);color:var(--text);border:1px solid var(--edge);border-radius:999px;padding:7px 12px;font-size:12px;white-space:nowrap}
+#connectionPill.online{color:var(--text)}
+.connection-panel{position:absolute;z-index:35;right:0;top:42px;width:min(340px,calc(100vw - 36px));padding:13px;background:var(--card);border:1px solid var(--edge);border-radius:13px;box-shadow:0 15px 38px #0005}
+.connection-panel[hidden]{display:none}.connection-panel strong{font-size:13px}
+.connection-panel .status-card{background:none;padding:4px 0;display:flex;margin:10px 0;gap:5px}
+.connection-panel .pill{background:var(--tile);color:var(--text);border:1px solid var(--edge);padding:6px 8px}
+.connection-panel .pill.ok{background:#126143;color:#fff}.connection-panel .pill.error{background:#93303b;color:#fff}
+.connection-panel .pill .muted{color:inherit}.connection-panel .pill strong{font-size:11px}
+.connection-meta{color:var(--muted);font-size:12px;margin:7px 0}
+#checkConnection{width:auto;margin:3px 0;padding:8px 11px;font-size:12px}
+.command-bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--bg);padding:3px 0 11px}
+.command-form{display:flex;align-items:center;gap:10px;background:var(--card);border:1.5px solid var(--edge);border-radius:20px;padding:9px;min-height:78px}
+.command-form:focus-within{border-color:var(--blue)}
+.command-mic{flex:none;touch-action:none;user-select:none;-webkit-user-select:none;width:52px;height:52px;padding:0;margin:0;border-radius:50%;background:var(--blue);color:var(--accent-ink);border:0;font-size:21px}
+.command-mic.listening{background:#b91c1c;color:#fff;box-shadow:0 0 0 3px #b91c1c33}
+#query{flex:1;min-width:0;width:100%;max-height:132px;min-height:44px;height:49px;margin:0;border:0;background:transparent;color:var(--text);font:inherit;font-size:17px;line-height:1.45;resize:none;overflow-y:auto;padding:7px 0}
+#query:focus-visible{outline:0}
+.command-submit{flex:none;width:auto;margin:0;border:0;border-radius:13px;background:var(--tile);color:var(--muted);font-weight:650;padding:13px 18px}
+.command-submit.ready:not(:disabled){background:var(--blue);color:var(--accent-ink)}
+.command-submit:disabled{opacity:.75;cursor:default}
+.command-help{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--muted);padding:6px 3px 0}
+.command-bar .model-tier-picker,.command-bar .answer-options{margin:5px 0 0;gap:7px}
+.command-bar .model-tier-picker select{background:var(--card);color:var(--text);border:1px solid var(--edge);margin:0}
+.command-bar .model-tier-note{margin-top:3px;color:var(--muted)}
+.command-bar .model-tier-picker button{padding:6px 10px;margin:0}
+.command-bar .answer-options{font-size:12px;color:var(--muted)}
+.homebrain-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:18px}
+.overview-rail{grid-row:1;min-width:0}
+#summaryTiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;padding:7px;margin:0;background:transparent}
+#summaryTiles .tile{background:transparent;color:var(--text);border:0;padding:9px 7px;min-width:0;text-align:left;min-height:51px}
+#summaryTiles .tile .big{font-size:20px;line-height:1.2}
+#summaryTiles .tile div:last-child{font-size:12px;color:var(--muted)}
+.overview-note{font-size:11px;color:var(--muted);margin:3px 5px 12px}
+.exchange-feed{grid-row:2;display:flex;flex-direction:column;gap:14px;min-width:0}
+.feed-empty{color:var(--text);margin:10px 3px 16px;font-size:21px;font-weight:600}
+.feed-empty span{display:block;font-weight:400;font-size:14px;color:var(--muted)}
+.exchange{background:var(--card);border:1px solid var(--edge);border-radius:15px;padding:15px 17px;margin:0;min-width:0;overflow-wrap:anywhere}
+.exchange[hidden]{display:none}.exchange.older{opacity:.76}
+.exchange-question{font-size:13px;color:var(--muted);margin:0 0 11px}
+.exchange-question strong{color:var(--text);font-weight:550}
+.exchange .answer-meta{margin:0 0 10px}.exchange .badge{background:var(--tile);color:var(--text);border:1px solid var(--edge)}
+.exchange .answer-text{color:var(--text);font-size:15px;line-height:1.7}
+.exchange .answer-text h2,.exchange .answer-text h3{color:var(--text)}
+.exchange .answer-table-wrap{border-color:var(--edge)}
+.exchange .answer-markdown-table th{background:var(--tile);color:var(--text)}
+.exchange .answer-markdown-table td{color:var(--text)}
+.exchange .answer-markdown-table tbody tr:nth-child(even){background:var(--tile)}
+.exchange .technical pre{background:var(--bg);color:var(--text)}
+.exchange-actions{display:flex;gap:7px;flex-wrap:wrap;margin:12px 0 0}
+.exchange-actions button{width:auto;display:inline-flex;gap:5px;align-items:center;background:var(--tile);border:1px solid var(--edge);color:var(--text);font-size:12px;padding:7px 10px;margin:0}
+.exchange .choice-button{width:auto;margin:5px 6px 5px 0}
+.work-trace{border-left:2px solid var(--edge);margin:9px 0 12px 5px;padding-left:14px;font-size:12px;color:var(--muted)}
+.work-trace li{padding:2px 0;list-style:none;position:relative}
+.work-trace li::before{position:absolute;content:'';height:8px;width:8px;border-radius:50%;background:var(--blue);left:-19px;top:9px}
+.work-trace small{float:right;color:var(--muted);font-size:11px}
+.trace-summary{cursor:pointer;font-size:12px;color:var(--muted)}
+.evidence-drawer{margin-top:12px;border-top:1px solid var(--edge);padding-top:8px}
+.evidence-drawer summary{color:var(--muted);font-size:13px;cursor:pointer}
+.evidence-row{display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid var(--edge);padding:7px 0;font-size:12px;color:var(--text)}
+.evidence-row small{color:var(--muted)}
+.private-warning{font-size:12px;color:var(--muted);margin:7px 0}
+.action-card{border:1px solid var(--edge);border-left:4px solid var(--blue);border-radius:12px;padding:12px;background:var(--tile);margin:12px 0}
+.action-card.destructive_write{border-left-color:#eb7880}.action-card.sensitive_write{border-left-color:#f2b84b}
+.action-card h3{color:var(--text);font-size:15px;margin:0 0 5px}
+.action-card .muted{color:var(--muted)}
+.action-card .action-chips{display:flex;gap:7px;flex-wrap:wrap;margin:8px 0}
+.action-chip{background:var(--card);border:1px solid var(--edge);border-radius:8px;padding:5px 8px;color:var(--text);font-size:12px}
+.action-chip input{width:120px;max-width:180px;margin:0;padding:3px 5px;color:var(--text);background:var(--card);border:1px solid var(--edge)}
+.action-controls{display:flex;gap:7px;flex-wrap:wrap}
+.action-controls button{width:auto;margin:0;padding:8px 13px;font-size:13px;background:var(--card);color:var(--text);border:1px solid var(--edge)}
+.action-controls button.confirm{background:var(--blue);color:var(--accent-ink);border:0}
+.action-note{margin:8px 0 0;color:var(--muted);font-size:12px}
+.monitoring-panels{margin-top:24px;border-top:1px solid var(--edge);padding-top:13px}
+.monitoring-panels summary{cursor:pointer;font-size:13px;color:var(--muted)}
+.monitoring-body{margin-top:14px}.monitoring-body .card{background:var(--card);border:1px solid var(--edge)}
+.monitoring-body .muted,.monitoring-body .journal-small{color:var(--muted)}
+.monitoring-body .health-stat,.monitoring-body .journal-stat{background:var(--tile)}
+.monitoring-body button,.monitoring-body select{color:var(--text)}
+.monitoring-body a{color:var(--blue)}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+@media(min-width:1000px){.homebrain-layout{grid-template-columns:minmax(0,1fr) 200px;column-gap:32px;align-items:start}
+.overview-rail{grid-column:2;grid-row:1/span 2;position:sticky;top:155px;border-left:1px solid var(--edge);padding-left:13px}
+#summaryTiles{grid-template-columns:1fr;gap:10px}#summaryTiles .tile .big{font-size:24px}
+.exchange-feed{grid-column:1;grid-row:1}.command-bar{max-width:calc(100% - 232px)}}
+@media(max-width:520px){.wrap{padding:0 10px 30px}.hb-header h1{font-size:17px}
+.command-form{padding:7px;gap:7px;border-radius:16px}
+.command-mic{width:45px;height:45px}.command-submit{padding:12px 13px}
+#query{font-size:16px}.command-help{font-size:11px}
+#summaryTiles{gap:2px;padding:3px}#summaryTiles .tile{padding:7px 3px}
+#summaryTiles .tile .big{font-size:18px}#summaryTiles .tile div:last-child{font-size:10px}
+.exchange{padding:12px 13px}.exchange-actions button{flex:1 1 auto}
+.overview-note{margin-bottom:10px}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
 </style>
 </head>
-<body><main class="wrap">
-<h1>🏠 <span id="title"></span> <small id="version"></small></h1>
-<section class="card grid top-stats" id="summaryTiles">
-<button class="tile secondary" data-q="Which rooms are active?"><div class="big" id="dashActiveRooms">—</div><div>Active rooms</div><div class="muted" id="dashActiveRoomNames">Motion or lights on</div></button>
-<button class="tile secondary" data-q="Which lights are on?"><div class="big" id="dashLights">—</div><div>Lights on</div><div class="muted">Tap for live details</div></button>
-<button class="tile secondary" data-q="Which motion sensors are active?"><div class="big" id="dashMotion">—</div><div>Motion active</div><div class="muted">Live Hubitat states</div></button>
-<button class="tile secondary" data-q="Which batteries are low?"><div class="big" id="dashBatteries">—</div><div>Low batteries</div><div class="muted">At or below 20%</div></button>
-</section>
-<section class="card">
-<input id="query" placeholder="Ask your Hubitat…" autocomplete="off">
+<body><div class="wrap" id="homebrainApp">
+<header class="hb-header">
+<h1><span id="title"></span><small id="version"></small></h1>
+<div class="connection-host">
+<button id="connectionPill" type="button" aria-expanded="false" aria-controls="connectionPanel">● Connecting…</button>
+<div id="connectionPanel" class="connection-panel" hidden>
+<strong>Connection details</strong>
+<section class="card row status-card"><span class="pill" id="mcp">MCP unknown</span><span class="pill"><span class="muted">MCP tools</span><strong id="tools">—</strong></span><span class="pill" id="ollama">Ollama unknown</span><span class="pill"><span class="muted">Model</span><strong id="model">—</strong></span><span class="pill"><span class="muted">Last route</span><strong id="lastRoute">—</strong></span><span class="pill"><span class="muted">Response</span><strong id="lastTime">—</strong></span></section>
+<p class="connection-meta">Hub: <span id="statusHub">—</span> · Devices inspected: <span id="statusDevices">—</span></p>
+<button id="checkConnection" class="secondary" type="button">Check connection</button>
+<div hidden><span id="dashActiveRooms">—</span><span id="dashActiveRoomNames"></span></div>
+</div>
+</div>
+</header>
+<section class="command-bar" id="commandBar" aria-label="Ask HomeBrain">
+<form id="commandForm" class="command-form">
+<button id="speak" type="button" class="command-mic" aria-label="Start speaking" title="Tap to listen; hold to speak">🎤</button>
+<textarea id="query" rows="2" placeholder="Ask or command…" maxlength="12000" aria-label="Ask HomeBrain"></textarea>
+<button id="ask" type="submit" class="command-submit" disabled>Ask</button>
+</form>
+<div class="command-help"><span id="voiceStatus" role="status">Press / to focus · Enter to send · Shift+Enter for a new line</span><span>Voice input may use a browser speech service.</span></div>
 <div class="model-tier-picker">
-<label for="modelTier">AI model</label>
+<label for="modelTier">Model</label>
 <select id="modelTier" aria-label="AI model for this question">
 <option value="auto">Auto · hybrid routing (may charge)</option>
 <option value="free">Free · Gemma (default)</option>
@@ -130,11 +245,26 @@ def render_page(title: str, version: str) -> str:
 <button class="secondary clear-context" id="resetContext" type="button" title="Start without prior context">New topic</button>
 </div>
 <div class="model-tier-note" id="modelTierNote" role="status">Free is the default. Paid uses Ollama account credits, with no additional HomeBrain budget. Claude bills your Anthropic API account separately.</div>
-<div class="query-actions"><button id="ask">Ask</button><button class="secondary" id="speak">🎤 Speak</button></div>
-<div class="answer-options"><label class="muted"><input id="readAnswers" type="checkbox" style="width:auto"> Read answers aloud</label><button class="secondary browser-shortcut" id="openBrowser" type="button">🌐 Open in browser</button></div>
-<div class="answer" id="answer" role="status" aria-live="polite">Ready for a question.</div>
+<div class="answer-options"><label class="muted"><input id="readAnswers" type="checkbox" style="width:auto"> Read answers aloud automatically</label><button class="secondary browser-shortcut" id="openBrowser" type="button">🌐 Open in browser</button></div>
 </section>
-<section class="card row status-card"><span class="pill" id="mcp">MCP unknown</span><span class="pill"><span class="muted">MCP tools</span><strong id="tools">—</strong></span><span class="pill" id="ollama">Ollama unknown</span><span class="pill"><span class="muted">Model</span><strong id="model">—</strong></span><span class="pill"><span class="muted">Last route</span><strong id="lastRoute">—</strong></span><span class="pill"><span class="muted">Response</span><strong id="lastTime">—</strong></span></section>
+<div class="homebrain-layout">
+<aside class="overview-rail" aria-label="Current home overview">
+<section class="card grid top-stats" id="summaryTiles">
+<button class="tile secondary" data-q="Which lights are on?"><div class="big" id="dashLights">—</div><div>Lights on</div></button>
+<button class="tile secondary" data-q="Which motion sensors are active?"><div class="big" id="dashMotion">—</div><div>Motion active</div></button>
+<button class="tile secondary" data-q="Which batteries are low?"><div class="big" id="dashBatteries">—</div><div>Low batteries</div></button>
+<button class="tile secondary" data-q="How many Hubitat devices were inspected, and is the inventory complete?"><div class="big" id="dashDevices">—</div><div>Devices inspected</div></button>
+</section>
+<p class="overview-note" id="overviewNote">Read-only snapshot · inventory status pending · no device commands</p>
+</aside>
+<main class="exchange-feed" id="exchangeFeed" aria-label="Questions and answers" aria-live="polite">
+<p class="feed-empty" id="feedEmpty">What should the house do? <span>Your newest answer will appear here.</span></p>
+<article class="exchange" id="answer" role="status" hidden></article>
+</main>
+</div>
+<details id="monitoringPanels" class="monitoring-panels">
+<summary>Hub Diagnostics, system checks and historical evidence</summary>
+<div class="monitoring-body">
 <section class="card" id="systemHealthCard">
 <div><div class="health-heading"><strong>System check</strong><span class="health-status-chip health-neutral" id="healthAuditStatus">Not checked</span></div><div class="muted" id="healthAuditMeta">Scheduled morning check loading…</div></div>
 <div class="health-grid">
@@ -278,8 +408,9 @@ def render_page(title: str, version: str) -> str:
 </details>
 </section>
 <p class="muted">Powered by Ollama Online native function calling and Hubitat MCP.</p>
-</main>
-<button id="micFab" class="mic-fab" aria-label="Speak">🎤</button>
+</div></details>
+</div>
+<button id="micFab" class="mic-fab" aria-label="Speak" hidden>🎤</button>
 <script>
 const TITLE=__TITLE__,VERSION=__VERSION__;
 const newSessionId=()=>globalThis.crypto?.randomUUID?.()||`hmcp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
