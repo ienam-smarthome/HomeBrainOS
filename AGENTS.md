@@ -1,5 +1,10 @@
 # HomeBrainOS development agent instructions
 
+## V2 alpha.83 System Health source and cost boundaries
+
+HomeBrainOS V2 `System Health` is a local presentation of the same already-fetched `/api/overview` inventory, not a new monitoring subsystem. Do not add model calls, background polling, additional MCP native reads, prompt-text classifiers or deterministic device decisions to populate its status. Show reported names and source coverage for each recognized attribute; unknown must never be re-labelled healthy or zero. Expanding pills and preparing troubleshooting questions must not submit AI or native commands. V1 is unchanged. [Note](docs/HOMEBRAIN-V2-ALPHA83-SYSTEM-HEALTH-SNAPSHOT-20261114.md).
+
+
 ## V2 alpha.81 UI scope
 
 Command-first redesign is **V2-only** (`hubitat-mcp-ai-v2/`). Do not copy, revert, modify or depend on `hubitat-mcp-ai/` V1 as part of alpha.81. V2's session-bound `Interaction` is the authoritative request-UUID approval system; no V1 ConfirmedActionCoordinator is imported. No client prompt parser, deterministic device selector, answer rewriting, fabricated model-phase timing or simulated physical outcome. Original MCP receipts and source scope remain intact; approval previews are display-only redacted structured arguments, and edited chips require decline plus a fresh model proposal. [Release note](docs/HOMEBRAIN-V2-ALPHA81-COMMAND-FIRST-UI-20261114.md).

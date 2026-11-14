@@ -31,7 +31,7 @@ jobs:
         run: python scripts/capture_v2_command_ui_screenshots.py
       - uses: actions/upload-artifact@v4
         with:
-          name: homebrain-v2-alpha82-contrast-fixtures
+          name: homebrain-v2-alpha83-system-health-fixtures
           path: ui-screenshots-v2/*.png
           if-no-files-found: error
           retention-days: 14

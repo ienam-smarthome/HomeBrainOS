@@ -54,8 +54,19 @@ def handler(html: str) -> type[BaseHTTPRequestHandler]:
                                "battery_low": {"count": 2, "devices_with_state": 19,
                                                "members": [{"name": "DEMO battery",
                                                             "battery_pct": 13}]},
+                               "contact_open": {"count": 1, "devices_with_state": 5,
+                                                "members": [{"name": "DEMO front door"}]},
+                               "water_wet": {"count": 0, "devices_with_state": 3,
+                                             "members": []},
+                               "heating_active": {"count": 1, "devices_with_state": 4,
+                                                  "members": [{"name": "DEMO radiator"}]},
+                               "reported_offline": {"count": 1, "devices_with_state": 8,
+                                                     "members": [{"name": "DEMO mesh plug"}]},
+                               "other_switches_on": {"count": 2, "devices_with_state": 25,
+                                                     "members": [{"name": "DEMO smart socket"},
+                                                                 {"name": "DEMO relay"}]},
                            },
-                           "unclassified_on_switches": 0}
+                           "unclassified_on_switches": 2}
                 value, ctype = json.dumps(payload).encode(), "application/json"
             else:
                 value, ctype = b"{}", "application/json"
@@ -112,6 +123,18 @@ AUDIT_SELECTORS = {
         "#ask .voice-privacy",
         "#ask .overview-tile small",
         "#ask .feed-empty span",
+    ],
+    "systemHealth": [
+        "#systemHealth .health-heading h2",
+        "#systemHealth .health-heading p",
+        "#systemHealth .health-snapshot strong",
+        "#systemHealth .health-snapshot p",
+        "#systemHealth .health-card-heading span",
+        "#systemHealth .health-card-scope",
+        "#systemHealth .health-card-preview",
+        "#systemHealth .health-guide h4",
+        "#systemHealth .health-guide p",
+        "#systemHealth .health-guide button",
     ],
     "diagnostics": [
         "#diagnostics #cards .metric small",
@@ -191,6 +214,15 @@ def main():
                             )
                             if stage == "after":
                                 check_contrast(page, "ask", color, device)
+                                page.locator("#systemHealthTab").click()
+                                page.wait_for_function(
+                                    "document.querySelector('#healthAttention').children.length === 4"
+                                )
+                                check_contrast(page, "systemHealth", color, device)
+                                page.screenshot(
+                                    path=str(OUT / f"after-{color}-{device}-system-health.png"),
+                                    full_page=False,
+                                )
                                 page.locator("#diagnosticsTab").click()
                                 page.evaluate("""() => setCards({last:{
                                   free_os_mb:777.4, java_free_mb:23.3,

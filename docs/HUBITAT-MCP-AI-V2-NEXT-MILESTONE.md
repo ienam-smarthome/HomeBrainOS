@@ -1,5 +1,10 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## Alpha.83 installed System Health acceptance
+
+After updating, inspect one existing overview snapshot: expand named lights, motion and low batteries plus contact/water/heating/reported-offline/other-ON if available. Open System Health repeatedly and verify counts/names agree with the same snapshot without additional `/api/overview` or `/api/ask` network requests. A troubleshooting shortcut should **prepare**, not submit, a question; only owner pressing Ask should invoke Ollama. Check partial inventory and absent-attribute cases render unknown, not false zero/healthy claims. This is a read-only UI acceptance check, not a blind Gate B answer benchmark. V1 unchanged.
+
+
 ## Alpha.82 installed theme acceptance
 
 After updating the V2 add-on, compare **light and dark** rendering across Ask / Chat, Hub Diagnostics and AI Evaluation, including numerical metric values, graph legends/readouts and evaluation consent/help text. Verify graph plot and popout behaviour has not changed and review 390px/mobile wrapping. The CI contrast audit checks static and fixture-rendered text but actual browser rendering should also be inspected. No native writes are necessary. This is coached UI acceptance, not a blind first-answer sample. V1 remains unchanged.

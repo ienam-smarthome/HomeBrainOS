@@ -1,5 +1,10 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 14 November 2026 — alpha.83 named system snapshot and System Health
+
+V2 Home Overview is expanded to nine compact named metrics from the original single read-only Hubitat inventory. The new System Health tab groups observed potential-attention states and currently reported activity, with coverage and named members. All pill expanders and tab changes are DOM-only, without extra inventory reads or Ollama calls. Investigate shortcuts prefill Ask without submitting. This is not a system-health oracle or active monitoring service: missing values are unknown, and offline/heating readings are sourced attributes only. V1 remains unchanged. [Engineering note](HOMEBRAIN-V2-ALPHA83-SYSTEM-HEALTH-SNAPSHOT-20261114.md).
+
+
 ## 14 November 2026 — alpha.82 V2 light-theme contrast correction
 
 Installed alpha.81 screenshots exposed dark legacy Diagnostics and AI Evaluation surfaces combined with light-mode dark text. Alpha.82 reconciles the colour tokens and updates form/panel surfaces **only under the light media query**; dark SVG/canvas plots and their source traces remain unchanged. Browser fixture checks audit computed label/value contrast against the 4.5:1 normal-text threshold in light and dark at desktop and mobile. No Hubitat or Home Assistant calls and no V1 code changes. [Details](HOMEBRAIN-V2-ALPHA82-LIGHT-THEME-CONTRAST-20261114.md).

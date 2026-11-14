@@ -310,25 +310,41 @@ main{max-width:1280px}
 .overview-aside{grid-row:2;grid-column:1;min-width:0}.overview-shell{margin:0;padding:10px 12px;background:var(--hb-panel);border:1px solid var(--hb-edge);box-shadow:none}
 .overview-head{margin:0 0 6px}.overview-head h2{font-size:12px;color:var(--hb-sub)}
 .overview-head p{display:none}#refreshOverview{font-size:11px;padding:5px 8px}
-.overview-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}
+.overview-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
 .overview-tile{font:inherit;text-align:left;cursor:pointer;background:transparent;color:var(--hb-text);border:0;padding:7px 5px;box-shadow:none;min-width:0}
 .overview-tile span{font-size:11px;color:var(--hb-sub)}
 .overview-tile strong{font-size:22px;color:var(--hb-text)}
 .overview-tile small{font-size:10px;color:var(--hb-sub)}
+.overview-tile{background:var(--hb-tile);border:1px solid var(--hb-edge);border-radius:11px;padding:9px 10px;min-width:0;gap:0;box-shadow:none}
+.overview-pill-button{display:flex;flex-direction:column;align-items:flex-start;text-align:left;width:100%;min-width:0;padding:0;border:0;background:transparent;color:var(--hb-text);font:inherit;cursor:pointer}
+.overview-pill-button:hover .overview-preview,.overview-pill-button:focus-visible .overview-preview{text-decoration:underline}
+.overview-pill-button::after{content:"⌄";position:absolute;right:8px;top:5px;font-size:15px;color:var(--hb-sub)}
+.overview-expandable{position:relative}
+.overview-expandable:has(.overview-pill-button[aria-expanded="true"]){border-color:var(--hb-accent)}
+.overview-pill-button[aria-expanded="true"]::after{content:"⌃"}
+.overview-tile .overview-preview{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;min-height:0;width:100%;font-size:11px;line-height:1.4;color:var(--hb-sub);overflow-wrap:anywhere;margin-top:5px}
 .overview-tile .overview-names{display:none}
+.overview-tile .overview-pill-button[aria-expanded="true"] + .overview-names{display:flex;max-height:190px;overflow:auto;border-top:1px solid var(--hb-edge);padding:7px 0 0;margin-top:8px;scrollbar-color:var(--hb-edge) transparent}
+.overview-tile .overview-name{color:var(--hb-text);border-color:var(--hb-edge);font-size:11px}
+.overview-tile .overview-name.empty{color:var(--hb-sub)}
+.overview-tile .overview-name .battery-value{color:var(--hb-text)}
+.overview-tile .overview-pill-button:focus-visible{outline:3px solid var(--hb-accent);outline-offset:3px;border-radius:5px}
+.overview-tile.overview-inventory{justify-content:flex-start;gap:0}
+
 .overview-footer{margin:5px 0 0;gap:6px}
 .overview-footer small,.overview-limits summary{font-size:10.5px;color:var(--hb-sub)}
 @media(min-width:1000px){.ask-grid{grid-template-columns:minmax(0,1fr) 205px;column-gap:22px;align-items:start}
 .ask-main{grid-column:1;grid-row:1}.answer-feed{grid-column:1;grid-row:2}.overview-aside{grid-column:2;grid-row:1 / span 2;position:sticky;top:14px}
 .overview-grid{grid-template-columns:1fr;gap:6px}
-.overview-tile{min-height:65px}.overview-tile strong{font-size:25px}
+.overview-tile{min-height:67px}.overview-tile strong{font-size:23px}
+.overview-aside .overview-shell{max-height:calc(100vh - 36px);overflow-y:auto;scrollbar-color:var(--hb-edge) transparent}
 .overview-head{flex-wrap:wrap}#refreshOverview{margin:0}
 }
 @media(max-width:650px){main{padding:11px}.ask-grid{gap:9px}
 #ask .compose-card{padding:10px 11px}
 .command-form{gap:7px;padding:7px}.mic-round{flex-basis:45px;width:45px;height:45px}
 #ask #send{padding:11px 13px;min-width:58px}
-.overview-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.overview-tile{padding:5px 2px}
+.overview-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.overview-tile{padding:8px}
 .overview-tile span{font-size:10px}.overview-tile strong{font-size:19px}
 #ask #currentExchange .answer-heading button{flex:1 1 auto}
 }
@@ -411,6 +427,44 @@ button,textarea,select{color:var(--hb-text);border-color:var(--hb-edge);backgrou
   #evaluation .eval-consent input{accent-color:#165da9}
 }
 /* Do not apply light-mode text to dark plotting surfaces or graph tooltip. */
+/* alpha.83 System Health: source-only findings, never a polling subsystem. */
+#systemHealth{color:var(--hb-text)}
+#systemHealth .health-heading{display:flex;gap:16px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;margin:5px 0 14px}
+#systemHealth .health-heading h2{font-size:22px;letter-spacing:-.03em;color:var(--hb-text);margin:0 0 5px}
+#systemHealth .health-heading p{font-size:13px;max-width:690px;margin:0;color:var(--hb-sub)}
+#systemHealth .health-source-label{font-size:11px;font-weight:650;letter-spacing:.01em;border:1px solid var(--hb-edge);background:var(--hb-panel);border-radius:999px;padding:6px 10px;color:var(--hb-sub)}
+#systemHealth .health-snapshot{background:var(--hb-panel);color:var(--hb-text);border:1px solid var(--hb-edge);padding:14px 17px;border-radius:13px;margin:0 0 19px;box-shadow:none}
+#systemHealth .health-snapshot strong{color:var(--hb-text);font-size:15px}
+#systemHealth .health-snapshot p,#systemHealth .health-snapshot small{display:block;color:var(--hb-sub);font-size:12px;margin:6px 0 0;line-height:1.5}
+#systemHealth .health-section-title{color:var(--hb-text);font-size:16px;margin:20px 0 5px}
+#systemHealth .health-helper,#systemHealth .health-empty{color:var(--hb-sub);font-size:12px;line-height:1.5;margin:0 0 12px}
+#systemHealth .health-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0 0 10px}
+#systemHealth .health-card{min-width:0;border:1px solid var(--hb-edge);background:var(--hb-panel);border-radius:12px;padding:12px;overflow-wrap:anywhere}
+#systemHealth .health-card.needs-review{border-left:3px solid var(--hb-accent)}
+#systemHealth .health-card-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}
+#systemHealth .health-card-heading span{color:var(--hb-text);font-size:12px;font-weight:600;min-width:0}
+#systemHealth .health-count{color:var(--hb-text);font-size:24px;line-height:1.1;font-variant-numeric:tabular-nums}
+#systemHealth .health-card-scope,#systemHealth .health-card-preview,#systemHealth .health-omitted{font-size:11px;line-height:1.5;color:var(--hb-sub);margin:8px 0 0}
+#systemHealth .health-card-preview{font-weight:550;overflow-wrap:anywhere}
+#systemHealth .health-members{margin:9px 0 0;border-top:1px solid var(--hb-edge);padding-top:7px}
+#systemHealth .health-members summary{color:var(--hb-sub);font-size:11px;cursor:pointer}
+#systemHealth .health-members ul{padding-left:18px;margin:7px 0 2px;color:var(--hb-text);font-size:11px;line-height:1.55;overflow-wrap:anywhere}
+#systemHealth .health-actions{background:var(--hb-panel);color:var(--hb-text);border:1px solid var(--hb-edge);border-radius:13px;padding:15px;margin-top:23px;box-shadow:none}
+#systemHealth .health-actions h3{font-size:16px;color:var(--hb-text);margin:0 0 5px}
+#systemHealth .health-actions p,#systemHealth .health-privacy{color:var(--hb-sub);font-size:12px;line-height:1.55;margin:7px 0 14px}
+#systemHealth .health-actions p strong{color:var(--hb-text)}
+#systemHealth .health-guide-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}
+#systemHealth .health-guide{background:var(--hb-tile);border:1px solid var(--hb-edge);border-radius:10px;padding:11px;min-width:0}
+#systemHealth .health-guide h4{color:var(--hb-text);font-size:13px;margin:0}
+#systemHealth .health-guide p{color:var(--hb-sub);font-size:11.5px;margin:6px 0 10px}
+#systemHealth .health-guide button{width:auto;max-width:100%;background:var(--hb-panel);color:var(--hb-text);border:1px solid var(--hb-edge);padding:8px 10px;border-radius:8px;font-size:11.5px;margin:0}
+#systemHealth .health-guide button:hover{border-color:var(--hb-accent)}
+#systemHealth .health-privacy{margin:14px 0 0}
+#systemHealth button:focus-visible,#systemHealth summary:focus-visible{outline:3px solid var(--hb-accent);outline-offset:2px}
+@media(max-width:900px){#systemHealth .health-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:520px){#systemHealth .health-guide-grid{grid-template-columns:1fr}#systemHealth .health-grid{gap:7px}
+#systemHealth .health-card{padding:10px}#systemHealth .health-heading{gap:8px}
+#systemHealth .health-heading h2{font-size:19px}#systemHealth .health-count{font-size:22px}}
 button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-visible,.overview-tile:focus-visible{outline:3px solid var(--hb-accent);outline-offset:2px}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
 
@@ -418,7 +472,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 <body>
 <header><div class="header-inner"><div class="brand"><div class="brand-mark" aria-hidden="true">⌘</div><div class="brand-copy"><h1>Hubitat MCP AI <span class="brand-v">v2</span></h1><small>HomeBrainOS · Smart home assistant</small></div></div><div class="header-status"><button type="button" id="statusPill" aria-controls="statusPanel" aria-expanded="false" onclick="toggleStatusPill()"><span id="state">Checking configuration…</span></button><div id="statusPanel" class="status-popover" hidden><strong>V2 connection details</strong><p id="statusMeta">Model and MCP status not yet loaded.</p><div id="statusMonitor"></div><button id="checkConnection" type="button" onclick="checkMonitorSource()">Check Hub & Device Monitor</button></div><button id="reloadUI" hidden onclick="reloadInterface()">Reload interface</button></div></div></header>
 <main>
-<nav class="app-tabs" aria-label="Main navigation"><button id="askTab" class="active" onclick="tab('ask')">Ask / Chat</button><button id="diagnosticsTab" onclick="tab('diagnostics')">Hub Diagnostics</button><button id="evaluationTab" onclick="tab('evaluation')">AI Evaluation</button></nav>
+<nav class="app-tabs" aria-label="Main navigation"><button id="askTab" class="active" onclick="tab('ask')">Ask / Chat</button><button id="systemHealthTab" onclick="tab('systemHealth')">System Health</button><button id="diagnosticsTab" onclick="tab('diagnostics')">Hub Diagnostics</button><button id="evaluationTab" onclick="tab('evaluation')">AI Evaluation</button></nav>
 <section id="ask" class="active"><div class="ask-grid"><div class="ask-main">
 <div class="card compose-card" id="commandBar"><div class="row compose-heading"><div><h2 class="sr-only">Ask HomeBrain</h2><p class="compose-subtitle">Ask or command · live MCP evidence, not a simulated assistant</p></div><button id="newConversation" class="right" onclick="newConversation()">New chat</button></div><details class="session-note evidence-disclosure"><summary>Conversation and privacy</summary><p>Conversation stays in this open page only. Follow-ups include an index of earlier sources and redacted excerpts. The AI can inspect older receipts in chunks when needed. Live-state questions and new actions still require fresh verification. Evidence is memory-only.</p></details>
 <div class="row monitor-row" hidden><span class="monitor-indicator" aria-hidden="true"></span><small id="monitorSourceStatus" class="muted" role="status" aria-live="polite">Saved history · checking connection…</small><button type="button" onclick="checkMonitorSource()" id="checkMonitor" title="One read-only status request; no device changes">Check connection</button></div>
@@ -448,19 +502,52 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 <aside class="overview-aside" aria-label="Read-only home overview"><div class="overview-shell" aria-label="Current hub overview">
  <div class="row overview-head"><div><h2>Home overview</h2><p>Observed native device states · read-only snapshot</p></div>
   <button id="refreshOverview" type="button" onclick="refreshOverview()" title="One read-only native Hubitat device inventory request; no commands or model calls">↻ Refresh overview</button></div>
- <div class="overview-grid">
-  <button type="button" class="overview-tile" onclick="askOverview(this)" data-question="Which lights are on right now? Verify with live read-only Hubitat evidence." aria-label="Ask which lights are on"><span>Lights ON</span><strong id="overviewLights" aria-live="polite">—</strong><small id="overviewLightsScope">Waiting for source</small><div class="overview-names" id="overviewLightsNames" aria-label="Names of lights reporting on"></div></button>
-  <button type="button" class="overview-tile" onclick="askOverview(this)" data-question="Which motion sensors currently report active? Verify with fresh Hubitat evidence." aria-label="Ask which motion sensors are active"><span>Motion active</span><strong id="overviewMotion" aria-live="polite">—</strong><small id="overviewMotionScope">Waiting for source</small><div class="overview-names" id="overviewMotionNames" aria-label="Names of active motion sensors"></div></button>
-  <button type="button" class="overview-tile" onclick="askOverview(this)" data-question="Which battery devices report below 20 percent? Check current values and gaps." aria-label="Ask which batteries are low"><span>Low battery · below 20%</span><strong id="overviewBattery" aria-live="polite">—</strong><small id="overviewBatteryScope">Waiting for source</small><div class="overview-names" id="overviewBatteryNames" aria-label="Names and percentages of low battery devices"></div></button>
-  <button type="button" class="overview-tile" onclick="askOverview(this)" data-question="How many Hubitat devices were inspected, and is the read-only inventory coverage complete?" aria-label="Ask about inventory coverage"><span>Devices inspected</span><strong id="overviewDevices" aria-live="polite">—</strong><small id="overviewDevicesScope">Waiting for source</small></button>
+ <div class="overview-grid" id="overviewPills" aria-label="Snapshot summary pills, tap to expand names without using AI">
+  <div class="overview-tile overview-expandable"><button class="overview-pill-button" id="overviewLightsToggle" type="button" onclick="toggleOverviewMembers(this)" aria-expanded="false" aria-controls="overviewLightsNames" title="Expand reported device names · local only · no Ollama"><span>Lights ON</span><strong id="overviewLights" aria-live="polite">—</strong><small id="overviewLightsScope">Waiting for source</small><span class="overview-preview" id="overviewLightsPreview"></span></button><div class="overview-names" id="overviewLightsNames" aria-label="Reported members for Lights ON"></div></div>
+  <div class="overview-tile overview-expandable"><button class="overview-pill-button" id="overviewMotionToggle" type="button" onclick="toggleOverviewMembers(this)" aria-expanded="false" aria-controls="overviewMotionNames" title="Expand reported device names · local only · no Ollama"><span>Motion active</span><strong id="overviewMotion" aria-live="polite">—</strong><small id="overviewMotionScope">Waiting for source</small><span class="overview-preview" id="overviewMotionPreview"></span></button><div class="overview-names" id="overviewMotionNames" aria-label="Reported members for Motion active"></div></div>
+  <div class="overview-tile overview-expandable"><button class="overview-pill-button" id="overviewBatteryToggle" type="button" onclick="toggleOverviewMembers(this)" aria-expanded="false" aria-controls="overviewBatteryNames" title="Expand reported device names · local only · no Ollama"><span>Low battery · below 20%</span><strong id="overviewBattery" aria-live="polite">—</strong><small id="overviewBatteryScope">Waiting for source</small><span class="overview-preview" id="overviewBatteryPreview"></span></button><div class="overview-names" id="overviewBatteryNames" aria-label="Reported members for Low battery · below 20%"></div></div>
+  <div class="overview-tile overview-expandable"><button class="overview-pill-button" id="overviewContactsToggle" type="button" onclick="toggleOverviewMembers(this)" aria-expanded="false" aria-controls="overviewContactsNames" title="Expand reported device names · local only · no Ollama"><span>Open contacts</span><strong id="overviewContacts" aria-live="polite">—</strong><small id="overviewContactsScope">Waiting for source</small><span class="overview-preview" id="overviewContactsPreview"></span></button><div class="overview-names" id="overviewContactsNames" aria-label="Reported members for Open contacts"></div></div>
+  <div class="overview-tile overview-expandable"><button class="overview-pill-button" id="overviewWaterToggle" type="button" onclick="toggleOverviewMembers(this)" aria-expanded="false" aria-controls="overviewWaterNames" title="Expand reported device names · local only · no Ollama"><span>Water detected</span><strong id="overviewWater" aria-live="polite">—</strong><small id="overviewWaterScope">Waiting for source</small><span class="overview-preview" id="overviewWaterPreview"></span></button><div class="overview-names" id="overviewWaterNames" aria-label="Reported members for Water detected"></div></div>
+  <div class="overview-tile overview-expandable"><button class="overview-pill-button" id="overviewHeatingToggle" type="button" onclick="toggleOverviewMembers(this)" aria-expanded="false" aria-controls="overviewHeatingNames" title="Expand reported device names · local only · no Ollama"><span>Heating reported</span><strong id="overviewHeating" aria-live="polite">—</strong><small id="overviewHeatingScope">Waiting for source</small><span class="overview-preview" id="overviewHeatingPreview"></span></button><div class="overview-names" id="overviewHeatingNames" aria-label="Reported members for Heating reported"></div></div>
+  <div class="overview-tile overview-expandable"><button class="overview-pill-button" id="overviewOfflineToggle" type="button" onclick="toggleOverviewMembers(this)" aria-expanded="false" aria-controls="overviewOfflineNames" title="Expand reported device names · local only · no Ollama"><span>Reported offline</span><strong id="overviewOffline" aria-live="polite">—</strong><small id="overviewOfflineScope">Waiting for source</small><span class="overview-preview" id="overviewOfflinePreview"></span></button><div class="overview-names" id="overviewOfflineNames" aria-label="Reported members for Reported offline"></div></div>
+  <div class="overview-tile overview-expandable"><button class="overview-pill-button" id="overviewOtherOnToggle" type="button" onclick="toggleOverviewMembers(this)" aria-expanded="false" aria-controls="overviewOtherOnNames" title="Expand reported device names · local only · no Ollama"><span>Other ON switches</span><strong id="overviewOtherOn" aria-live="polite">—</strong><small id="overviewOtherOnScope">Waiting for source</small><span class="overview-preview" id="overviewOtherOnPreview"></span></button><div class="overview-names" id="overviewOtherOnNames" aria-label="Reported members for Other ON switches"></div></div>
+  <div class="overview-tile overview-inventory"><span>Devices inspected</span><strong id="overviewDevices" aria-live="polite">—</strong><small id="overviewDevicesScope">Waiting for source</small></div>
  </div>
  <div class="overview-footer">
   <small id="overviewStatus" role="status" aria-live="polite">Loading read-only device overview…</small>
   <small id="overviewRecorder" class="overview-recorder">External diagnostics: checking…</small>
  </div>
- <details class="overview-limits"><summary>About these counts</summary><p>Counts cover only returned devices with a reported matching attribute. Lights ON requires light-identifying names, device types or colour capabilities: plugs and uncertain ON switches are not silently counted as lights. Member lists reflect the same snapshot, not a live feed. Missing or stale attributes are unknown, not proven OFF, inactive or healthy. This is not V1's scheduled system check.</p></details>
+ <details class="overview-limits"><summary>About these counts and source coverage</summary><p>All pills and names come from the same single read-only Hubitat MCP device inventory already used by Home Overview. Tap a pill to expand its locally stored names; this does not call Ollama or refresh Hubitat. No background refreshes or extra queries are introduced. Counts only cover returned devices with recognised matching states. A dash means no supported state reports, not zero alerts. Lights use positive identification; other ON switches are separately labelled and may be plugs or relays. Offline means explicitly reported healthStatus=offline, not inferred disconnected devices. Heating means explicitly reported heating state, not thermostat demand. Missing or stale attributes are unknown. This is a snapshot, not event history or a current health guarantee.</p></details>
 </div>
 </aside></div></section>
+<section id="systemHealth" aria-label="System Health">
+ <header class="health-heading">
+  <div><h2>System Health</h2><p>Read-only observations from the existing Home Overview snapshot. No new device queries or Ollama calls.</p></div>
+  <span class="health-source-label">Same source · same refresh</span>
+ </header>
+ <div class="card health-snapshot" role="status">
+  <strong id="healthSnapshotTitle">Waiting for the Home Overview snapshot</strong>
+  <p id="healthSnapshotNotes">On initial page load, Home Overview makes its existing single read-only inventory request. This tab only presents the result.</p>
+  <small id="healthCoverage">Inventory coverage not yet available</small>
+ </div>
+ <h3 class="health-section-title">Needs attention</h3>
+ <p class="health-helper">Observed states, not independently verified faults. Missing state reports are unknown, not healthy.</p>
+ <div id="healthAttention" class="health-grid" aria-label="Potential issues reported by returned attributes"></div>
+ <h3 class="health-section-title">Currently reported</h3>
+ <p class="health-helper">Lights, motion, heating and other switches are snapshots, not continuous activity or inferred heating demand.</p>
+ <div id="healthActive" class="health-grid" aria-label="Observed active device states"></div>
+ <div class="health-actions card">
+  <h3>Troubleshooting</h3>
+  <p>Choose a read-only investigation topic. Preparing a question has no cost; submitting it with <strong>Ask</strong> uses the configured AI model and may consume Ollama credits.</p>
+  <div class="health-guide-grid">
+   <article class="health-guide"><h4>Lights or motion</h4><p>Check which sensors reported a state and investigate automation commands versus bridge reports.</p><button type="button" onclick="prepareHealthQuestion('Investigate the most recent light or motion anomaly using original Hubitat MCP receipts. Check reporter versus initiator. Read-only; do not change anything.')">Prepare investigation</button></article>
+   <article class="health-guide"><h4>Heating behaviour</h4><p>Compare actual thermostat and TRV operating states with demand, without treating heating state as cause.</p><button type="button" onclick="prepareHealthQuestion('Investigate current heating state and TRV demand using fresh native evidence. Distinguish commands, setpoints and operating states. Read-only; do not change anything.')">Prepare investigation</button></article>
+   <article class="health-guide"><h4>Device not reporting</h4><p>Look for fresh device telemetry and driver status; missing readings alone do not establish disconnection.</p><button type="button" onclick="prepareHealthQuestion('Investigate devices with missing or reported-offline telemetry; check last reports and source coverage before drawing conclusions. Read-only; do not change anything.')">Prepare investigation</button></article>
+   <article class="health-guide"><h4>Hub performance</h4><p>Use existing saved memory, CPU, reboot and connectivity history in Hub Diagnostics.</p><button type="button" onclick="tab('diagnostics')">Open Hub Diagnostics</button></article>
+  </div>
+  <p class="health-privacy">System Health opening and expanding reports: zero additional Hubitat inventory calls, zero model calls, no schedules, no writes. The initial Home Overview inventory refresh is unchanged.</p>
+ </div>
+</section>
 <section id="diagnostics">
 <div class="row"><h2>Hub Diagnostics — external recorder</h2><button class="right" onclick="refreshDiagnostics()">Refresh</button></div>
 <p class="muted">Independent SQLite observations outside Hubitat. Probe losses are not necessarily reboots. CPU shows five-minute load equivalent, not measured utilisation.</p>
@@ -563,15 +650,16 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 </section>
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.82";
+const UI_VERSION="2.0.0-alpha.83";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
 let lastAnswer=null,technicalDetails=null,configuredModel=null,turns=[];
 let copyFeedbackTimer=null,copyAttempt=0;
 let ttsInfo={enabled:false};
+let cachedHealthOverview=null;
 let evaluationCapture=null,evaluationResult=null,evaluationBusy=false;
-function tab(which){if(!['ask','diagnostics','evaluation'].includes(which))return;for(const id of ['ask','diagnostics','evaluation']){byId(id).classList.toggle('active',id===which);byId(id+'Tab').classList.toggle('active',id===which)}if(which==='diagnostics')refreshDiagnostics();if(which==='evaluation')byId('evalModel').textContent='Configured model: '+(configuredModel||'not configured');}
+function tab(which){if(!['ask','systemHealth','diagnostics','evaluation'].includes(which))return;for(const id of ['ask','systemHealth','diagnostics','evaluation']){byId(id).classList.toggle('active',id===which);byId(id+'Tab').classList.toggle('active',id===which)}if(which==='systemHealth')renderSystemHealth(cachedHealthOverview);if(which==='diagnostics')refreshDiagnostics();if(which==='evaluation')byId('evalModel').textContent='Configured model: '+(configuredModel||'not configured');}
 async function readJson(url, init){const r=await fetch(url,{...init,cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.detail||('HTTP '+r.status));return d;}
 
 function evaluationToggle(){
@@ -845,7 +933,9 @@ function showOverviewNames(id,metric,kind){
  if(!members.length){
   const empty=document.createElement('div');
   empty.className='overview-name empty';
-  empty.textContent=metric.count===0?'None reported':(Number.isInteger(metric.count)?'Device names unavailable':'');
+  empty.textContent=metric.devices_with_state===0?'No supported state reports':
+   metric.count===0?'None reported among covered devices':
+   (Number.isInteger(metric.count)?'Device names unavailable':'');
   if(empty.textContent)container.appendChild(empty);
   return;
  }
@@ -873,25 +963,73 @@ function showOverviewNames(id,metric,kind){
   container.appendChild(limit);
  }
 }
+const OVERVIEW_METRICS=[
+ ["lights_on","overviewLights","overviewLightsScope","overviewLightsNames","overviewLightsPreview","light"],
+ ["motion_active","overviewMotion","overviewMotionScope","overviewMotionNames","overviewMotionPreview","motion"],
+ ["battery_low","overviewBattery","overviewBatteryScope","overviewBatteryNames","overviewBatteryPreview","battery"],
+ ["contact_open","overviewContacts","overviewContactsScope","overviewContactsNames","overviewContactsPreview","contact"],
+ ["water_wet","overviewWater","overviewWaterScope","overviewWaterNames","overviewWaterPreview","water"],
+ ["heating_active","overviewHeating","overviewHeatingScope","overviewHeatingNames","overviewHeatingPreview","heat"],
+ ["reported_offline","overviewOffline","overviewOfflineScope","overviewOfflineNames","overviewOfflinePreview","health"],
+ ["other_switches_on","overviewOtherOn","overviewOtherOnScope","overviewOtherOnNames","overviewOtherOnPreview","switch"]
+];
+function toggleOverviewMembers(button){
+ // This is a DOM-only disclosure; it never calls /api/ask, /api/overview or Ollama.
+ if(!button)return;
+ const next=button.getAttribute('aria-expanded')!=='true';
+ button.setAttribute('aria-expanded',String(next));
+}
+function overviewMemberLabel(member,kind){
+ if(!member||typeof member.name!=='string')return '';
+ const name=member.name.trim().slice(0,100);
+ if(!name)return '';
+ if(kind==='battery'&&typeof member.battery_pct==='number'&&
+  Number.isFinite(member.battery_pct)&&member.battery_pct>=0&&member.battery_pct<20){
+  const pct=Number.isInteger(member.battery_pct)?String(member.battery_pct):member.battery_pct.toFixed(1);
+  return name+' · '+pct+'%';
+ }
+ return name;
+}
+function overviewPreview(metric,kind){
+ const count=metric?.count,covered=metric?.devices_with_state;
+ if(!Number.isInteger(covered)||covered===0)return 'No supported state reports';
+ if(!Number.isInteger(count))return 'Reported names unavailable';
+ if(count===0)return 'None reported in snapshot';
+ const listed=Array.isArray(metric?.members)?metric.members:[];
+ const names=listed.map(item=>overviewMemberLabel(item,kind)).filter(Boolean);
+ if(!names.length)return count+' reported · names unavailable';
+ return names.slice(0,2).join(' · ')+(count>2?' · +'+(count-2)+' more':'');
+}
 function clearOverviewCounts(){
- for(const id of ['overviewLights','overviewMotion','overviewBattery','overviewDevices'])
-  byId(id).textContent='—';
- for(const id of ['overviewLightsNames','overviewMotionNames','overviewBatteryNames'])
-  byId(id).replaceChildren();
- for(const id of ['overviewLightsScope','overviewMotionScope','overviewBatteryScope','overviewDevicesScope'])
-  byId(id).textContent='Source scope unavailable';
+ cachedHealthOverview=null;
+ renderSystemHealth(null);
+ for(const [,countId,scopeId,listId,previewId] of OVERVIEW_METRICS){
+  byId(countId).textContent='—';
+  byId(scopeId).textContent='Source scope unavailable';
+  byId(listId).replaceChildren();
+  byId(previewId).textContent='';
+ }
+ byId('overviewDevices').textContent='—';
+ byId('overviewDevicesScope').textContent='Source scope unavailable';
+ // A source outage must not leave stale expanded names visible.
+ for(const [, , , listId] of OVERVIEW_METRICS){
+  const toggle=byId(listId.replace('Names','Toggle'));
+  if(toggle)toggle.setAttribute('aria-expanded','false');
+ }
 }
 function setOverviewCounts(data){
- const m=data.metrics||{};
- for(const [key,countId,scopeId,listId,kind] of [
-  ['lights_on','overviewLights','overviewLightsScope','overviewLightsNames','light'],
-  ['motion_active','overviewMotion','overviewMotionScope','overviewMotionNames','motion'],
-  ['battery_low','overviewBattery','overviewBatteryScope','overviewBatteryNames','battery']]){
-  const metric=m[key]||{};
-  byId(countId).textContent=Number.isInteger(metric.count)?String(metric.count):'—';
-  byId(scopeId).textContent=Number.isInteger(metric.devices_with_state)
-   ? 'of '+metric.devices_with_state+(kind==='light'?' identified lights reporting':' devices reporting')
-   : 'Source scope unknown';
+ cachedHealthOverview=data;
+ renderSystemHealth(data);
+ const metrics=data.metrics||{};
+ for(const [key,countId,scopeId,listId,previewId,kind] of OVERVIEW_METRICS){
+  const metric=metrics[key]||{};
+  const covered=Number.isInteger(metric.devices_with_state)?metric.devices_with_state:null;
+  const count=Number.isInteger(metric.count)?metric.count:null;
+  byId(countId).textContent=covered===0||count===null?'—':String(count);
+  byId(scopeId).textContent=covered===null?'Source scope unknown':
+   covered===0?'No supported readings':
+   'of '+covered+(kind==='light'?' identified lights reporting':' devices reporting');
+  byId(previewId).textContent=overviewPreview(metric,kind);
   showOverviewNames(listId,metric,kind);
  }
  byId('overviewDevices').textContent=Number.isInteger(data.returned_devices)
@@ -901,11 +1039,101 @@ function setOverviewCounts(data){
  const stamp=data.observed_at_utc?new Date(data.observed_at_utc):null;
  const time=stamp&&!Number.isNaN(stamp.getTime())?stamp.toLocaleTimeString('en-GB',
   {timeZone:'Europe/London',hour:'2-digit',minute:'2-digit'}):'unknown';
- const excluded=Number.isInteger(data.unclassified_on_switches)&&data.unclassified_on_switches>0
-  ?' · '+data.unclassified_on_switches+' ON switches not identified as lights':'';
  byId('overviewStatus').textContent='Snapshot '+time+' UK · '+
   (data.inventory_full_coverage_verified?'inventory count reconciled':'inventory may be partial')+
-  excluded+' · no device commands';
+  (Number.isInteger(data.unclassified_on_switches)&&data.unclassified_on_switches>0
+   ?' · '+data.unclassified_on_switches+' ON switches not identified as lights':'')+
+  ' · one read-only inventory request · no device commands or AI';
+}
+const HEALTH_ATTENTION=[
+ ["battery_low","Low batteries","battery"],
+ ["contact_open","Open contacts","contact"],
+ ["water_wet","Water detected","water"],
+ ["reported_offline","Reported offline","health"]
+];
+const HEALTH_ACTIVE=[
+ ["lights_on","Lights ON","light"],
+ ["motion_active","Motion active","motion"],
+ ["heating_active","Heating reported","heat"],
+ ["other_switches_on","Other ON switches","switch"]
+];
+function prepareHealthQuestion(question){
+ // Preparing an investigation does not dispatch /api/ask, native MCP or AI.
+ if(activeRequest)return;
+ if(typeof question!=='string'||!question.trim())return;
+ tab('ask');
+ byId('question').value=question.slice(0,4000);
+ syncCommandBar();
+ byId('question').focus();
+}
+function healthSnapshotCard(metric,key,label,kind){
+ const article=document.createElement('article');article.className='health-card';
+ const heading=document.createElement('div');heading.className='health-card-heading';
+ const name=document.createElement('span');name.textContent=label;
+ const value=document.createElement('strong');value.className='health-count';
+ const covered=Number.isInteger(metric?.devices_with_state)?metric.devices_with_state:null;
+ const count=Number.isInteger(metric?.count)?metric.count:null;
+ value.textContent=covered===null||covered===0||count===null?'—':String(count);
+ if(count!==null&&count>0&&covered>0&&["water_wet","reported_offline","battery_low","contact_open"].includes(key))
+  article.classList.add('needs-review');
+ heading.append(name,value);article.appendChild(heading);
+ const scope=document.createElement('p');scope.className='health-card-scope';
+ scope.textContent=covered===null?'Attribute coverage unavailable':
+  covered===0?'No supported state readings':
+  'Based on '+covered+' reported attribute value'+(covered===1?'':'s');
+ article.appendChild(scope);
+ const names=Array.isArray(metric?.members)?metric.members.map(item=>overviewMemberLabel(item,kind)).filter(Boolean):[];
+ const summary=document.createElement('p');summary.className='health-card-preview';
+ summary.textContent=overviewPreview(metric,kind);article.appendChild(summary);
+ if(count>0&&names.length){
+  const detail=document.createElement('details');detail.className='health-members';
+  const toggle=document.createElement('summary');
+  toggle.textContent='Show '+names.length+' reported name'+(names.length===1?'':'s')+
+   (Number.isInteger(metric?.members_omitted)&&metric.members_omitted>0?' (list limited)':'');
+  detail.appendChild(toggle);
+  const list=document.createElement('ul');
+  for(const text of names){
+   const item=document.createElement('li');item.textContent=text;list.appendChild(item);
+  }
+  detail.appendChild(list);article.appendChild(detail);
+ }
+ if(Number.isInteger(metric?.members_omitted)&&metric.members_omitted>0){
+  const note=document.createElement('small');note.className='health-omitted';
+  note.textContent=metric.members_omitted+' names omitted from source projection';
+  article.appendChild(note);
+ }
+ return article;
+}
+function renderSystemHealth(snapshot){
+ const title=byId('healthSnapshotTitle'),notes=byId('healthSnapshotNotes');
+ const covered=byId('healthCoverage');
+ const attention=byId('healthAttention'),active=byId('healthActive');
+ attention.replaceChildren();active.replaceChildren();
+ if(!snapshot||snapshot.available!==true||snapshot.read_only!==true){
+  title.textContent='No confirmed Home Overview snapshot available';
+  notes.textContent='This tab does not trigger inventory reads. The initial Home Overview refresh is unchanged; unavailable readings remain unknown.';
+  covered.textContent='Source coverage unavailable';
+  const empty=document.createElement('p');empty.className='health-empty';
+  empty.textContent='No source-backed findings to display. Return to Ask / Chat to see the current overview state.';
+  attention.appendChild(empty);return;
+ }
+ const when=snapshot.observed_at_utc?new Date(snapshot.observed_at_utc):null;
+ const valid=when&&!Number.isNaN(when.getTime());
+ const stamp=valid?when.toLocaleString('en-GB',{timeZone:'Europe/London',
+   day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'time unavailable';
+ title.textContent='Snapshot · '+stamp+' UK';
+ notes.textContent='No new scan on this tab. Indicators come only from explicit native device state values already returned in the Home Overview inventory.';
+ const returned=Number.isInteger(snapshot.returned_devices)?snapshot.returned_devices:null;
+ const declared=Number.isInteger(snapshot.source_declared_total)?snapshot.source_declared_total:null;
+ covered.textContent=(returned===null?'Count unavailable':returned+' devices inspected')+
+  (declared!==null?' of '+declared+' declared':'')+
+  (snapshot.inventory_full_coverage_verified?' · inventory count reconciled':' · coverage not fully verified')+
+  ' · no model calls';
+ const metrics=snapshot.metrics||{};
+ for(const [key,label,kind] of HEALTH_ATTENTION)
+  attention.appendChild(healthSnapshotCard(metrics[key],key,label,kind));
+ for(const [key,label,kind] of HEALTH_ACTIVE)
+  active.appendChild(healthSnapshotCard(metrics[key],key,label,kind));
 }
 function setRecorderOverview(recorder){
  const r=recorder||{},last=r.last||{};
@@ -972,12 +1200,6 @@ function toggleStatusPill(){
   const row=byId('checkMonitor').parentElement;
   if(row){row.hidden=false;byId('statusMonitor').appendChild(row);}
  }
-}
-function askOverview(tile){
- if(byId('send').disabled&&activeRequest)return;
- const question=tile?.dataset?.question;
- if(typeof question!=='string'||!question)return;
- byId('question').value=question;syncCommandBar();byId('question').focus();
 }
 function workStep(target,text,timing){
  const list=byId(target),item=document.createElement('li');

@@ -1,5 +1,8 @@
 # Hubitat MCP AI v2 — native MCP client
 
+**Alpha.83 (14 November 2026) — named read-only overview and System Health.** Nine compact summary tiles show names and source coverage for lights on, active motion, low battery, open contacts, wet sensors, heating, explicitly reported offline, other ON switches and inventory count. **System Health** groups findings and offers Troubleshooting question shortcuts, with no extra Hubitat reads, automatic polling, Ollama invocation or approval changes; expand and prepare are local-only. The same original source inventory powers both UI views. V1 unchanged. [Full note](../docs/HOMEBRAIN-V2-ALPHA83-SYSTEM-HEALTH-SNAPSHOT-20261114.md).
+
+
 **Alpha.82 (14 November 2026) — light-theme contrast fix.** Diagnostics and AI Evaluation now have legible light surfaces, dark text, readable button/consent labels and accessible helper text; source-coloured graphs retain their dark plot backgrounds. Browser fixture runs include computed foreground/background checks in both colour schemes at desktop and 390px. V1 remains unchanged. [Details](../docs/HOMEBRAIN-V2-ALPHA82-LIGHT-THEME-CONTRAST-20261114.md).
 
 **Alpha.81 (14 November 2026) — command-first V2 interface.** The V2 UI itself now has sticky Ask/voice, newest-first answers, receipt drawers and real MCP work trace, a compact live overview / desktop rail, status popover and session-bound pending-action cards. The V2 `Interaction` flow approves native writes before dispatch; there is no V1 coordinator or UI code dependency, no fake dry-run outcome, no change to model routing. V1 is unchanged. [Release note](../docs/HOMEBRAIN-V2-ALPHA81-COMMAND-FIRST-UI-20261114.md).
