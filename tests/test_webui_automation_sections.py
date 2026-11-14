@@ -26,7 +26,7 @@ def test_webui_renders_collapsible_filtered_automation_status_view():
 def test_automation_status_answer_always_shows_message_text_first():
     page = render_page("Hubitat MCP AI", "0.10.361")
 
-    assert "const text=renderMessage(rawMessage);answer.appendChild(text);" in page
+    assert "body.appendChild(renderMessage(rawMessage));" in page
 
 
 def test_automation_status_items_widget_is_appended_after_message_not_instead_of_it():
@@ -34,5 +34,5 @@ def test_automation_status_items_widget_is_appended_after_message_not_instead_of
 
     assert (
         "if(data.route==='automation-status'&&Array.isArray(data.automation_items)"
-        "&&data.automation_items.length)answer.appendChild(renderAutomationItems(data));"
+        "&&data.automation_items.length)\n    body.appendChild(renderAutomationItems(data));"
     ) in page
