@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -914,8 +916,14 @@ async def test_one_time_rule_end_to_end_creates_without_self_pause():
     ai = FakeAI([])
     agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ai)
 
+    # Keep the one-off schedule safely in the future: a fixed "11:23" made
+    # this otherwise offline test fail at/after that wall-clock time.
+    local_now = datetime.now(ZoneInfo("Europe/London"))
+    local_target = local_now + timedelta(minutes=90)
+    when = ("tomorrow at " if local_target.date() != local_now.date()
+            else "at ") + local_target.strftime("%H:%M")
     propose_outcome = await agent.process_user_request_result(
-        "turn on livingroom light 1 at 11:23",
+        f"turn on livingroom light 1 {when}",
         session_id="one-time-e2e",
     )
     assert propose_outcome.confirmation_required is True
