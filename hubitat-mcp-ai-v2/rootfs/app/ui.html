@@ -434,7 +434,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 <body>
 <header><div class="header-inner"><div class="brand"><div class="brand-mark" aria-hidden="true">⌘</div><div class="brand-copy"><h1>Hubitat MCP AI <span class="brand-v">v2</span></h1><small>HomeBrainOS · Smart home assistant</small></div></div><div class="header-status"><button type="button" id="statusPill" aria-controls="statusPanel" aria-expanded="false" onclick="toggleStatusPill()"><span id="state">Checking configuration…</span></button><div id="statusPanel" class="status-popover" hidden><strong>V2 connection details</strong><p id="statusMeta">Model and MCP status not yet loaded.</p><div id="statusMonitor"></div><button id="checkConnection" type="button" onclick="checkMonitorSource()">Check Hub & Device Monitor</button></div><button id="reloadUI" hidden onclick="reloadInterface()">Reload interface</button></div></div></header>
 <main>
-<nav class="app-tabs" aria-label="Main navigation"><button id="askTab" class="active" onclick="tab('ask')">Ask / Chat</button><button id="diagnosticsTab" onclick="tab('diagnostics')">Hub Diagnostics</button><button id="evaluationTab" onclick="tab('evaluation')">AI Evaluation</button></nav>
+<nav class="app-tabs" aria-label="Main navigation"><button id="askTab" class="active" onclick="tab('ask')">Ask / Chat</button><button id="systemHealthTab" onclick="tab('systemHealth')">System Health</button><button id="diagnosticsTab" onclick="tab('diagnostics')">Hub Diagnostics</button><button id="evaluationTab" onclick="tab('evaluation')">AI Evaluation</button></nav>
 <section id="ask" class="active"><div class="ask-grid"><div class="ask-main">
 <div class="card compose-card" id="commandBar"><div class="row compose-heading"><div><h2 class="sr-only">Ask HomeBrain</h2><p class="compose-subtitle">Ask or command · live MCP evidence, not a simulated assistant</p></div><button id="newConversation" class="right" onclick="newConversation()">New chat</button></div><details class="session-note evidence-disclosure"><summary>Conversation and privacy</summary><p>Conversation stays in this open page only. Follow-ups include an index of earlier sources and redacted excerpts. The AI can inspect older receipts in chunks when needed. Live-state questions and new actions still require fresh verification. Evidence is memory-only.</p></details>
 <div class="row monitor-row" hidden><span class="monitor-indicator" aria-hidden="true"></span><small id="monitorSourceStatus" class="muted" role="status" aria-live="polite">Saved history · checking connection…</small><button type="button" onclick="checkMonitorSource()" id="checkMonitor" title="One read-only status request; no device changes">Check connection</button></div>
@@ -482,6 +482,34 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
  <details class="overview-limits"><summary>About these counts and source coverage</summary><p>All pills and names come from the same single read-only Hubitat MCP device inventory already used by Home Overview. Tap a pill to expand its locally stored names; this does not call Ollama or refresh Hubitat. No background refreshes or extra queries are introduced. Counts only cover returned devices with recognised matching states. A dash means no supported state reports, not zero alerts. Lights use positive identification; other ON switches are separately labelled and may be plugs or relays. Offline means explicitly reported healthStatus=offline, not inferred disconnected devices. Heating means explicitly reported heating state, not thermostat demand. Missing or stale attributes are unknown. This is a snapshot, not event history or a current health guarantee.</p></details>
 </div>
 </aside></div></section>
+<section id="systemHealth" aria-label="System Health">
+ <header class="health-heading">
+  <div><h2>System Health</h2><p>Read-only observations from the existing Home Overview snapshot. No new device queries or Ollama calls.</p></div>
+  <span class="health-source-label">Same source · same refresh</span>
+ </header>
+ <div class="card health-snapshot" role="status">
+  <strong id="healthSnapshotTitle">Waiting for the Home Overview snapshot</strong>
+  <p id="healthSnapshotNotes">On initial page load, Home Overview makes its existing single read-only inventory request. This tab only presents the result.</p>
+  <small id="healthCoverage">Inventory coverage not yet available</small>
+ </div>
+ <h3 class="health-section-title">Needs attention</h3>
+ <p class="health-helper">Observed states, not independently verified faults. Missing state reports are unknown, not healthy.</p>
+ <div id="healthAttention" class="health-grid" aria-label="Potential issues reported by returned attributes"></div>
+ <h3 class="health-section-title">Currently reported</h3>
+ <p class="health-helper">Lights, motion, heating and other switches are snapshots, not continuous activity or inferred heating demand.</p>
+ <div id="healthActive" class="health-grid" aria-label="Observed active device states"></div>
+ <div class="health-actions card">
+  <h3>Troubleshooting</h3>
+  <p>Choose a read-only investigation topic. Preparing a question has no cost; submitting it with <strong>Ask</strong> uses the configured AI model and may consume Ollama credits.</p>
+  <div class="health-guide-grid">
+   <article class="health-guide"><h4>Lights or motion</h4><p>Check which sensors reported a state and investigate automation commands versus bridge reports.</p><button type="button" onclick="prepareHealthQuestion('Investigate the most recent light or motion anomaly using original Hubitat MCP receipts. Check reporter versus initiator. Read-only; do not change anything.')">Prepare investigation</button></article>
+   <article class="health-guide"><h4>Heating behaviour</h4><p>Compare actual thermostat and TRV operating states with demand, without treating heating state as cause.</p><button type="button" onclick="prepareHealthQuestion('Investigate current heating state and TRV demand using fresh native evidence. Distinguish commands, setpoints and operating states. Read-only; do not change anything.')">Prepare investigation</button></article>
+   <article class="health-guide"><h4>Device not reporting</h4><p>Look for fresh device telemetry and driver status; missing readings alone do not establish disconnection.</p><button type="button" onclick="prepareHealthQuestion('Investigate devices with missing or reported-offline telemetry; check last reports and source coverage before drawing conclusions. Read-only; do not change anything.')">Prepare investigation</button></article>
+   <article class="health-guide"><h4>Hub performance</h4><p>Use existing saved memory, CPU, reboot and connectivity history in Hub Diagnostics.</p><button type="button" onclick="tab('diagnostics')">Open Hub Diagnostics</button></article>
+  </div>
+  <p class="health-privacy">System Health opening and expanding reports: zero additional Hubitat inventory calls, zero model calls, no schedules, no writes. The initial Home Overview inventory refresh is unchanged.</p>
+ </div>
+</section>
 <section id="diagnostics">
 <div class="row"><h2>Hub Diagnostics — external recorder</h2><button class="right" onclick="refreshDiagnostics()">Refresh</button></div>
 <p class="muted">Independent SQLite observations outside Hubitat. Probe losses are not necessarily reboots. CPU shows five-minute load equivalent, not measured utilisation.</p>
@@ -591,8 +619,9 @@ let conversationId=newRequestId();
 let lastAnswer=null,technicalDetails=null,configuredModel=null,turns=[];
 let copyFeedbackTimer=null,copyAttempt=0;
 let ttsInfo={enabled:false};
+let cachedHealthOverview=null;
 let evaluationCapture=null,evaluationResult=null,evaluationBusy=false;
-function tab(which){if(!['ask','diagnostics','evaluation'].includes(which))return;for(const id of ['ask','diagnostics','evaluation']){byId(id).classList.toggle('active',id===which);byId(id+'Tab').classList.toggle('active',id===which)}if(which==='diagnostics')refreshDiagnostics();if(which==='evaluation')byId('evalModel').textContent='Configured model: '+(configuredModel||'not configured');}
+function tab(which){if(!['ask','systemHealth','diagnostics','evaluation'].includes(which))return;for(const id of ['ask','systemHealth','diagnostics','evaluation']){byId(id).classList.toggle('active',id===which);byId(id+'Tab').classList.toggle('active',id===which)}if(which==='systemHealth')renderSystemHealth(cachedHealthOverview);if(which==='diagnostics')refreshDiagnostics();if(which==='evaluation')byId('evalModel').textContent='Configured model: '+(configuredModel||'not configured');}
 async function readJson(url, init){const r=await fetch(url,{...init,cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.detail||('HTTP '+r.status));return d;}
 
 function evaluationToggle(){
