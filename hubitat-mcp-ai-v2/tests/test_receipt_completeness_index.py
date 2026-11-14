@@ -98,7 +98,7 @@ class OriginalReceiptCompletenessTests(unittest.TestCase):
         self.assertEqual(command[0]["report_type"], "original_returned_command_row")
         self.assertTrue(history["source_histories"][0]
                         ["command_issuer_not_proof_of_internal_reason"])
-        self.assertIn("does not", history["purpose"].lower())
+        self.assertIn("do not", history["purpose"].lower())
 
     def test_no_command_claim_only_bounded_to_returned_source(self):
         rows = fictional_rows()[:-1]
