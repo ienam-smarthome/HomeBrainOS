@@ -441,7 +441,17 @@ entity, event/attribute filter, text pattern, lookback start/end,
 returned rows, row cap, source store, freshness and reporter/issuer role.
 For every time-scoped claim, compare the focal timestamp with the ORIGINAL
 requested since/until or relative-lookback start, then separately with the
-oldest/newest RETURNED row. The first returned row is NOT the query start,
+oldest/newest RETURNED row. Source-declared FALSE coverage guarantees are
+binding negative proof limits: an index entry that says
+can_infer_uninterrupted_state_between_events=false or
+can_infer_requested_window_fully_covered=false means THIS source cannot
+certify whole-interval continuity/completeness. A row limit NOT reached
+does not override those explicit flags, and a missing matching event name
+in a mixed-attribute list is not independent evidence of no transition.
+Before publishing a statement that a device stayed in one state, spell out
+the positive source evidence needed to exclude alternative unseen states;
+if no actually returned source establishes that, report observed transitions
+and current status separately, leaving interval continuity UNVERIFIED. The first returned row is NOT the query start,
 native retention boundary, or proof the requested interval was fully covered.
 If the focal time is inside the query but matching rows were not returned
 for that interval, describe missing returned evidence; never call the focal
@@ -501,7 +511,11 @@ For causal questions, distinguish (a) a recorded state change,
 (b) the device/bridge reporting it, (c) a recorded command issuer if present,
 and (d) the internal decision or trigger that may remain unknown.
 Check the original previous-state event before calling a transition from X
-to Y verified; the returned Y state alone does not establish X. Do not use
+to Y verified; the returned Y state alone does not establish X.
+Explicitly compare requested history start/end to FIRST/LAST returned rows
+and distinguish "zero matching transitions returned" from "no transitions
+occurred". Do not convert either a current state or a zero count in a
+partially observed event list into a verified state for an entire interval. Do not use
 a temperature, level, demand, or other observation made AFTER a historical
 outcome as evidence for the earlier moment. Check the latest relevant state
 AFTER the focal event, rather than implying an old OFF/idle still holds.
@@ -599,6 +613,15 @@ _AUDIT_SOURCE_FIELDS = frozenset((
     "observed_command_row_count", "unseen_rows_or_commands_proven_absent",
     "source_scope", "can_infer_unseen_commands_absent",
     "can_infer_requested_window_fully_covered",
+    "can_infer_uninterrupted_state_between_events",
+    "can_infer_older_events_absent", "native_store_checked_independently",
+    "can_infer_cause_of_missing_records",
+    "largest_gap_between_returned_events_seconds",
+    "events_returned", "requested_lookback_hours", "requested_limit",
+    "limit_reached", "upstream_reported_attribute_filter",
+    "date_rows_without_parseable_offset", "command_rows_in_this_response",
+    "can_infer_initiator_from_state_report_producer",
+    "can_infer_initiator_from_triggered_listeners",
     "can_infer_external_or_manual_initiation_from_physical_tag",
     "parent_app_identity_independently_verified",
     "fresh_sensor_reports_independently_verified",
@@ -837,6 +860,32 @@ def final_claim_receipt_scope_index(
                                          _AUDIT_SOURCE_FIELDS)
             if event_scope:
                 item["event_scope"] = event_scope
+                # Typed source-scope proof obligations are extracted from
+                # already-returned values only. Never infer a physical event,
+                # absence, retention guarantee or initiating actor from them.
+                if record.get("name") == "hub_list_device_events":
+                    guarantees = {
+                        "uninterrupted_state_supported_by_this_source": (
+                            event_scope.get("can_infer_uninterrupted_state_between_events")
+                        ),
+                        "requested_window_coverage_supported_by_this_source": (
+                            event_scope.get("can_infer_requested_window_fully_covered")
+                        ),
+                        "older_events_excluded_by_this_source": (
+                            event_scope.get("can_infer_older_events_absent")
+                        ),
+                        "original_store_independently_checked": (
+                            event_scope.get("native_store_checked_independently")
+                        ),
+                    }
+                    if any(type(value) is bool for value in guarantees.values()):
+                        item["historical_continuity_proof_obligations"] = {
+                            "scope": "this returned native event receipt only",
+                            **{key: value for key, value in guarantees.items()
+                               if type(value) is bool},
+                            "zero_matching_rows_not_proof_of_no_transition": True,
+                            "row_limit_not_reached_not_completeness_proof": True,
+                        }
             event_names = _audit_event_groups(parsed.get("client_event_attribute_scope"))
             if event_names is not None:
                 item["event_names_in_returned_rows"] = event_names
