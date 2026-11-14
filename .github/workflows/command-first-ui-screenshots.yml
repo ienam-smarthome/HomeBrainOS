@@ -1,0 +1,37 @@
+name: Command-first UI screenshots (fictional fixtures)
+
+on:
+  pull_request:
+    paths:
+      - 'hubitat-mcp-ai/rootfs/app/webui.py'
+      - 'hubitat-mcp-ai/rootfs/app/action_card_projection.py'
+      - 'scripts/capture_command_ui_screenshots.py'
+      - '.github/workflows/command-first-ui-screenshots.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  screenshots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install browser test tooling (CI only)
+        run: |
+          python -m pip install playwright==1.56.0
+          python -m playwright install --with-deps chromium
+      - name: Capture before and after (light/dark desktop/390px mobile)
+        run: python scripts/capture_command_ui_screenshots.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: command-first-ui-before-after-fictional
+          path: ui-screenshots/*.png
+          if-no-files-found: error
+          retention-days: 14
