@@ -872,14 +872,14 @@ class Agent:
                 "source_review_invoked": source_review_invoked,
                 "source_review_kind": source_review_kind,
                 "current_state_source_status": (
-                    "read_only_receipt_present" if source_review_kind == "current_state"
+                    "read_only_receipt_present" if is_current_state_question(question)
                     and any(
                         item.get("success") is True
                         and is_read_only_review_tool(item.get("name", ""))
                         and item.get("name") not in (_CATALOG_TOOL, _PRIOR_TOOL, CLOCK_TOOL)
                         for item in receipts
                     ) else
-                    "no_source_read_receipt" if source_review_kind == "current_state"
+                    "no_source_read_receipt" if is_current_state_question(question)
                     else "not_applicable"
                 ),
                 "inventory_recovery_invoked": inventory_recovery_invoked,
@@ -1168,6 +1168,7 @@ class Agent:
                     remaining_seconds=deadline - time.monotonic(),
                     has_action_receipt=native_action_receipts_seen > 0,
                     has_tool_receipts=bool(receipts),
+                    candidate_answer=text,
                 ):
                     capture_answer_stage("pre_source_review", text)
                     source_review_invoked = True
