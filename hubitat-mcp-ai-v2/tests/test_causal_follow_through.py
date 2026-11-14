@@ -149,7 +149,7 @@ class ClassificationTests(unittest.TestCase):
                 self.assertFalse(should_recheck_causal_evidence(**{**basis,**change}))
 
     def test_prompts_reject_temporal_projection_and_actuator_shortcuts(self):
-        self.assertIn("later current snapshot", SOURCE_REVIEW_PROMPT)
+        self.assertIn("current snapshot or temperature reading cannot be projected", SOURCE_REVIEW_PROMPT.replace("\n", " "))
         self.assertIn("setpoint/state report precedes", SOURCE_REVIEW_PROMPT)
         self.assertIn("AFTER a historical", FINAL_CLAIM_AUDIT_PROMPT)
         self.assertIn("previous-state event", FINAL_CLAIM_AUDIT_PROMPT)
