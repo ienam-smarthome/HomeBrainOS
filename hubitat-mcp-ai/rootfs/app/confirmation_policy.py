@@ -196,16 +196,20 @@ class ConfirmationPolicy:
         *,
         declared: bool = True,
     ) -> bool:
-        """Confirm only declared calls with a confirmation-bearing effect."""
+        """Queue every declared mutation before execution, including routine writes.
 
-        return self.enabled and declared and effect.requires_confirmation
+        The existing confirmation store and ConfirmedActionCoordinator still
+        own approval, revalidation, execution and no-replay protections.
+        """
+
+        return self.enabled and declared and effect.mutates
 
     def decide(
         self,
         session_id: str,
         actions: list[tuple[str, dict[str, Any]]],
     ) -> ConfirmationDecision:
-        """Validate a sensitive action group and render its queue prompt."""
+        """Validate a structured mutation group and render its queue prompt."""
 
         if not actions or not self.enabled:
             return ConfirmationDecision(ConfirmationAction.BYPASS)
@@ -252,11 +256,11 @@ class ConfirmationPolicy:
                 )
             name = names[0] if names else "unknown"
             return (
-                "Please confirm before I run the sensitive Hubitat action "
+                "Please confirm before I run the queued Hubitat action "
                 f"`{name}`."
             )
         return (
-            f"Please confirm before I run {len(actions)} sensitive Hubitat actions "
+            f"Please confirm before I run {len(actions)} queued Hubitat actions "
             f"through `{', '.join(names)}`."
         )
 
