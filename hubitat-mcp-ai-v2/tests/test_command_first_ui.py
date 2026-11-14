@@ -138,6 +138,25 @@ class UIContracts(unittest.TestCase):
         self.assertNotIn('data-question="Block ', HTML)
         self.assertNotIn('font-family:var(--external-font)', HTML)
 
+    def test_long_question_scrollbar_is_thin_accessible_and_does_not_change_ask_flow(self):
+        # Native desktop scrollbars can be visually oversized. Keep text
+        # editable, scrollable by keyboard, wheel or touch and never conceal
+        # content merely to hide the scrollbar.
+        for needle in (
+            '#ask #question{overflow-y:auto;scrollbar-width:thin',
+            '#ask #question::-webkit-scrollbar{width:7px}',
+            '#ask #question::-webkit-scrollbar-thumb{',
+            '#ask #question::-webkit-scrollbar-button{display:none',
+            '@media(forced-colors:active){#ask #question{scrollbar-color:auto}}',
+            'max-height:138px',
+            "q.style.height=Math.min(138,Math.max(47,q.scrollHeight||47))+'px'",
+            "byId('question').addEventListener('input',syncCommandBar)",
+            'onsubmit="event.preventDefault();submitAsk()"',
+        ):
+            self.assertIn(needle, HTML)
+        self.assertNotIn('#ask #question{scrollbar-width:none', HTML)
+        self.assertNotIn('#ask #question::-webkit-scrollbar{display:none', HTML)
+
     def test_evidence_and_trace_use_original_receipts_only(self):
         for needle in (
             'Array.isArray(response?.tool_calls)',
