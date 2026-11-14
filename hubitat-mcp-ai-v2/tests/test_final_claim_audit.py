@@ -447,7 +447,7 @@ class SourceCoverageNavigationTests(unittest.TestCase):
             "failed",
             "about 350–550 words",
             "contrary or",
-            "no matching records",
+            "zero matching records",
             "There are NO tools",
         ):
             self.assertIn(expected, FINAL_CLAIM_AUDIT_PROMPT)
