@@ -992,8 +992,10 @@ function archivePriorExchange(){
  warning.textContent='PRIVATE: inspect original MCP receipts before sharing.';drawer.appendChild(warning);
  const download=document.createElement('button');download.type='button';download.textContent='Download PRIVATE JSON';
  download.addEventListener('click',()=>captureDownload(capture));drawer.appendChild(download);
- card.appendChild(drawer);byId('olderExchanges').prepend(card);
- const box=byId('olderExchanges');while(box.children.length>11)box.lastChild.remove();
+ card.appendChild(drawer);
+ const box=byId('olderExchanges');
+ if(typeof box.prepend==='function')box.prepend(card);else box.appendChild(card);
+ while(box.children.length>11&&box.lastChild?.remove)box.lastChild.remove();
 }
 function previewPendingAction(pending){
  const card=byId('approval'),preview=pending?.preview,kind=pending?.effect_class||'sensitive_write';
@@ -1036,10 +1038,15 @@ async function pollActivity(){
  try{
   const d=await readJson('api/activity/'+requestId);
   if(activeRequest!==requestId)return;
-  byId('activityCard').hidden=!d.current;
+  byId('activityCard').hidden=!(d.current||d.pending);
   byId('activity').textContent=d.current?JSON.stringify(d.current,null,2):'';
+  observedActivity(d.current);
+  const previousId=pendingApproval?.id;
   pendingApproval=d.pending;
   byId('approval').hidden=!pendingApproval;
+  if(pendingApproval&&pendingApproval.id!==previousId){
+   byId('approve').disabled=false;previewPendingAction(pendingApproval);
+  }
   byId('approvalKind').textContent=pendingApproval&&pendingApproval.approval_kind==='automation_write'
    ? 'Persistent automation: review the trigger and actions in Current operation above. A chat “yes” is not approval. Do not approve an invented mode/event trigger for a one-off timer.'
    : '';
@@ -1047,6 +1054,12 @@ async function pollActivity(){
 }
 async function decide(approved){
  if(!activeRequest||!pendingApproval)return;
+ const effect=pendingApproval.effect_class;
+ if(approved&&['sensitive_write','destructive_write'].includes(effect)){
+  if(typeof window.confirm!=='function'||!window.confirm(
+   'Approve this exact native action? It could change your home. Review its original details first.'))return;
+ }
+ if(approved&&byId('approve').disabled)return;
  const requestId=activeRequest,approvalId=pendingApproval.id;
  byId('approve').disabled=true;byId('decline').disabled=true;byId('approvalError').textContent='';
  try{
@@ -1083,16 +1096,20 @@ function clearResult(){
  byId('responseTime').textContent='Response time: —';
  byId('receipts').textContent='No tool calls yet.';
  byId('downloadTechnical').disabled=true;
+ byId('evidenceSummary').textContent='Evidence · 0 calls';
+ byId('evidenceRows').replaceChildren();
+ byId('completedTraceList').replaceChildren();
 }
 function showResult(question,answer,response,clientMs,error=null,requestId=activeRequest){
  lastAnswer=answer;
  technicalDetails={ui_version:UI_VERSION,model:configuredModel,request_id:requestId,question,
   captured_at:new Date().toISOString(),client_elapsed_ms:Math.round(clientMs),
   server_elapsed_ms:response?.elapsed_ms??null,response,error};
+ byId('currentExchange').hidden=false;byId('feedEmpty').hidden=true;
  byId('answer').classList.remove('muted');byId('answer').replaceChildren(renderAnswer(answer));
  byId('rawAnswer').textContent=answer;
- // The question remains visible in the composer and private receipts.
- byId('requestQuestion').hidden=true;byId('requestQuestion').textContent=question;
+ byId('requestQuestion').hidden=false;byId('requestQuestion').textContent=question;
+ evidenceRows(response);completedWork(response);
  const calls=response?.tool_calls||[],failed=calls.filter(c=>c.success===false).length;
  byId('requestSummary').textContent=error?'Request could not complete.':response?.success===false?'Request ended without a successful response.':'Response received — review the supporting evidence.';
  if(response)byId('requestSummary').textContent+=' '+calls.length+' tool attempts'+(failed?' · '+failed+' unsuccessful':'')+'.';
@@ -1155,15 +1172,19 @@ async function copyResult(which){
  },copied?2600:4800);
 }
 async function submitAsk(){
- const q=byId('question').value.trim();if(!q)return;const send=byId('send');if(send.disabled)return;send.disabled=true;
+ const q=byId('question').value.trim();if(!q||activeRequest)return;
+ syncCommandBar();const send=byId('send');if(send.disabled)return;
+ archivePriorExchange();send.disabled=true;
  clearResult();byId('newConversation').disabled=true;
+ byId('currentExchange').hidden=false;byId('feedEmpty').hidden=true;
+ observedActivitySteps=[];activityFingerprint='';byId('activityTrace').replaceChildren();
  if(!await loadStatus()){
   showResult(q,'Unable to start: check the interface status above.',null,0,
    {type:'preflight',message:byId('state').textContent},null);
   send.disabled=false;byId('newConversation').disabled=false;return;
  }
  activeRequest=newRequestId();byId('requestSummary').textContent='Working — selecting tools and gathering evidence…';byId('requestQuestion').hidden=false;byId('requestQuestion').textContent=q;pendingApproval=null;byId('approvalError').textContent='';
- const started=performance.now();
+ const started=performance.now();requestStartedAt=started;
  const activityTimer=setInterval(pollActivity,750);
  const responseTimer=setInterval(()=>{byId('responseTime').textContent='Waiting: '+((performance.now()-started)/1000).toFixed(1)+' s';},250);
  byId('answer').classList.remove('muted');byId('answer').textContent='Investigating with native MCP tools…';byId('receipts').textContent='Fetching…';
@@ -1174,7 +1195,7 @@ async function submitAsk(){
  }catch(e){
   showResult(q,'Request failed: '+e.message,null,performance.now()-started,{type:'transport',message:e.message});
  }
- finally{clearInterval(activityTimer);clearInterval(responseTimer);activeRequest=null;pendingApproval=null;byId('activityCard').hidden=true;byId('approval').hidden=true;send.disabled=false;byId('newConversation').disabled=false;}
+ finally{clearInterval(activityTimer);clearInterval(responseTimer);activeRequest=null;pendingApproval=null;byId('activityCard').hidden=true;byId('approval').hidden=true;byId('newConversation').disabled=false;syncCommandBar();}
 }
 
 // V1 Speak and answer playback, isolated from agent/MCP tool semantics.
@@ -1450,7 +1471,9 @@ function newConversation(){
  void readJson('api/conversation/clear',{method:'POST',
   headers:{'Content-Type':'application/json','X-Homebrain-Request':'1'},
   body:JSON.stringify({conversation_id:oldConversation})}).catch(()=>{});
- messages=[];turns=[];clearResult();renderTurns();byId('question').value='';byId('answer').textContent='Your response will appear here.';
+ messages=[];turns=[];clearResult();renderTurns();byId('question').value='';byId('answer').textContent='';
+ byId('olderExchanges').replaceChildren();byId('currentExchange').hidden=true;byId('feedEmpty').hidden=false;
+ observedActivitySteps=[];byId('activityTrace').replaceChildren();syncCommandBar();
  byId('rawAnswer').textContent='No answer yet.';byId('requestQuestion').hidden=true;byId('requestQuestion').textContent='';byId('requestSummary').textContent='New conversation. Previous prose and stored MCP evidence are cleared.';byId('question').focus();
 }
 function downloadTechnical(){
