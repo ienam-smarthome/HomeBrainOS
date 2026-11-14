@@ -1,5 +1,10 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## Alpha.81 V2-only command-first acceptance
+
+After installing alpha.81, use one fresh read-only question to inspect newest-answer/evidence/trace rendering, the four source-scoped overview counts and status popover. Test the new voice hold/tap behaviour in a supported browser with microphone permission. Only with a user-authorised noncritical target, verify that a real native proposed write remains pending until explicit Approve, that Dismiss sends no native action and that an edited chip cannot approve stale arguments. Existing Hub Diagnostics and AI Evaluation must remain accessible. This is coached installed UI acceptance, not an independent first-answer Gate B sample. V1 remains unchanged.
+
+
 ## 14 November 2026 — alpha.80 safe clock and post-write error acceptance
 
 After alpha.80 CI and installation, ask an uncoached-but-read-only clock/timezone question, keep original PRIVATE Technical JSON and inspect source labels, timezone offsets and structured arithmetic. Later timed action acceptance requires explicit owner direction for a noncritical device and verification that requested and stored deadlines match; a native write-response snapshot is not a separate post-write read. Do not deliberately cause payment or network failures on the household hub; synthetic tests cover quota-after-write. Keep the separate alpha.79 installed capability diagnostic and 12 fresh uncoached Gate B source-quality cases distinct. No standing-defaults/premium model routing changes. [Note](HOMEBRAIN-V2-ALPHA80-TIME-GROUNDED-ACTIONS-20261114.md).
