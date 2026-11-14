@@ -96,7 +96,7 @@ def write_failure_evidence(receipts: list[dict]) -> dict:
     executed_writes = []
     post_write_reads = []
     seen_write = False
-    for record in receipts:
+    for index, record in enumerate(receipts):
         if not isinstance(record, dict):
             continue
         name = str(record.get("name") or "")
@@ -123,13 +123,8 @@ def write_failure_evidence(receipts: list[dict]) -> dict:
                 "tool": name,
                 **_target(record.get("arguments", {})),
                 "separate_post_write_read": True,
-                "same_explicit_target_id_as_prior_write": (
-                    _identity(record.get("arguments", {})) is not None
-                    and any(_identity(w.get("arguments", {}))
-                            == _identity(record.get("arguments", {}))
-                            for w in receipts if w.get("possible_native_action") is True
-                            and w.get("success") is True)
-                ),
+                "same_explicit_target_id_as_prior_write": matches_prior_written_target(
+                    receipts[:index], record.get("arguments", {})),
                 "reported_values": _read_values(record),
                 "source_response": redact(str(record.get("response", ""))[:6000]),
             })
