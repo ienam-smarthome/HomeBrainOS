@@ -1017,7 +1017,7 @@ def is_historical_continuity_question(question: str) -> bool:
     )
 
 
-def is_historical_measurement_question(question: str):
+def is_historical_measurement_question(question: str) -> bool:
     """General time-scoped data request, not a domain or device-name patch."""
     return (
         isinstance(question, str)
