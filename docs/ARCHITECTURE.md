@@ -47,7 +47,8 @@
 | `agent_prompt_policy.py` | Builds the system prompt and renders the optional device and app identity manifests. |
 | `request_classification.py` | Provides non-authoritative prompt helpers for presentation and manifest decisions; these helpers never gate read-versus-write behaviour or tool visibility. |
 | `tool_registry.py` | Defines local tool schemas and classifies actual structured calls as read, routine, sensitive, or destructive. |
-| `webui.py` | Renders the Home Assistant ingress UI, status badges, structured automation rows, controls, speech, clipboard actions, and technical details. |
+| `webui.py` | Renders the self-contained command-first Home Assistant ingress UI, newest-first exchanges, browser speech, live-read progress, private evidence drawers, real dashboard/status, and session-bound confirmation controls. |
+| `action_card_projection.py` | Pure redacted projection of immutable pending native action groups into structured action cards, using existing tool effect classification; never executes tools or parses user prompts. |
 
 ## Request flow
 
@@ -106,7 +107,7 @@
     `supports_live_claim=True` by the orchestrator. Each unmet requirement gets
     at most one targeted retry; the next empty response is refused rather than
     inferred.
-12. Routine device controls can execute without a second confirmation.
+12. The model-selected native tool path now queues declared routine, sensitive and destructive writes for an explicit same-session approval.
    `ConfirmationPolicy` consumes the actual structured tool effect and validates
    sensitive action groups, including the unique-session requirement and
    12-action ceiling. Approved groups are queued in `ConfirmationStore` and
@@ -166,6 +167,7 @@
   mutate authoritative conversation history, evidence receipts, confirmation
   state, tool results, or request control flow; the orchestrator retains those
   sources of truth.
+- The command-first web UI renders only structured queued actions supplied by the same-session confirmation store. Editing cancels the pending proposal and starts a new request; it cannot mutate the immutable action arguments. The pure action-card projector returns only allowlisted nonsecret preview fields. The server-only dismissal route cancels pending proposals without a native device command. No HTML or browser approval bypasses the confirmed-action coordinator.
 - `ConfirmationPolicy` owns stateless confirmation eligibility, unique-session
   and group-size validation, and deterministic confirmation/cancellation
   wording. It cannot inspect prompt text, store or consume pending actions,
