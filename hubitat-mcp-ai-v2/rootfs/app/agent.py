@@ -46,6 +46,7 @@ from time_evidence import (
 )
 from write_receipt_evidence import (
     model_error_kind, model_failure_notice, write_failure_evidence,
+    matches_prior_written_target,
 )
 
 
@@ -1454,7 +1455,10 @@ class Agent:
                         deadline_note = deadline_facts(result)
                         if deadline_note is not None:
                             if not native_action_result and native_action_receipts_seen:
-                                deadline_note["independent_post_write_readback"] = True
+                                same_target = matches_prior_written_target(receipts, args)
+                                deadline_note["independent_post_write_readback"] = same_target
+                                deadline_note["separate_post_write_read"] = True
+                                deadline_note["target_identity_match_verified"] = same_target
                                 deadline_note["source"] = "separate native MCP read after write"
                             record["deadline_facts"] = deadline_note
                             model_result["client_deadline_facts"] = deadline_note
