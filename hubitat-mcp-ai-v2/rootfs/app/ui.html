@@ -252,8 +252,8 @@ header{position:relative;z-index:25}.header-status{position:relative}
 #checkConnection{font-size:12px;padding:8px;margin-top:4px}
 main{max-width:1280px}
 .ask-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;min-width:0}
-.ask-main{min-width:0;display:flex;flex-direction:column;gap:12px}
-#ask .compose-card{position:sticky;z-index:19;top:0;margin:0;padding:13px 15px;background:var(--hb-bg);border:1px solid var(--hb-edge);box-shadow:0 7px 16px #0002;border-radius:16px}
+.ask-main{min-width:0;display:flex;flex-direction:column;gap:12px;position:sticky;top:0;z-index:19;align-self:start;grid-column:1;grid-row:1}
+#ask .compose-card{position:relative;z-index:1;margin:0;padding:13px 15px;background:var(--hb-bg);border:1px solid var(--hb-edge);box-shadow:0 7px 16px #0002;border-radius:16px}
 #ask .compose-heading{margin:0 0 5px;min-height:20px}
 #ask .compose-subtitle{margin:0;font-size:12px;color:var(--hb-sub)}
 #newConversation{padding:5px 8px;font-size:12px;min-height:29px}
@@ -270,7 +270,7 @@ main{max-width:1280px}
 .command-footer{display:flex;gap:7px 13px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin:7px 4px 0}
 .command-footer .voice-status,.command-footer .voice-privacy,.command-footer .voice-toggle{font-size:11.5px;line-height:1.4;color:var(--hb-sub);flex:none}
 .command-footer .voice-toggle input{vertical-align:middle}
-.answer-feed{display:flex;flex-direction:column;gap:12px;min-width:0}
+.answer-feed{display:flex;flex-direction:column;gap:12px;min-width:0;grid-column:1;grid-row:3}
 .feed-empty{padding:14px 2px;font-size:20px;font-weight:600;margin:0;color:var(--hb-text)}
 .feed-empty span{display:block;font-size:14px;font-weight:400;margin-top:5px;color:var(--hb-sub)}
 #ask #currentExchange[hidden],#ask #activityCard[hidden]{display:none}
@@ -304,7 +304,7 @@ main{max-width:1280px}
 .older-exchange .exchange-actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
 .older-exchange .exchange-actions button{font-size:12px;padding:7px 9px}
 #conversationHistory{display:none!important}
-.overview-aside{grid-row:1;min-width:0}.overview-shell{margin:0;padding:10px 12px;background:var(--hb-panel);border:1px solid var(--hb-edge);box-shadow:none}
+.overview-aside{grid-row:2;grid-column:1;min-width:0}.overview-shell{margin:0;padding:10px 12px;background:var(--hb-panel);border:1px solid var(--hb-edge);box-shadow:none}
 .overview-head{margin:0 0 6px}.overview-head h2{font-size:12px;color:var(--hb-sub)}
 .overview-head p{display:none}#refreshOverview{font-size:11px;padding:5px 8px}
 .overview-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}
@@ -316,7 +316,7 @@ main{max-width:1280px}
 .overview-footer{margin:5px 0 0;gap:6px}
 .overview-footer small,.overview-limits summary{font-size:10.5px;color:var(--hb-sub)}
 @media(min-width:1000px){.ask-grid{grid-template-columns:minmax(0,1fr) 205px;column-gap:22px;align-items:start}
-.ask-main{grid-column:1;grid-row:1}.overview-aside{grid-column:2;grid-row:1;position:sticky;top:14px}
+.ask-main{grid-column:1;grid-row:1}.answer-feed{grid-column:1;grid-row:2}.overview-aside{grid-column:2;grid-row:1 / span 2;position:sticky;top:14px}
 .overview-grid{grid-template-columns:1fr;gap:6px}
 .overview-tile{min-height:65px}.overview-tile strong{font-size:25px}
 .overview-head{flex-wrap:wrap}#refreshOverview{margin:0}
@@ -369,7 +369,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
  <label class="voice-toggle" for="readAnswers"><input id="readAnswers" type="checkbox" onchange="toggleAutoRead(this.checked)">Read replies aloud</label>
 </div>
 </div>
-<div class="answer-feed" id="answerFeed" aria-label="Newest answers first" aria-live="polite"><p class="feed-empty" id="feedEmpty">Ask HomeBrain about your home. <span>The latest answer will appear here.</span></p>
+</div><div class="answer-feed" id="answerFeed" aria-label="Newest answers first" aria-live="polite"><p class="feed-empty" id="feedEmpty">Ask HomeBrain about your home. <span>The latest answer will appear here.</span></p>
 <div class="card live-activity" id="activityCard" hidden><h2>Active operation <small>actual native MCP activity</small></h2><pre id="activity" class="activity-raw"></pre><ol id="activityTrace" class="work-steps"></ol>
 <div id="approval" class="action-card" hidden><h3 id="approvalTitle">Action awaiting approval</h3><p id="approvalSummary" class="action-note">Review this native operation before approving.</p><div id="approvalChips" class="action-chips"></div><p id="approvalKind" role="status"></p>
 <div class="action-buttons"><button id="approve" class="primary" onclick="decide(true)">Approve</button><button id="editApproval" type="button" onclick="editProposedAction()">Edit</button><button id="dryRunApproval" type="button" onclick="previewProposedAction()">Dry-run</button><button id="decline" onclick="decide(false)">Dismiss</button></div><p id="approvalError" role="alert"></p></div></div>
@@ -381,7 +381,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 <button id="copyTechnical" disabled onclick="copyResult('technical')">Copy technical details</button>
 <button id="downloadTechnical" disabled onclick="downloadTechnical()">Download PRIVATE JSON</button><details><summary>Full PRIVATE Technical JSON</summary><pre id="receipts">No tool calls yet.</pre></details></details><p class="live-review-note">For live review, ask normally, then Copy for review and paste into your review chat. This includes private Technical JSON; check before sharing. Nothing is uploaded automatically.</p>
 <details class="evidence-panel"><summary>Original answer text</summary><pre id="rawAnswer">No answer yet.</pre></details></article><div id="olderExchanges"></div></div><details class="card" id="conversationHistory" hidden><summary>Earlier in this conversation</summary><div id="turns"></div></details>
-</div><aside class="overview-aside" aria-label="Read-only home overview"><div class="overview-shell" aria-label="Current hub overview">
+<aside class="overview-aside" aria-label="Read-only home overview"><div class="overview-shell" aria-label="Current hub overview">
  <div class="row overview-head"><div><h2>Home overview</h2><p>Observed native device states · read-only snapshot</p></div>
   <button id="refreshOverview" type="button" onclick="refreshOverview()" title="One read-only native Hubitat device inventory request; no commands or model calls">↻ Refresh overview</button></div>
  <div class="overview-grid">
