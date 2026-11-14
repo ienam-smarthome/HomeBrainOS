@@ -240,20 +240,155 @@ button{transition:border-color .15s ease,background-color .15s ease}button:hover
 .eval-review-case{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .eval-review-summary{white-space:pre-wrap;line-height:1.5;font-size:13px;color:var(--muted);margin:12px 0}
 @media(max-width:680px){.eval-review-grid{grid-template-columns:1fr}.eval-claim-item{grid-template-columns:1fr}}
+
+/* alpha.81 command-first UI (V2 only). Existing diagnostics and evaluation are intact. */
+:root{--hb-bg:#0b1421;--hb-panel:#142136;--hb-edge:#30445e;--hb-text:#eff5ff;--hb-sub:#b5c6dd;--hb-accent:#83bfff;--hb-ink:#071c32;--hb-tile:#1a2b43}
+body{background:var(--hb-bg);color:var(--hb-text)}
+header{position:relative;z-index:25}.header-status{position:relative}
+#statusPill{background:var(--hb-panel);border:1px solid var(--hb-edge);border-radius:999px;padding:0;margin:0;font-size:12px;min-height:39px}
+#statusPill #state{display:inline-flex;align-items:center;border:0;background:transparent;color:var(--hb-text);padding:8px 12px}
+.status-popover{position:absolute;top:calc(100% + 8px);right:0;width:min(345px,calc(100vw - 26px));padding:16px;background:var(--hb-panel);border:1px solid var(--hb-edge);border-radius:13px;box-shadow:0 18px 40px #0007;color:var(--hb-text);z-index:45}
+.status-popover[hidden]{display:none}.status-popover p{font-size:12px;color:var(--hb-sub);line-height:1.55;overflow-wrap:anywhere}
+#checkConnection{font-size:12px;padding:8px;margin-top:4px}
+main{max-width:1280px}
+.ask-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;min-width:0}
+.ask-main{min-width:0;display:flex;flex-direction:column;gap:12px}
+#ask .compose-card{position:sticky;z-index:19;top:0;margin:0;padding:13px 15px;background:var(--hb-bg);border:1px solid var(--hb-edge);box-shadow:0 7px 16px #0002;border-radius:16px}
+#ask .compose-heading{margin:0 0 5px;min-height:20px}
+#ask .compose-subtitle{margin:0;font-size:12px;color:var(--hb-sub)}
+#newConversation{padding:5px 8px;font-size:12px;min-height:29px}
+#ask .compose-card .session-note{margin:2px 0;font-size:11px}
+#ask .monitor-row[hidden]{display:none}
+.command-form{display:flex;gap:10px;align-items:center;background:var(--hb-panel);border:1.5px solid var(--hb-edge);border-radius:16px;padding:9px}
+.command-form:focus-within{border-color:var(--hb-accent)}
+#ask #question{background:transparent;flex:1;min-width:0;width:auto;height:48px;min-height:45px;max-height:138px;border:0;box-shadow:none;outline:0;padding:8px 0;resize:none;font-size:16px;color:var(--hb-text);line-height:1.45}
+#ask #question::placeholder{color:var(--hb-sub)}
+.mic-round{flex:0 0 51px;width:51px;height:51px;border-radius:50%;border:0;background:#286fac;color:#fff;font-size:20px;padding:0;touch-action:none;user-select:none;-webkit-user-select:none}
+.mic-round.listening{background:#b12434;color:#fff;box-shadow:0 0 0 3px #b1243433}
+#ask #send{width:auto;flex:0 0 auto;border:0;padding:12px 17px;background:var(--hb-tile);color:var(--hb-sub);opacity:.7}
+#ask #send.is-ready:not(:disabled){background:var(--hb-accent);color:var(--hb-ink);opacity:1}
+.command-footer{display:flex;gap:7px 13px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin:7px 4px 0}
+.command-footer .voice-status,.command-footer .voice-privacy,.command-footer .voice-toggle{font-size:11.5px;line-height:1.4;color:var(--hb-sub);flex:none}
+.command-footer .voice-toggle input{vertical-align:middle}
+.answer-feed{display:flex;flex-direction:column;gap:12px;min-width:0}
+.feed-empty{padding:14px 2px;font-size:20px;font-weight:600;margin:0;color:var(--hb-text)}
+.feed-empty span{display:block;font-size:14px;font-weight:400;margin-top:5px;color:var(--hb-sub)}
+#ask #currentExchange[hidden],#ask #activityCard[hidden]{display:none}
+#ask #currentExchange,#ask #activityCard{margin:0;background:var(--hb-panel);border:1px solid var(--hb-edge);border-radius:15px;padding:15px}
+#ask #requestQuestion:not([hidden]){font-size:13px;font-weight:650;color:var(--hb-sub);margin:0 0 11px}
+#ask #currentExchange .answer-heading{justify-content:flex-end;gap:7px;flex-wrap:wrap}
+#ask #currentExchange .answer-heading button{font-size:12px;padding:7px 10px}
+#ask #answer{color:var(--hb-text);min-height:0}
+#ask .answer-meta{border-color:var(--hb-edge)}
+#ask #requestSummary,#ask #responseTime{color:var(--hb-sub)}
+.work-steps{list-style:none;padding:0 0 0 13px;margin:9px 0 10px 8px;border-left:2px solid var(--hb-edge)}
+.work-steps li{position:relative;margin:4px 0;padding:4px 0;font-size:12px;color:var(--hb-sub)}
+.work-steps li:before{content:'';position:absolute;left:-18px;top:10px;width:8px;height:8px;border-radius:50%;background:var(--hb-accent)}
+.work-steps strong{color:var(--hb-text)}
+.work-steps small{margin-left:8px;font-variant-numeric:tabular-nums}
+#activityCard .activity-raw{display:none}
+#completedTrace summary,#ask .evidence-panel summary{font-size:12px;color:var(--hb-sub)}
+.evidence-receipt{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 2px;border-bottom:1px solid var(--hb-edge);font-size:12px;overflow-wrap:anywhere}
+.evidence-receipt small{color:var(--hb-sub)}
+.private-warning{color:var(--hb-sub);font-size:12px;line-height:1.5}
+.action-card{border:1px solid var(--hb-edge);border-left:4px solid var(--hb-accent);background:var(--hb-tile);padding:13px;border-radius:12px;margin-top:10px}
+.action-card.sensitive_write{border-left-color:#f6ba4e}.action-card.destructive_write{border-left-color:#fa7d86}
+.action-card h3{color:var(--hb-text);font-size:15px;margin:0 0 7px}
+.action-note{color:var(--hb-sub);font-size:12px;margin:6px 0}
+.action-chips,.action-buttons{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:9px 0}
+.action-chip{border:1px solid var(--hb-edge);border-radius:9px;padding:6px 8px;background:var(--hb-panel);color:var(--hb-text);font-size:12px}
+.action-chip input{width:135px;max-width:100%;padding:5px;margin-left:5px;border-radius:6px;font-size:12px;background:var(--hb-bg);color:var(--hb-text)}
+.action-buttons button{flex:0 0 auto;font-size:12px;padding:8px 12px}
+.older-exchange{padding:14px;background:var(--hb-panel);border:1px solid var(--hb-edge);border-radius:14px;margin:11px 0;opacity:.72;overflow-wrap:anywhere}
+.older-exchange .exchange-query{font-size:13px;color:var(--hb-sub);margin:0 0 12px}
+.older-exchange .exchange-actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
+.older-exchange .exchange-actions button{font-size:12px;padding:7px 9px}
+#conversationHistory{display:none!important}
+.overview-aside{grid-row:1;min-width:0}.overview-shell{margin:0;padding:10px 12px;background:var(--hb-panel);border:1px solid var(--hb-edge);box-shadow:none}
+.overview-head{margin:0 0 6px}.overview-head h2{font-size:12px;color:var(--hb-sub)}
+.overview-head p{display:none}#refreshOverview{font-size:11px;padding:5px 8px}
+.overview-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}
+.overview-tile{font:inherit;text-align:left;cursor:pointer;background:transparent;color:var(--hb-text);border:0;padding:7px 5px;box-shadow:none;min-width:0}
+.overview-tile span{font-size:11px;color:var(--hb-sub)}
+.overview-tile strong{font-size:22px;color:var(--hb-text)}
+.overview-tile small{font-size:10px;color:var(--hb-sub)}
+.overview-tile .overview-names{display:none}
+.overview-footer{margin:5px 0 0;gap:6px}
+.overview-footer small,.overview-limits summary{font-size:10.5px;color:var(--hb-sub)}
+@media(min-width:1000px){.ask-grid{grid-template-columns:minmax(0,1fr) 205px;column-gap:22px;align-items:start}
+.ask-main{grid-column:1;grid-row:1}.overview-aside{grid-column:2;grid-row:1;position:sticky;top:14px}
+.overview-grid{grid-template-columns:1fr;gap:6px}
+.overview-tile{min-height:65px}.overview-tile strong{font-size:25px}
+.overview-head{flex-wrap:wrap}#refreshOverview{margin:0}
+}
+@media(max-width:650px){main{padding:11px}.ask-grid{gap:9px}
+#ask .compose-card{padding:10px 11px}
+.command-form{gap:7px;padding:7px}.mic-round{flex-basis:45px;width:45px;height:45px}
+#ask #send{padding:11px 13px;min-width:58px}
+.overview-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.overview-tile{padding:5px 2px}
+.overview-tile span{font-size:10px}.overview-tile strong{font-size:19px}
+#ask #currentExchange .answer-heading button{flex:1 1 auto}
+}
+@media(max-width:375px){.command-footer .voice-privacy{flex-basis:100%}}
+@media(prefers-color-scheme:light){
+:root{color-scheme:light;--hb-bg:#f2f5fa;--hb-panel:#fff;--hb-edge:#c9d4e4;--hb-text:#182640;--hb-sub:#53637c;--hb-accent:#136aca;--hb-ink:#fff;--hb-tile:#edf2f9}
+body{background:var(--hb-bg);color:var(--hb-text)}
+header{background:#fff;border-bottom:1px solid var(--hb-edge)}
+.brand h1,.brand-mark{color:var(--hb-text)}.brand-copy small{color:var(--hb-sub)}
+#ask .card,#ask .overview-shell,.app-tabs,.status-popover{background:var(--hb-panel);color:var(--hb-text);border-color:var(--hb-edge);box-shadow:none}
+.app-tabs button{color:var(--hb-sub)}.app-tabs button.active{background:var(--hb-accent);color:#fff}
+button,textarea,select{color:var(--hb-text);border-color:var(--hb-edge);background:var(--hb-panel)}
+#ask #currentExchange .answer-heading button{color:var(--hb-text)}
+#ask #answer h2,#ask #answer h3{color:#145caa}
+#ask .answer-table-wrap th{background:#e2eaf6;color:var(--hb-text)}
+#ask .answer-table-wrap td{color:var(--hb-text)}
+#ask .answer-timestamp{background:#d9e8fc;color:#164b85;border-color:#90afe0}
+#ask code{background:#e7edf7;color:var(--hb-text)}
+#ask pre{background:#edf2f9;color:var(--hb-text)}
+#ask .overview-shell .overview-limits p{color:var(--hb-sub)}
+}
+button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-visible,.overview-tile:focus-visible{outline:3px solid var(--hb-accent);outline-offset:2px}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
+
 </style></head>
 <body>
-<header><div class="header-inner"><div class="brand"><div class="brand-mark" aria-hidden="true">⌘</div><div class="brand-copy"><h1>Hubitat MCP AI <span class="brand-v">v2</span></h1><small>HomeBrainOS · Smart home assistant</small></div></div><div class="header-status"><small id="state">Checking configuration…</small><button id="reloadUI" hidden onclick="reloadInterface()">Reload interface</button></div></div></header>
+<header><div class="header-inner"><div class="brand"><div class="brand-mark" aria-hidden="true">⌘</div><div class="brand-copy"><h1>Hubitat MCP AI <span class="brand-v">v2</span></h1><small>HomeBrainOS · Smart home assistant</small></div></div><div class="header-status"><button type="button" id="statusPill" aria-controls="statusPanel" aria-expanded="false" onclick="toggleStatusPill()"><span id="state">Checking configuration…</span></button><div id="statusPanel" class="status-popover" hidden><strong>V2 connection details</strong><p id="statusMeta">Model and MCP status not yet loaded.</p><div id="statusMonitor"></div><button id="checkConnection" type="button" onclick="checkMonitorSource()">Check Hub & Device Monitor</button></div><button id="reloadUI" hidden onclick="reloadInterface()">Reload interface</button></div></div></header>
 <main>
 <nav class="app-tabs" aria-label="Main navigation"><button id="askTab" class="active" onclick="tab('ask')">Ask / Chat</button><button id="diagnosticsTab" onclick="tab('diagnostics')">Hub Diagnostics</button><button id="evaluationTab" onclick="tab('evaluation')">AI Evaluation</button></nav>
-<section id="ask" class="active">
-<div class="overview-shell" aria-label="Current hub overview">
+<section id="ask" class="active"><div class="ask-grid"><div class="ask-main">
+<div class="card compose-card" id="commandBar"><div class="row compose-heading"><div><h2 class="sr-only">Ask HomeBrain</h2><p class="compose-subtitle">Ask or command · live MCP evidence, not a simulated assistant</p></div><button id="newConversation" class="right" onclick="newConversation()">New chat</button></div><details class="session-note evidence-disclosure"><summary>Conversation and privacy</summary><p>Conversation stays in this open page only. Follow-ups include an index of earlier sources and redacted excerpts. The AI can inspect older receipts in chunks when needed. Live-state questions and new actions still require fresh verification. Evidence is memory-only.</p></details>
+<div class="row monitor-row" hidden><span class="monitor-indicator" aria-hidden="true"></span><small id="monitorSourceStatus" class="muted" role="status" aria-live="polite">Saved history · checking connection…</small><button type="button" onclick="checkMonitorSource()" id="checkMonitor" title="One read-only status request; no device changes">Check connection</button></div>
+<form class="command-form" id="commandForm" onsubmit="event.preventDefault();submitAsk()">
+ <button id="speak" type="button" class="mic-round" aria-label="Start listening" aria-pressed="false" title="Tap to listen, tap again to send; hold to speak">🎤</button>
+ <label class="sr-only" for="question">Ask HomeBrain a question</label>
+ <textarea id="question" aria-label="Your question" placeholder="Ask HomeBrain…" rows="2" spellcheck="true"></textarea>
+ <button id="send" type="submit" class="primary" disabled>Ask</button>
+</form>
+<div class="command-footer"><span id="voiceStatus" class="voice-status" role="status" aria-live="polite">Enter to send · Shift+Enter for new line · / to focus</span>
+ <span class="voice-privacy">Voice input may use a browser speech service.</span>
+ <label class="voice-toggle" for="readAnswers"><input id="readAnswers" type="checkbox" onchange="toggleAutoRead(this.checked)">Read replies aloud</label>
+</div>
+</div>
+<div class="answer-feed" id="answerFeed" aria-label="Newest answers first" aria-live="polite"><p class="feed-empty" id="feedEmpty">Ask HomeBrain about your home. <span>The latest answer will appear here.</span></p>
+<div class="card live-activity" id="activityCard" hidden><h2>Active operation <small>actual native MCP activity</small></h2><pre id="activity" class="activity-raw"></pre><ol id="activityTrace" class="work-steps"></ol>
+<div id="approval" class="action-card" hidden><h3 id="approvalTitle">Action awaiting approval</h3><p id="approvalSummary" class="action-note">Review this native operation before approving.</p><div id="approvalChips" class="action-chips"></div><p id="approvalKind" role="status"></p>
+<div class="action-buttons"><button id="approve" class="primary" onclick="decide(true)">Approve</button><button id="editApproval" type="button" onclick="editProposedAction()">Edit</button><button id="dryRunApproval" type="button" onclick="previewProposedAction()">Dry-run</button><button id="decline" onclick="decide(false)">Dismiss</button></div><p id="approvalError" role="alert"></p></div></div>
+<article class="card answer-card" id="currentExchange" hidden>
+<div class="row answer-heading"><h2 class="sr-only">Latest answer</h2><span id="copyStatus" class="copy-status right" role="status" aria-live="polite" aria-atomic="true"></span><button id="readAnswer" disabled type="button" onclick="toggleAnswerAudio()">🔊 Read answer</button><button id="copyAnswer" disabled onclick="copyResult('answer')">Copy answer</button><button id="copyReview" disabled onclick="copyResult('review')">Copy for review</button></div>
+<div class="answer-meta"><p id="requestSummary" role="status" aria-live="polite">Your answer will appear here.</p><p id="responseTime" class="muted" aria-live="polite">Response time: —</p></div><p id="requestQuestion" hidden></p>
+<div id="answer" class="muted"></div><details class="work-trace-panel" id="completedTrace"><summary>Observed work trace</summary><ol id="completedTraceList" class="work-steps"></ol></details>
+<details class="evidence-panel"><summary id="evidenceSummary">Evidence · 0 calls</summary><div id="evidenceRows"></div><p class="private-warning">PRIVATE source evidence may contain device names, IDs, timestamps and household data. Inspect it before sharing.</p>
+<button id="copyTechnical" disabled onclick="copyResult('technical')">Copy technical details</button>
+<button id="downloadTechnical" disabled onclick="downloadTechnical()">Download PRIVATE JSON</button><details><summary>Full PRIVATE Technical JSON</summary><pre id="receipts">No tool calls yet.</pre></details></details><p class="live-review-note">For live review, ask normally, then Copy for review and paste into your review chat. This includes private Technical JSON; check before sharing. Nothing is uploaded automatically.</p>
+<details class="evidence-panel"><summary>Original answer text</summary><pre id="rawAnswer">No answer yet.</pre></details></article><div id="olderExchanges"></div></div><details class="card" id="conversationHistory" hidden><summary>Earlier in this conversation</summary><div id="turns"></div></details>
+</div><aside class="overview-aside" aria-label="Read-only home overview"><div class="overview-shell" aria-label="Current hub overview">
  <div class="row overview-head"><div><h2>Home overview</h2><p>Observed native device states · read-only snapshot</p></div>
   <button id="refreshOverview" type="button" onclick="refreshOverview()" title="One read-only native Hubitat device inventory request; no commands or model calls">↻ Refresh overview</button></div>
  <div class="overview-grid">
-  <div class="overview-tile"><span>Lights ON</span><strong id="overviewLights" aria-live="polite">—</strong><small id="overviewLightsScope">Waiting for source</small><div class="overview-names" id="overviewLightsNames" aria-label="Names of lights reporting on"></div></div>
-  <div class="overview-tile"><span>Motion active</span><strong id="overviewMotion" aria-live="polite">—</strong><small id="overviewMotionScope">Waiting for source</small><div class="overview-names" id="overviewMotionNames" aria-label="Names of active motion sensors"></div></div>
-  <div class="overview-tile"><span>Low battery · below 20%</span><strong id="overviewBattery" aria-live="polite">—</strong><small id="overviewBatteryScope">Waiting for source</small><div class="overview-names" id="overviewBatteryNames" aria-label="Names and percentages of low battery devices"></div></div>
-  <div class="overview-tile"><span>Devices inspected</span><strong id="overviewDevices" aria-live="polite">—</strong><small id="overviewDevicesScope">Waiting for source</small></div>
+  <button type="button" class="overview-tile" onclick="askOverview(this)" aria-label="Ask about this overview metric"><span>Lights ON</span><strong id="overviewLights" aria-live="polite">—</strong><small id="overviewLightsScope">Waiting for source</small><div class="overview-names" id="overviewLightsNames" aria-label="Names of lights reporting on"></div></button>
+  <button type="button" class="overview-tile" onclick="askOverview(this)" aria-label="Ask about this overview metric"><span>Motion active</span><strong id="overviewMotion" aria-live="polite">—</strong><small id="overviewMotionScope">Waiting for source</small><div class="overview-names" id="overviewMotionNames" aria-label="Names of active motion sensors"></div></button>
+  <button type="button" class="overview-tile" onclick="askOverview(this)" aria-label="Ask about this overview metric"><span>Low battery · below 20%</span><strong id="overviewBattery" aria-live="polite">—</strong><small id="overviewBatteryScope">Waiting for source</small><div class="overview-names" id="overviewBatteryNames" aria-label="Names and percentages of low battery devices"></div></button>
+  <button type="button" class="overview-tile" onclick="askOverview(this)" aria-label="Ask about this overview metric"><span>Devices inspected</span><strong id="overviewDevices" aria-live="polite">—</strong><small id="overviewDevicesScope">Waiting for source</small></button>
  </div>
  <div class="overview-footer">
   <small id="overviewStatus" role="status" aria-live="polite">Loading read-only device overview…</small>
@@ -261,28 +396,7 @@ button{transition:border-color .15s ease,background-color .15s ease}button:hover
  </div>
  <details class="overview-limits"><summary>About these counts</summary><p>Counts cover only returned devices with a reported matching attribute. Lights ON requires light-identifying names, device types or colour capabilities: plugs and uncertain ON switches are not silently counted as lights. Member lists reflect the same snapshot, not a live feed. Missing or stale attributes are unknown, not proven OFF, inactive or healthy. This is not V1's scheduled system check.</p></details>
 </div>
-<div class="card compose-card"><div class="row compose-heading"><div><h2>Ask HomeBrain</h2><p class="compose-subtitle">Ask about a device, automation or saved history.</p></div><button id="newConversation" class="right" onclick="newConversation()">New chat</button></div><details class="session-note evidence-disclosure"><summary>Conversation and privacy</summary><p>Conversation stays in this open page only. Follow-ups include an index of earlier sources and redacted excerpts. The AI can inspect older receipts in chunks when needed. Live-state questions and new actions still require fresh verification. Evidence is memory-only.</p></details>
-<div class="row monitor-row"><span class="monitor-indicator" aria-hidden="true"></span><small id="monitorSourceStatus" class="muted" role="status" aria-live="polite">Saved history · checking connection…</small><button type="button" onclick="checkMonitorSource()" id="checkMonitor" title="One read-only status request; no device changes">Check connection</button></div>
-<label class="sr-only" for="question">Ask HomeBrain a question</label><textarea id="question" aria-label="Your question" placeholder="Ask a question, investigate an event, or compare device histories…" spellcheck="true"></textarea>
-<div class="row voice-controls compose-actions" role="group" aria-label="Voice controls">
- <button id="speak" type="button" onclick="startVoice()" aria-pressed="false">🎤 Speak</button>
- <label class="voice-toggle" for="readAnswers"><input id="readAnswers" type="checkbox" onchange="toggleAutoRead(this.checked)">Read replies aloud</label>
- <span id="voiceStatus" class="voice-status" role="status" aria-live="polite">Voice input may use a browser speech service.</span>
-<button id="send" class="primary right" onclick="submitAsk()">Ask <span aria-hidden="true">↗</span></button>
-</div>
-</div>
-<details class="card" id="conversationHistory" hidden><summary>Earlier in this conversation</summary><div id="turns"></div></details><div class="card" id="activityCard" hidden><h2>Current operation</h2><pre id="activity"></pre>
-<div id="approval" hidden><p>Review this operation and its effects. Approve only if you intend this exact change.</p><p id="approvalKind" role="status"></p>
-<button id="approve" class="primary" onclick="decide(true)">Approve operation</button>
-<button id="decline" onclick="decide(false)">Decline</button><p id="approvalError" role="alert"></p></div></div>
-<div class="card answer-card">
-<div class="row answer-heading"><h2>Answer</h2><span id="copyStatus" class="copy-status right" role="status" aria-live="polite" aria-atomic="true"></span><button id="readAnswer" disabled type="button" onclick="toggleAnswerAudio()">🔊 Read answer</button><button id="copyAnswer" disabled onclick="copyResult('answer')">Copy answer</button><button id="copyReview" disabled onclick="copyResult('review')">Copy for review</button></div>
-<div class="answer-meta"><p id="requestSummary" role="status" aria-live="polite">Your answer will appear here.</p><p id="responseTime" class="muted" aria-live="polite">Response time: —</p></div><p id="requestQuestion" hidden></p>
-<div id="answer" class="muted">Your response will appear here.</div>
-<details class="evidence-panel"><summary>Evidence & technical details</summary>
-<button id="copyTechnical" disabled onclick="copyResult('technical')">Copy technical details</button>
-<button id="downloadTechnical" disabled onclick="downloadTechnical()">Download PRIVATE JSON</button><pre id="receipts">No tool calls yet.</pre></details><p class="live-review-note">For live review, ask normally, then Copy for review and paste into your review chat. This includes private Technical JSON; check before sharing. Nothing is uploaded automatically.</p>
-<details class="evidence-panel"><summary>Original answer text</summary><pre id="rawAnswer">No answer yet.</pre></details></div></section>
+</aside></div></section>
 <section id="diagnostics">
 <div class="row"><h2>Hub Diagnostics — external recorder</h2><button class="right" onclick="refreshDiagnostics()">Refresh</button></div>
 <p class="muted">Independent SQLite observations outside Hubitat. Probe losses are not necessarily reboots. CPU shows five-minute load equivalent, not measured utilisation.</p>
