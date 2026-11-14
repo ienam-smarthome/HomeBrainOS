@@ -565,6 +565,135 @@ document.getElementById('resetContext').onclick=resetConversation;
 
 function firmwareUpdateAvailable(data,rawMessage){if(data?.update_available===true)return true;const evidence=Array.isArray(data?.evidence)?data.evidence:[];if(evidence.some(item=>item?.update_available===true||item?.data?.update_available===true||item?.result?.update_available===true))return true;return /\bfirmware update is available\b/i.test(rawMessage)||/\bhub firmware\s+\S+\s+is installed and\s+\S+\s+is available\b/i.test(rawMessage)}
 function choicePrompt(question,choice){const original=String(question||'').trim();const directAction=original.match(/^\s*(?:please\s+)?(turn\s+on|turn\s+off|toggle)\b/i)?.[1]||original.match(/^\s*(?:can|could|would|will)\s+you\s+(?:please\s+)?(turn\s+on|turn\s+off|toggle)\b/i)?.[1]||'';if(directAction)return `${directAction} ${choice}`;const attribute=original.match(/\b(temperature|humidity|battery|power)\b/i)?.[1]||'';if(attribute)return `What is the ${choice} ${attribute}?`;return original?`${original} Device clarification: use exactly ${choice}.`:choice}
+function durationText(value){
+  const n=Number(value);return Number.isFinite(n)&&n>=0?(n/1000).toFixed(2)+'s':null;
+}
+function renderWorkTrace(data){
+  const trace=answer.querySelector('.work-trace');if(!trace)return;
+  const metrics=data.metrics||{};
+  // Stage descriptions are captured from the actual live progress endpoint.
+  // Only actual provider/model and native tool receipts add rows here.
+  const rounds=Array.isArray(metrics.model_round_details)?metrics.model_round_details:[];
+  const rows=Array.isArray(data.evidence)?data.evidence:[];
+  rounds.forEach((round,index)=>{
+    if(!round||typeof round!=='object')return;
+    const label=(round.model?'Ollama':'Model')+' round '+(index+1)+(round.model?' · '+round.model:'');
+    const duration=durationText(round.elapsed_ms??round.duration_ms);
+    const li=document.createElement('li');li.textContent=label;
+    if(duration){const time=document.createElement('small');time.textContent=duration;li.appendChild(time)}
+    trace.appendChild(li);
+  });
+  rows.forEach((row,index)=>{
+    if(!row||typeof row!=='object')return;
+    const tool=String(row.sub_tool||row.tool||row.name||'native MCP').slice(0,110);
+    const li=document.createElement('li');li.textContent='MCP · '+tool;
+    const duration=durationText(row.elapsed_ms??row.duration_ms);
+    if(duration){const time=document.createElement('small');time.textContent=duration;li.appendChild(time)}
+    trace.appendChild(li);
+  });
+  if(!trace.children.length)trace.hidden=true;
+}
+function downloadPrivateJson(data){
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob),link=document.createElement('a');
+  link.href=url;link.download='PRIVATE-homebrain-technical.json';
+  document.body.appendChild(link);link.click();link.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),3000);
+}
+function renderEvidence(data,host){
+  const rows=Array.isArray(data.evidence)?data.evidence:[];
+  const drawer=document.createElement('details');drawer.className='evidence-drawer';
+  const summary=document.createElement('summary');summary.textContent='Evidence · '+rows.length+' calls';drawer.appendChild(summary);
+  if(!rows.length){const empty=document.createElement('p');empty.className='muted';empty.textContent='No tool-call receipts returned.';drawer.appendChild(empty)}
+  rows.forEach((row,index)=>{
+    if(!row||typeof row!=='object')return;
+    const entry=document.createElement('div');entry.className='evidence-row';
+    const name=document.createElement('span');name.textContent=String(row.sub_tool||row.tool||row.name||'Tool '+(index+1)).slice(0,130);
+    const status=document.createElement('small');
+    status.textContent=(row.success===true?'success':row.success===false?'failed':'status unknown')
+      +' · live claim '+(row.supports_live_claim===true?'supported':'not attested');
+    entry.append(name,status);drawer.appendChild(entry);
+  });
+  const warning=document.createElement('p');warning.className='private-warning';
+  warning.textContent='PRIVATE JSON may contain device IDs, addresses, event logs and other household data. Inspect it before sharing.';
+  drawer.appendChild(warning);
+  const download=document.createElement('button');download.type='button';download.className='secondary copy-button';
+  download.textContent='Download PRIVATE JSON';download.onclick=()=>downloadPrivateJson(data);
+  drawer.appendChild(download);host.appendChild(drawer);
+}
+function actionCardVariant(data){
+  const c=data&&data.pending_action_card;
+  if(data?.confirmation_required!==true||!c||c.status!=='pending_confirmation')return null;
+  return ['routine_write','sensitive_write','destructive_write'].includes(c.effect_class)?c.effect_class:null;
+}
+function renderPendingAction(data,host){
+  if(data.confirmation_required!==true)return;
+  const effect=actionCardVariant(data);
+  const card=document.createElement('section');card.className='action-card '+(effect||'sensitive_write');
+  if(!effect){
+    const p=document.createElement('p');p.textContent='An action is pending but its structured proposal is unavailable. No approval controls are shown.';
+    card.appendChild(p);host.appendChild(card);return;
+  }
+  const proposal=data.pending_action_card;
+  const heading=document.createElement('h3');heading.textContent=
+    effect==='destructive_write'?'Destructive action · approval required':
+    effect==='sensitive_write'?'Sensitive action · approval required':'Routine action · approval required';
+  card.appendChild(heading);
+  const summary=document.createElement('p');summary.className='action-note';
+  summary.textContent=proposal.summary||'Unexecuted native action proposal';card.appendChild(summary);
+  const chips=document.createElement('div');chips.className='action-chips';
+  const inputFields=[];
+  (Array.isArray(proposal.actions)?proposal.actions:[]).forEach(action=>{
+    if(!action||typeof action!=='object')return;
+    const label=document.createElement('span');label.className='action-chip';
+    label.textContent=String(action.command||'native operation')+' · '+String(action.tool||'');
+    chips.appendChild(label);
+    (Array.isArray(action.fields)?action.fields:[]).forEach(field=>{
+      if(!['device','time','days'].includes(field.kind))return;
+      const chip=document.createElement('label');chip.className='action-chip';
+      chip.append(field.kind+' ');
+      const input=document.createElement('input');input.value=String(field.value||'');
+      input.setAttribute('aria-label','Proposed '+field.kind);
+      input.maxLength=70;chip.appendChild(input);chips.appendChild(chip);
+      inputFields.push({kind:field.kind,input});
+    });
+  });
+  card.appendChild(chips);
+  const note=document.createElement('p');note.className='action-note';
+  note.textContent='These are proposed native arguments, not verified physical outcomes. Editing requires a fresh proposal; approval never modifies the queued arguments.';
+  card.appendChild(note);
+  const actions=document.createElement('div');actions.className='action-controls';
+  const approve=document.createElement('button');approve.className='confirm';approve.type='button';approve.textContent='Approve';
+  const edit=document.createElement('button');edit.type='button';edit.textContent='Edit';
+  const dry=document.createElement('button');dry.type='button';dry.textContent='Dry-run';
+  const dismiss=document.createElement('button');dismiss.type='button';dismiss.textContent='Dismiss';
+  const disable=()=>{for(const b of actions.querySelectorAll('button'))b.disabled=true};
+  approve.onclick=()=>{
+    if(effect!=='routine_write'&&!window.confirm('Approve this exact native proposal? It can change your Hubitat or home.'))return;
+    disable();void submit('confirm');
+  };
+  dry.onclick=()=>{note.textContent='Preview only: this proposal has NOT executed. No native dry-run or outcome simulation is available.'};
+  async function discardProposal(){
+    const response=await fetch(apiPath('api/confirmation/dismiss'),{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({session_id:sessionId}),
+    });
+    if(!response.ok)throw new Error('Unable to dismiss pending action (HTTP '+response.status+')');
+    const result=await response.json();
+    if(result.cancelled!==true)throw new Error('The server did not confirm cancellation');
+    disable();note.textContent='Pending proposal dismissed. No native command was submitted by dismissal.';
+  }
+  dismiss.onclick=async()=>{try{await discardProposal()}catch(error){note.textContent=error.message}};
+  edit.onclick=async()=>{
+    try{
+      await discardProposal();
+      const changed=inputFields.map(x=>x.kind+': '+x.input.value.trim()).filter(Boolean);
+      query.value=currentQuestion+(changed.length?'\nRequested revisions to the unexecuted proposal — '+changed.join('; '):'\nPlease revise the action proposal.');
+      syncCommandBar();query.focus();note.textContent='Review the edited request and press Ask for a fresh proposal. The original proposal is cancelled.';
+    }catch(error){note.textContent=error.message}
+  };
+  actions.append(approve,edit,dry,dismiss);card.appendChild(actions);host.appendChild(card);
+}
 function showAnswer(data){answer.replaceChildren();const meta=document.createElement('div');meta.className='answer-meta';const outcome=data.outcome_presentation;if(outcome&&['positive','warning','neutral','critical'].includes(outcome.tone)&&typeof outcome.label==='string'&&outcome.label){const outcomeBadge=document.createElement('span');outcomeBadge.className=`badge outcome-badge outcome-${outcome.tone}`;outcomeBadge.textContent=outcome.label;meta.appendChild(outcomeBadge)}[data.route,data.model_tier_requested&&data.model_tier_requested!=='auto'?'Selected '+data.model_tier_requested:null,data.model,data.elapsed_ms===undefined?null:`${(data.elapsed_ms/1000).toFixed(1)}s`].filter(Boolean).forEach(value=>{const badge=document.createElement('span');badge.className='badge';badge.textContent=value;meta.appendChild(badge)});if(meta.children.length)answer.appendChild(meta);if(data.model_usage){const parts=[];const names=data.model_usage.models||{};for(const [name,n] of Object.entries(names)){if(n>0){const short=/deepseek/i.test(name)?'DeepSeek Pro':/claude/i.test(name)?'Claude':/gemma/i.test(name)?'Gemma':name;parts.push(short+': '+n)}}if(parts.length){const usage=document.createElement('span');usage.className='badge';usage.textContent=parts.join(' · ');meta.appendChild(usage);if(!meta.isConnected)answer.appendChild(meta)}}const rawMessage=data.message||data.detail||'No response';const text=renderMessage(rawMessage);answer.appendChild(text);if(data.route==='automation-status'&&Array.isArray(data.automation_items)&&data.automation_items.length)answer.appendChild(renderAutomationItems(data));if(Array.isArray(data.choices)){const originalQuestion=query.value.trim();data.choices.forEach(choice=>{const option=document.createElement('button');option.className='confirm';option.textContent=choice;option.onclick=()=>submit(choicePrompt(originalQuestion,choice));answer.appendChild(option)})}suggestedAction=firmwareUpdateAvailable(data,rawMessage)?'firmware-update':null;if(suggestedAction==='firmware-update'){const install=document.createElement('button');install.className='confirm';install.textContent='Update hub firmware';install.onclick=()=>submit('Install the available Hubitat firmware update');answer.appendChild(install)}if(data.confirmation_required===true){const confirm=document.createElement('button');confirm.className='confirm';confirm.textContent='Confirm action';confirm.onclick=()=>submit('confirm');answer.appendChild(confirm)}const audioButton=document.createElement('button');audioButton.className='secondary copy-button audio-button';audioButton.textContent='🔊 Read answer';audioButton.onclick=()=>{if(activeSpeech||nativeSpeechActive)stopAudio();else void speakAnswer(rawMessage,audioButton)};answer.appendChild(audioButton);const copy=document.createElement('button');copy.className='secondary copy-button';copy.textContent='Copy answer';copy.onclick=()=>copyText(rawMessage,copy,'Copy answer');answer.appendChild(copy);const details=document.createElement('details');details.className='technical';const summary=document.createElement('summary');summary.textContent='Technical details';const technical=JSON.stringify(data,null,2);const technicalCopy=document.createElement('button');technicalCopy.className='secondary copy-button technical-copy';technicalCopy.textContent='Copy technical';technicalCopy.onclick=event=>{event.preventDefault();copyText(technical,technicalCopy,'Copy technical')};const pre=document.createElement('pre');pre.textContent=technical;details.append(summary,technicalCopy,pre);answer.appendChild(details);document.getElementById('lastRoute').textContent=data.route||'—';document.getElementById('lastTime').textContent=data.elapsed_ms===undefined?'—':`${(data.elapsed_ms/1000).toFixed(1)}s`;if(readAnswers&&speechText(rawMessage).length<1500)void speakAnswer(rawMessage,audioButton)}
 async function status(){try{const data=await jsonResponse(await fetch(apiPath('api/status')));pill('mcp',data.mcp?.online,data.mcp?.online?'MCP online':`MCP offline · ${data.mcp?.error||'unavailable'}`);pill('ollama',data.ollama?.configured,data.ollama?.configured?'Ollama ready':'Ollama API key required');const paidOption=modelTier.querySelector('option[value="paid"]');if(paidOption)paidOption.disabled=data.paid_routing?.enabled===false;const claudeOption=modelTier.querySelector('option[value="claude"]');if(claudeOption)claudeOption.disabled=data.claude?.configured!==true;if((modelTier.value==='paid'&&paidOption?.disabled)||(modelTier.value==='claude'&&claudeOption?.disabled))modelTier.value='free';describeModelTier();document.getElementById('tools').textContent=data.mcp?.tools??'—';document.getElementById('model').textContent=data.ollama?.model||'—'}catch(error){pill('mcp',false,'Status error · '+error.message)}try{const dash=await jsonResponse(await fetch(apiPath('api/dashboard')));document.getElementById('dashLights').textContent=dash.lights_on??'—';document.getElementById('dashMotion').textContent=dash.motion_active??'—';document.getElementById('dashBatteries').textContent=dash.low_batteries??'—';const active=dash.active_rooms||[];const loaded=[dash.lights_on,dash.motion_active,dash.low_batteries].some(value=>value!=null);document.getElementById('dashActiveRooms').textContent=loaded?active.length:'—';document.getElementById('dashActiveRoomNames').textContent=loaded?(active.length?active.map(room=>room.name).join(', '):'No motion or lights on'):'Loading live states…'}catch(error){console.warn('Dashboard unavailable',error)}loadHealthAudit();loadJournal()}
 const MAX_CHAT_PROMPT_CHARS=12000;
