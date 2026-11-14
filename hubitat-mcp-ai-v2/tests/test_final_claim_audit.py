@@ -265,5 +265,138 @@ class FinalAuditPromptTests(unittest.TestCase):
         self.assertNotIn("Bathroom Meter", prompt)
 
 
+
+class SourceCoverageNavigationTests(unittest.TestCase):
+    """Synthetic, non-identifying receipts; never live hub or cloud traffic."""
+
+    def test_bounded_event_names_logs_and_controller_inputs_are_indexed(self):
+        event_rows = {
+            "client_event_attribute_scope": {
+                "event_names": [
+                    {"event_name": "command-off", "returned_count": 4,
+                     "first_returned_event_utc": "2026-05-07T12:00:00Z"},
+                    {"event_name": "switch", "returned_count": 6},
+                    {"event_name": "networkStatus", "returned_count": 2},
+                ],
+            },
+            "client_event_source_scope": {
+                "events_returned": 12,
+                "requested_limit": 12,
+                "limit_reached": True,
+            },
+            "content": [{"type": "text", "text": json.dumps({
+                "events": [{"name": "command-off", "date": "2026-05-07T12:00:00Z"}],
+                "count": 12,
+            })}],
+        }
+        config_rows = {
+            "client_config_source_map": {
+                "selected_input_groups": [
+                    {"name": "sensors", "returned_selected_count": 2, "selected": [
+                        {"value": "SIM-1", "label": "Fictional west sensor"},
+                        {"value": "SIM-2", "label": "Fictional east sensor"},
+                    ]},
+                    {"name": "overrideSwitch", "returned_selected_count": 1,
+                     "selected": [{"value": "SIM-3",
+                                   "label": "Fictional override"}]},
+                ],
+                "historical_configuration_proven_by_this_page": False,
+            },
+            "content": [{"type": "text", "text": json.dumps({
+                "app": {"id": "SIM-APP"},
+                "page": {"sections": []},
+                "secret": "test-secret-must-not-leak",
+            })}],
+        }
+        log_rows = {
+            "content": [{"type": "text", "text": json.dumps({
+                "mode": "past", "total": 5000, "matched": 2303, "count": 3,
+                "entries": [
+                    {"time": "2026-05-07 12:05:00.000", "message":
+                     "test-secret-must-not-leak"},
+                    {"time": "2026-05-07 12:04:00.000", "message":
+                     "PRIVATE device reference; do not index"},
+                    {"time": "2026-05-07 12:01:00.000", "message":
+                     "another private event"},
+                ],
+            })}],
+        }
+        receipts = [
+            {"name": "hub_list_device_events",
+             "arguments": {"deviceId": "SIM-LAMP", "limit": 12},
+             "success": True, "response": json.dumps(event_rows)},
+            {"name": "hub_get_app_config",
+             "arguments": {"appId": "SIM-APP"},
+             "success": True, "response": json.dumps(config_rows)},
+            {"name": "hub_get_logs",
+             "arguments": {
+                 "mode": "past", "since": "2026-05-07T12:00:00+0000",
+                 "until": "2026-05-07T12:30:00+0000", "limit": 3},
+             "success": True, "response": json.dumps(log_rows)},
+        ]
+        before = json.dumps(receipts, sort_keys=True)
+        index = json.loads(final_claim_receipt_scope_index(receipts))
+        self.assertEqual(json.dumps(receipts, sort_keys=True), before)
+        items = index["indexed_receipts"]
+        names = items[0]["event_names_in_returned_rows"]
+        self.assertEqual(names["returned_event_name_counts"][0],
+                         {"event_name": "command-off", "returned_count": 4})
+        self.assertFalse(names["unreturned_events_proven_absent"])
+        selected = items[1]["config_selected_inputs"]
+        self.assertEqual(selected["selected_input_groups"][0]["returned_selected_count"], 2)
+        self.assertEqual([r["value"] for r in
+                          selected["selected_input_groups"][0]["selected"]],
+                         ["SIM-1", "SIM-2"])
+        self.assertFalse(selected["historical_configuration_verified"])
+        logs = items[2]["returned_log_scope"]
+        self.assertEqual(logs["matched_count"], 2303)
+        self.assertEqual(logs["returned_entries"], 3)
+        self.assertEqual(logs["oldest_returned_time_as_reported"],
+                         "2026-05-07 12:01:00.000")
+        self.assertEqual(logs["newest_returned_time_as_reported"],
+                         "2026-05-07 12:05:00.000")
+        self.assertFalse(logs["complete_requested_window_proven"])
+        self.assertFalse(logs["time_zone_inferred_from_log_time"])
+        flat = json.dumps(index)
+        self.assertNotIn("test-secret-must-not-leak", flat)
+        self.assertNotIn("PRIVATE device reference", flat)
+
+    def test_malformed_or_failed_sources_cannot_promote_complete_coverage(self):
+        records = [
+            {"name": "hub_get_logs", "arguments": {"limit": 5},
+             "success": False, "response": json.dumps({
+                 "matched": 500, "count": 5, "entries": [{"time": "2026-04-01"}]})},
+            {"name": "hub_get_logs", "arguments": {"limit": 5},
+             "success": True, "response": "invalid JSON"},
+            {"name": "hub_get_logs", "arguments": {"limit": 5},
+             "success": True, "response": json.dumps({
+                 "content": [{"type": "text", "text": json.dumps({
+                     "matched": 7, "count": 0, "entries": [],
+                 })}]})},
+        ]
+        index = json.loads(final_claim_receipt_scope_index(records))["indexed_receipts"]
+        self.assertNotIn("returned_log_scope", index[0])
+        self.assertNotIn("returned_log_scope", index[1])
+        self.assertEqual(index[2]["returned_log_scope"]["returned_entries"], 0)
+        self.assertEqual(index[2]["returned_log_scope"]["matched_count"], 7)
+        self.assertFalse(index[2]["returned_log_scope"]["complete_requested_window_proven"])
+
+    def test_final_audit_prompt_checks_all_returned_commands_and_selected_inputs(self):
+        p = FINAL_CLAIM_AUDIT_PROMPT
+        for text in (
+            "EVERY relevant exact event name/count",
+            "source-matched",
+            "entries ACTUALLY returned",
+            "selected input",
+            "historical input values",
+            "cannot prove historical",
+            "internal reason",
+            "There are NO tools",
+        ):
+            self.assertIn(text, p)
+        self.assertNotIn("Hallway Light", p)
+        self.assertNotIn("4012", p)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,5 +1,9 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## Alpha.92 source-real acceptance
+
+After V2 Preview alpha.92 installation, ask genuinely new read-only causal questions and compare first answers with ORIGINAL private MCP receipts. Check (a) exact per-event-name counts for all/none/only-one claims, (b) requested log window vs source matched count vs actual returned rows/timestamps, (c) all relevant controller selected inputs/override references already in retrieved configuration, and (d) reporter vs command issuer vs the still-unknown internal callback. Confirm no new compulsory model round was added, record actual token usage/latency, and verify V1 and native approval rules remain unaffected. [Design](HOMEBRAIN-V2-ALPHA92-SOURCE-COVERAGE-AUDIT-20261114.md).
+
 ## Alpha.91 evidence-led acceptance gate
 
 After upgrading V2 Preview, obtain genuinely new read-only **causal** first answers and their PRIVATE original MCP receipts. Confirm the question is classed causal even when phrased as a transition investigation, verify chronological order of previous state, focal report, commands and subsequent changes, and prohibit using later measurements to explain earlier outcomes. When the cause is unresolved and the first source review found no new evidence, inspect `causal_follow_through_invoked`, successful read-only `causal_review_read_receipts_added`, any new source/time coverage, and whether uncertainty is retained; the model may appropriately decline further reads. Measure actual input tokens/round count, latency, transport errors and no unauthorized writes. Check ordinary state requests do not take extra review rounds. Cloud provider remains manually selected; V1 unchanged. [Acceptance note](HOMEBRAIN-V2-ALPHA91-CAUSAL-EVIDENCE-FOLLOW-THROUGH-20261114.md).
