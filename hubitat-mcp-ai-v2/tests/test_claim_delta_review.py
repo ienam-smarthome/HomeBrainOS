@@ -121,7 +121,7 @@ class ClaimDeltaReviewTests(unittest.TestCase):
 
     def test_ui_is_session_only_and_explicitly_manually_graded(self):
         ui = (ROOT / "rootfs" / "app" / "ui.html").read_text(encoding="utf-8")
-        self.assertIn('const UI_VERSION="2.0.0-alpha.83"', ui)
+        self.assertIn('const UI_VERSION="2.0.0-alpha.84"', ui)
         for snippet in ("id=\"evalReviewDownload\"", "id=\"evalScoreGrid\"",
                         "id=\"evalOriginalReceipts\"", "evaluationManualReview()",
                         "evaluationDownloadReview()", "unsupported_introduced",
