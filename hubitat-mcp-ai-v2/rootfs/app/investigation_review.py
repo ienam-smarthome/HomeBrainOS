@@ -9,6 +9,8 @@ from __future__ import annotations
 import re
 import json
 
+from temporal_receipt_fidelity import temporal_receipt_fidelity_index
+
 # Light-touch eligibility for a *missing-source* checkpoint: explicit live
 # measurement/state reads only, not generic knowledge questions or writes.
 # This never selects a device, names an MCP tool, or fabricates a status.
@@ -487,6 +489,26 @@ to Y verified; the returned Y state alone does not establish X. Do not use
 a temperature, level, demand, or other observation made AFTER a historical
 outcome as evidence for the earlier moment. Check the latest relevant state
 AFTER the focal event, rather than implying an old OFF/idle still holds.
+Bind every claimed historical reading to ONE original event row's FULL date,
+clock/offset, attribute name AND value. Never splice the time of one event
+together with a value from another event or a later current-state snapshot.
+Put the cited events in chronological order, not tool-return order, even
+when source rows arrived newest-first. An approximate/derived time must be
+labelled as such; a matching clock WITHOUT matching date/name/value is not
+proof of a claim.
+
+When attributing an action to a configured timeout, threshold or hysteresis,
+compute the elapsed interval from the ACTUALLY OBSERVED proposed trigger to
+the observed outcome, then compare it with the configured requirement.
+A shorter elapsed period contradicts that specific trigger+delay explanation.
+Do not invent an earlier countdown start, expedited callback or alternate
+internal path to reconcile this without a returned record proving it.
+Other configured sensors/conditions may remain unobserved, so the overall
+initiator can still be unknown. Separate current settings from historical
+settings and a listener/notification from a recorded command issuer.
+A nearby timestamp or source-derived time anchor is only navigation metadata,
+not independent evidence or a causal verdict.
+
 A physical-tagged state report is NOT proof of an external/manual initiator;
 a filtered event list or empty named-text log search is NOT proof the hub
 issued no command. A currently configured automation cannot, without
@@ -723,7 +745,9 @@ def _audit_request(arguments: object) -> dict:
     return scoped
 
 
-def final_claim_receipt_scope_index(receipts: list[dict]) -> str:
+def final_claim_receipt_scope_index(
+    receipts: list[dict], *, draft_answer: str | None = None
+) -> str:
     """Index successful original tool receipt scopes, without causal inference.
 
     No source strings, logs, individual samples, passwords, or full returned
@@ -803,8 +827,13 @@ def final_claim_receipt_scope_index(receipts: list[dict]) -> str:
             if log_scope is not None:
                 item["returned_log_scope"] = log_scope
         rows.append(item)
+    temporal_anchors = temporal_receipt_fidelity_index(
+        receipts, draft_answer
+    ) if draft_answer else None
     return json.dumps({
         "note": "Navigation index from returned receipt fields ONLY; not independent evidence. Do not infer unseen records absent. Failed calls are not empty successes. Inspect original receipts for full detail.",
+        **({"temporal_event_anchors": temporal_anchors}
+           if temporal_anchors is not None else {}),
         "indexed_receipts": rows,
         "failed_calls_in_indexed_receipts": sum(
             row.get("read_failed") is True for row in rows),
