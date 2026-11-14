@@ -872,9 +872,14 @@ class Agent:
                 "source_review_invoked": source_review_invoked,
                 "source_review_kind": source_review_kind,
                 "current_state_source_status": (
-                    "no_native_read_attempts" if source_review_kind == "current_state"
-                    and not receipts else
-                    "native_read_attempted" if source_review_kind == "current_state"
+                    "read_only_receipt_present" if source_review_kind == "current_state"
+                    and any(
+                        item.get("success") is True
+                        and is_read_only_review_tool(item.get("name", ""))
+                        and item.get("name") not in (_CATALOG_TOOL, _PRIOR_TOOL, CLOCK_TOOL)
+                        for item in receipts
+                    ) else
+                    "no_source_read_receipt" if source_review_kind == "current_state"
                     else "not_applicable"
                 ),
                 "inventory_recovery_invoked": inventory_recovery_invoked,
