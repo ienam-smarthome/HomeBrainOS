@@ -68,6 +68,7 @@ class ScriptedAgent(Agent):
         # These legacy roundtrip fixtures intentionally test the pre-audit
         # source-review contract; dedicated tests exercise the new default.
         kwargs.setdefault("enable_final_claim_audit", False)
+        kwargs.setdefault("enable_causal_follow_through", False)
         return await super().answer(*args, **kwargs)
 
     async def round(self, messages, tools, remaining):

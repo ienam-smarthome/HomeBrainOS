@@ -403,7 +403,8 @@ class ScopeTests(unittest.TestCase):
             agent = FakeAgent()
             try:
                 response = await agent.answer("Investigate why", [], hub, 60,
-                                              enable_final_claim_audit=False)
+                                              enable_final_claim_audit=False,
+                                              enable_causal_follow_through=False)
                 self.assertTrue(response["success"])
                 self.assertEqual(response["rounds"], 3)
                 self.assertTrue(response["source_review_invoked"])

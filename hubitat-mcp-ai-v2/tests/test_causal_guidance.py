@@ -227,7 +227,8 @@ class CausalReasoningGuidanceTests(unittest.TestCase):
             model = SelectingAgent()
             mcp = TwoSources()
             result = await model.answer("Why did Synthetic Appliance turn off?", [], mcp, 30,
-                                        enable_final_claim_audit=False)
+                                        enable_final_claim_audit=False,
+                                        enable_causal_follow_through=False)
             self.assertTrue(result["success"])
             self.assertEqual(result["rounds"], 4)
             self.assertTrue(result["source_review_invoked"])

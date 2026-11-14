@@ -60,6 +60,12 @@ class ScriptedAgent(Agent):
         self.seen = []
         self.offered = []
 
+    async def answer(self, *args, **kwargs):
+        # This fixture isolates the pre-existing final textual claim audit.
+        # Alpha.91 follow-through is tested independently with opt-in fixtures.
+        kwargs.setdefault("enable_causal_follow_through", False)
+        return await super().answer(*args, **kwargs)
+
     async def round(self, messages, tools, remaining):
         self.seen.append([dict(m) for m in messages])
         self.offered.append([t["function"]["name"] for t in tools])
