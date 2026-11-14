@@ -121,7 +121,7 @@ class CoverageProofContractTests(unittest.TestCase):
         })
         item = json.loads(final_claim_receipt_scope_index([rec]))["indexed_receipts"][0]
         self.assertNotIn("historical_continuity_proof_obligations", item)
-        self.assertNotIn("can_infer_older_events_absent", item["event_scope"])
+        self.assertIsNone(item["event_scope"]["can_infer_older_events_absent"])
 
     def test_failed_history_not_an_empty_or_valid_proof(self):
         rec = native_history_receipt(success=False)
@@ -160,8 +160,8 @@ class CoverageProofContractTests(unittest.TestCase):
     def test_prompt_confronts_false_flag_and_closed_world_fallacy(self):
         self.assertIn("Source-declared FALSE coverage guarantees", FINAL_CLAIM_AUDIT_PROMPT)
         self.assertIn("row limit NOT reached", FINAL_CLAIM_AUDIT_PROMPT)
-        self.assertIn("zero matching transitions returned", FINAL_CLAIM_AUDIT_PROMPT)
-        self.assertIn("no transitions occurred", FINAL_CLAIM_AUDIT_PROMPT)
+        self.assertIn("zero matching transitions returned", " ".join(FINAL_CLAIM_AUDIT_PROMPT.split()))
+        self.assertIn("no transitions occurred", " ".join(FINAL_CLAIM_AUDIT_PROMPT.split()))
         self.assertNotIn("Freezer", FINAL_CLAIM_AUDIT_PROMPT)
         self.assertNotIn("Bedroom 3 PC", FINAL_CLAIM_AUDIT_PROMPT)
 
@@ -204,7 +204,8 @@ class FinalAuditToolIsolationTests(unittest.IsolatedAsyncioTestCase):
         model, mcp = FictionalModel(), FictionalMCP()
         try:
             result = await model.answer(
-                "Investigate if a fictional outlet was ON continuously for 4 hours. "
+                "Investigate why a fictional outlet most recently switched OFF "
+                "and whether it had been ON continuously for 4 hours. "
                 "Do not change anything.", [], mcp, 90,
                 enable_causal_follow_through=False,
             )
