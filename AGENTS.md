@@ -1,5 +1,10 @@
 # HomeBrainOS development agent instructions
 
+## V2 alpha.80 clock and executed-write error integrity (14 November 2026)
+
+The model receives a read-only client-clock arithmetic tool, never a client-selected timer, device or command. A client UTC instant with sourced IANA timezone is not an independently observed hub clock; dated/deferred native action reports require requested-versus-stored deadline comparison and independent post-write read labelling. Track the first reviewed-unsent proposal versus actual selected write arguments as private evidence, not a command gate. An HTTP 402/429 or other later model failure must preserve already-returned successful native write receipts and separate reads, with no automatic retry or claimed future outcome. The connected model keeps natural reasoning, target/command selection and approval requirements. Do not introduce paid-routing changes or household-specific aliases/patches. [Alpha.80 note](docs/HOMEBRAIN-V2-ALPHA80-TIME-GROUNDED-ACTIONS-20261114.md).
+
+
 ## V2 alpha.79 capability-check evidence boundary (13 November 2026)
 
 For explicit verification of installed capabilities, distinguish tool-guide claims, application *type* catalogue IDs, independently typed *installed* app identity, exact native trigger/action fields, accepted configuration and observed execution. Natural `Check whether ... Verify ...` requests may receive one optional model-led read-only evidence check, but the model selects its own sources. Do not open mutating native forms for a read-only query, invent a supported schedule from a datetime variable example, or convert guide availability into proof of installed compatibility. No device/rule-specific planner. Keep original Gate B and alpha.78 native one-off protections. [Development note](docs/HOMEBRAIN-V2-ALPHA79-CAPABILITY-SOURCE-VERIFICATION-20261113.md).

@@ -1,5 +1,8 @@
 # Hubitat MCP AI v2 — native MCP client
 
+**Alpha.80 — time-grounded timed actions and executed-write error receipts.** The model can inspect a read-only `homebrain_read_clock` (client instant, sourced hub timezone and structured DST-aware target arithmetic) and source-labelled native pending deadlines. The action-outcome review asks the model to compare requested/stored instants; write-response snapshots are not independent post-write reads. Private Technical JSON preserves reviewed-versus-dispatched arguments, and post-write model failures preserve successful native write/read evidence without retry. No scheduler, device routing, prompt parser or paid-model change. [Development note](../docs/HOMEBRAIN-V2-ALPHA80-TIME-GROUNDED-ACTIONS-20261114.md).
+
+
 **Alpha.79 — model-led read-only installed-capability verification.** Explicit natural `Check whether ... Verify ...` questions may use the existing bounded source-verification review to distinguish advertised native tools, app types, installed typed identities, field contracts and observed runtime behaviour. The model chooses all safe reads; no form opening as a read-only probe when the server warns of side effects, no fixed tool or ID routing, and no changed writer/cleanup controls. [Acceptance note](../docs/HOMEBRAIN-V2-ALPHA79-CAPABILITY-SOURCE-VERIFICATION-20261113.md).
 
 

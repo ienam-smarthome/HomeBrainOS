@@ -23,6 +23,7 @@ from prospective_source_ab import ProspectiveWorkspace
 from pydantic import BaseModel, Field, StrictBool
 
 from agent import Agent
+from write_receipt_evidence import model_error_kind
 from external_hub_diagnostics import ExternalHubDiagnostics
 from device_monitor import HubDeviceMonitor
 from home_overview import OverviewUnavailable, read_overview
@@ -43,6 +44,7 @@ DEFAULTS: dict[str, Any] = {
     "model_timeout_seconds": 120,
     "mcp_timeout_seconds": 25,
     "investigation_timeout_seconds": 300,
+    "hub_timezone": "Europe/London",
     "external_hub_diagnostics_enabled": False,
     "external_hub_diagnostics_hub_url": "",
     "external_hub_diagnostics_probe_seconds": 30,
@@ -128,6 +130,7 @@ async def lifecycle(app: FastAPI):
             int(options["model_timeout_seconds"]),
             cpu_cores=int(options["external_hub_diagnostics_cpu_cores"]),
         )
+        app.state.model.hub_timezone = str(options["hub_timezone"])
         if str(options["hubitat_mcp_url"]).strip():
             app.state.mcp = MCPClient(
                 str(options["hubitat_mcp_url"]),
@@ -194,7 +197,7 @@ async def lifecycle(app: FastAPI):
             await app.state.model.close()
 
 
-app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.79", lifespan=lifecycle)
+app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.80", lifespan=lifecycle)
 app.include_router(benchmark_router)
 app.include_router(autonomous_router)
 app.include_router(reasoning_router)
@@ -433,7 +436,8 @@ async def ask(request: AskRequest, http_request: Request):
                         "tool_calls": [], "error": "mcp"}
             except RuntimeError as exc:
                 return {"success": False, "answer": f"Model/transport failure: {exc}",
-                        "tool_calls": [], "error": "model"}
+                        "tool_calls": [], "error": "model",
+                        "model_error_kind": model_error_kind(exc)}
     finally:
         app.state.interactions.pop(request_id, None)
 

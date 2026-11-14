@@ -184,7 +184,7 @@ class MeasurementLoopTests(unittest.IsolatedAsyncioTestCase):
                          ["hub_read_history", "hub_read_history", "hub_read_archive"])
         self.assertEqual(agent.tools_seen[3],
                          ["hub_read_history", "hub_read_archive",
-                          "homebrain_inspect_mcp_catalog"])
+                          "homebrain_inspect_mcp_catalog", "homebrain_read_clock"])
         self.assertIn("28 W", reply["answer"])
         self.assertNotIn("was active", reply["answer"])
         self.assertEqual(

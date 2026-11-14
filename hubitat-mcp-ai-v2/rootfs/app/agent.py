@@ -39,6 +39,15 @@ from config_evidence import config_source_map
 from device_monitor import TOOL_NAME as MONITOR_TOOL, TOOL_DEFINITION as MONITOR_TOOL_DEFINITION
 from monitor_evidence import monitor_evidence_scope
 from retrieval_coverage import FileReadCoverage, file_chunk_scope, event_attribute_scope
+from time_evidence import (
+    TOOL_NAME as CLOCK_TOOL, TOOL_DEFINITION as CLOCK_TOOL_DEFINITION,
+    clock_facts, deadline_facts, hub_clock_source, reported_hub_skew,
+    write_hub_clock_skew,
+)
+from write_receipt_evidence import (
+    model_error_kind, model_failure_notice, write_failure_evidence,
+    matches_prior_written_target,
+)
 
 
 _SKILL_DIR = Path(__file__).parent / "skills" / "hubitat"
@@ -52,6 +61,11 @@ The bundled rule-patterns reference describes the legacy custom-rule engine;
 prefer native automation surfaces as directed in the upstream skill.
 State your intended action and its effects in assistant content before tool calls.
 A proposed command printed as prose or code is NOT a submitted native tool call.
+For an absolute-clock timed action, use the read-only client clock tool to
+ground time arithmetic; it reports client time, not independently measured
+hub time. Compare the requested target and native stored deadline side by
+side before declaring a schedule matches. Never infer a timestamp solely
+from an ISO-formatted variable or the current conversation.
 For a clear ordinary device-action imperative, do not stop at a plan or ask
 redundant approval when the target, supported command, timing and safety
 checks are established. Execute through the connected offered native tool,
@@ -59,6 +73,9 @@ and report only what ORIGINAL native command/state receipts actually confirm.
 For an action request, compare the user's intended TARGET, ACTION and TIMING
 with the actual capability of the selected native tool BEFORE the first write.
 Verify the target identity and advertised commands using available native reads.
+Compare candidate commands with the user's actual requested verb and physical
+effect. A non-exact target/command/effect match requires user confirmation,
+not a guessed device routing, media command or assumed downstream action.
 When the target already advertises a command with matching delayed/time
 semantics, prefer that supported native capability to constructing an
 unrelated helper, rule or proxy operation. A direct user request like
@@ -677,6 +694,7 @@ class Agent:
         prior_reader=None, enable_source_review: bool = True,
         device_monitor=None, enable_final_claim_audit: bool = True,
         enable_action_proposal_review: bool = True,
+        hub_timezone: str | None = None,
     ) -> dict[str, Any]:
         started = time.monotonic()
         deadline = started + max(30, int(deadline_seconds))
@@ -688,7 +706,10 @@ class Agent:
         }
         if _CATALOG_TOOL in native_catalog_names:
             raise MCPError("Connected MCP catalog conflicts with reserved local catalog inspector")
+        if CLOCK_TOOL in native_catalog_names:
+            raise MCPError("Connected MCP catalog conflicts with reserved local clock reader")
         tools.append(_CATALOG_TOOL_DEFINITION)
+        tools.append(CLOCK_TOOL_DEFINITION)
         if prior_evidence and prior_reader:
             if any(tool.get("name") == _PRIOR_TOOL for tool in catalog):
                 raise MCPError("Connected MCP catalog conflicts with local receipt reader")
@@ -706,6 +727,8 @@ class Agent:
         # This is a tool-availability inventory, not a connection probe or
         # proof of archived samples. It is safe for private Technical JSON.
         source_catalog = {
+            "client_clock": {"available": True, "source": "client clock",
+                             "hub_timezone_source": "add-on configured timezone"},
             "native_mcp": {"catalog_checked": True,
                            "read_tools_offered": len(native_read_tools),
                            "local_catalog_inspection_offered": True},
@@ -724,7 +747,8 @@ class Agent:
             + ("IS configured and tool " + MONITOR_TOOL + " is available."
                if device_monitor is not None else "is NOT configured or offered.")
             + " The model receives ONLY top-level functions from the live "
-              "tools/list catalog, plus local read-only inspectors. Do NOT "
+              "tools/list catalog, plus local read-only inspectors and the "
+              "read-only client clock/arithmetic tool. Do NOT "
               "call a documented tool name unless it is actually offered. "
               "When a discovery tool is unavailable, inspect the CURRENT "
               "catalog via homebrain_inspect_mcp_catalog; a failed helper "
@@ -772,6 +796,12 @@ class Agent:
         prewrite_unsent_proposals: list[dict[str, Any]] = []
         prewrite_no_fresh_evidence_rejections = 0
         one_off_rule_preflight_rejections = 0
+        prewrite_dispatch_changed = False
+        prewrite_dispatch_comparison = None
+        first_write_dispatch_recorded = False
+        reported_hub_clock = None
+        clock_timezone_name = hub_timezone or getattr(self, "hub_timezone", "Europe/London")
+        clock_timezone_source = "add-on configured timezone"
         temporal_scope_text = scoped_request_text(question, history)
         automation_confirmation_requests = 0
         final_claim_audit_invoked = False
@@ -811,6 +841,8 @@ class Agent:
                 "action_follow_through_invoked": action_follow_through_invoked,
                 "prewrite_model_review_invoked": prewrite_model_review_invoked,
                 "prewrite_unsent_proposals": prewrite_unsent_proposals,
+                "prewrite_dispatch_changed": prewrite_dispatch_changed,
+                "prewrite_dispatch_comparison": prewrite_dispatch_comparison,
                 "prewrite_no_fresh_evidence_rejections": prewrite_no_fresh_evidence_rejections,
                 "one_off_rule_preflight_rejections": one_off_rule_preflight_rejections,
                 "requested_temporal_scope_hint": requested_temporal_scope(temporal_scope_text),
@@ -829,6 +861,7 @@ class Agent:
             if hasattr(mcp, "cached_leaf_schemas"):
                 tools = model_tools(catalog, mcp.cached_leaf_schemas())
                 tools.append(_CATALOG_TOOL_DEFINITION)
+                tools.append(CLOCK_TOOL_DEFINITION)
                 if prior_evidence and prior_reader:
                     tools.append(_PRIOR_TOOL_DEFINITION)
                 if device_monitor is not None:
@@ -846,9 +879,13 @@ class Agent:
             if remaining <= 0:
                 if final_claim_audit_candidate:
                     return completed_answer(final_claim_audit_candidate, "deadline_fallback")
+                evidence = write_failure_evidence(receipts)
+                notice = model_failure_notice(evidence)
                 return {
                     "success": False,
-                    "answer": "Investigation deadline reached. Available tool receipts are listed below; no unverified conclusion was substituted.",
+                    "answer": ("Investigation deadline reached. Available tool receipts are listed below; no unverified conclusion was substituted."
+                               + ("\n\n" + notice if notice else "")),
+                    **(evidence if notice else {}),
                     "error": "deadline", "prior_receipts_used": prior_receipts,
                     "leaf_schema_discoveries": leaf_schema_discoveries,
                     "tool_calls": receipts,
@@ -858,12 +895,22 @@ class Agent:
             try:
                 message = await self.round(messages, tools, remaining)
             except RuntimeError as exc:
-                if final_claim_audit_candidate:
+                evidence = write_failure_evidence(receipts)
+                notice = model_failure_notice(evidence)
+                if final_claim_audit_candidate and not notice:
                     return completed_answer(final_claim_audit_candidate, "model_error_fallback")
                 return {
-                    "success": False, "answer": f"Model/transport failure: {redact(str(exc))}",
-                    "error": "model", "tool_calls": receipts, "rounds": rounds,
+                    "success": False,
+                    "answer": (f"Model/transport failure: {redact(str(exc))}"
+                               + ("\n\n" + notice if notice else "")),
+                    **(evidence if notice else {}),
+                    "error": "model", "model_error_kind": model_error_kind(exc),
+                    "tool_calls": receipts, "rounds": rounds,
                     "prior_receipts_used": prior_receipts,
+                    "prewrite_model_review_invoked": prewrite_model_review_invoked,
+                    "prewrite_unsent_proposals": prewrite_unsent_proposals,
+                    "prewrite_dispatch_changed": prewrite_dispatch_changed,
+                    "prewrite_dispatch_comparison": prewrite_dispatch_comparison,
                     "leaf_schema_discoveries": leaf_schema_discoveries,
                     "elapsed_ms": round((time.monotonic() - started) * 1000),
                 }
@@ -913,8 +960,8 @@ class Agent:
                                  "arguments": row.get("arguments")}
                                 for row in receipts
                                 if row.get("success") is True
-                                and is_read_only_review_tool(row.get("name", ""))
-                                and str(row.get("name", "")).startswith("hub_")
+                                and (is_read_only_review_tool(row.get("name", ""))
+                                     or row.get("name") == CLOCK_TOOL)
                             ], ensure_ascii=False)[:2500]
                         ),
                     })
@@ -1063,7 +1110,7 @@ class Agent:
                 # automatically by this recovery.
                 if enable_source_review and should_review_completion(
                     question, available_tools=any(
-                        item["function"]["name"] != _CATALOG_TOOL
+                        item["function"]["name"] not in (_CATALOG_TOOL, CLOCK_TOOL)
                         for item in read_only_review_catalog(tools)
                     ),
                     already_reviewed=source_review_invoked,
@@ -1137,7 +1184,8 @@ class Agent:
                     is_prior = name == _PRIOR_TOOL
                     is_monitor = name == MONITOR_TOOL
                     is_catalog = name == _CATALOG_TOOL
-                    if not (is_prior or is_monitor or is_catalog) and name not in native_catalog_names:
+                    is_clock = name == CLOCK_TOOL
+                    if not (is_prior or is_monitor or is_catalog or is_clock) and name not in native_catalog_names:
                         raise CatalogToolUnavailable(
                             "Requested tool is not present in this request's connected "
                             "MCP tools/list snapshot. No call was executed. "
@@ -1146,6 +1194,9 @@ class Agent:
                         )
                     if is_catalog:
                         catalog_query_name = validate_catalog_inspection_args(args)
+                    if is_clock:
+                        if not isinstance(args, dict):
+                            raise MCPContractError("Clock parameters must be an object")
                     if is_monitor and device_monitor is None:
                         raise MCPError("Device Monitor history source is not configured")
                     if is_prior:
@@ -1153,7 +1204,7 @@ class Agent:
                             raise MCPError("No prior conversation evidence is available")
                         if set(args) - {"receipt_id", "offset", "max_chars"} or "receipt_id" not in args:
                             raise MCPError("Use only receipt_id, offset and max_chars for prior evidence")
-                    if not is_prior and not is_monitor and isinstance(args.get("tool"), str) and hasattr(
+                    if not (is_prior or is_monitor or is_catalog or is_clock) and isinstance(args.get("tool"), str) and hasattr(
                             mcp, "gateway_leaf_schema"):
                         # Optional, metadata-only discovery. Model selection
                         # determines which gateway/leaf is inspected. A schema
@@ -1224,9 +1275,28 @@ class Agent:
                             "native automation write was NOT submitted"
                         )
                     approval_completed = True
+                    # Private observability only: compare the first actual native
+                    # write dispatched after a reconsideration with its unsent
+                    # proposal. This neither approves nor blocks the write.
+                    if (prewrite_model_review_invoked and not first_write_dispatch_recorded
+                            and is_native_action_proposal(name, args, catalog)):
+                        first_write_dispatch_recorded = True
+                        baseline = prewrite_unsent_proposals[0] if prewrite_unsent_proposals else None
+                        dispatched = {"name": name, "arguments": redact(args)}
+                        prewrite_dispatch_changed = baseline != dispatched
+                        prewrite_dispatch_comparison = {
+                            "reviewed_unexecuted_proposal": baseline,
+                            "selected_for_native_dispatch": dispatched,
+                            "changed": prewrite_dispatch_changed,
+                            "comparison_scope": "first proposed write versus first selected dispatched write",
+                        }
                     if is_catalog:
                         result = {"local_mcp_catalog": inspect_native_catalog(
                             catalog, catalog_query_name)}
+                    elif is_clock:
+                        result = {"local_clock": clock_facts(
+                            args, clock_timezone_name,
+                            timezone_source=clock_timezone_source)}
                     elif is_prior:
                         result = {
                             "local_prior_evidence": prior_reader(
@@ -1254,7 +1324,12 @@ class Agent:
                     }
                     if tool_error:
                         record["error"] = "MCP tool reported isError"
-                    if is_catalog:
+                    if is_clock:
+                        record["result_kind"] = "local_clock_read"
+                        record["operation_executed"] = False
+                        record["read_only"] = True
+                        model_result = result
+                    elif is_catalog:
                         record["result_kind"] = "local_catalog_read"
                         record["operation_executed"] = False
                         record["read_only"] = True
@@ -1287,6 +1362,16 @@ class Agent:
                     else:
                         record["result_kind"] = "tool_result"
                         model_result = self.present_native_result(result, args)
+                        if name == "hub_get_info":
+                            hub_read = hub_clock_source(name, result)
+                            if hub_read is not None:
+                                reported_hub_clock = hub_read
+                                if hub_read.get("timezone"):
+                                    clock_timezone_name = hub_read["timezone"]
+                                    clock_timezone_source = "hub_get_info receipt"
+                                skew = reported_hub_skew(hub_read)
+                                if skew is not None:
+                                    model_result["client_hub_clock_skew_notice"] = skew
                         # Surface actual native storage versus activation,
                         # never infer rule activation from MCP transport success.
                         native_rule_outcome = (
@@ -1333,7 +1418,7 @@ class Agent:
                                      and item.get("name") == name), None)
                     annotations = (declared or {}).get("annotations")
                     native_action_result = (
-                        not (is_catalog or is_prior or is_monitor)
+                        not (is_catalog or is_prior or is_monitor or is_clock)
                         and not is_tool_catalog(result)
                         and not is_native_rule_read(name, args)
                         and not is_read_only_review_tool(name)
@@ -1342,7 +1427,7 @@ class Agent:
                         and not (isinstance(annotations, dict)
                                  and annotations.get("readOnlyHint") is True)
                     )
-                    if native_action_result:
+                    if native_action_result and not tool_error:
                         native_action_receipts_seen += 1
                         record["possible_native_action"] = True
                         model_result = {
@@ -1363,6 +1448,29 @@ class Agent:
                             },
                             **model_result,
                         }
+                    # Only original native returned fields are indexed. A
+                    # snapshot embedded in a write is not a separate read.
+                    if (not is_clock and not is_catalog and not is_monitor
+                            and not is_prior and not is_tool_catalog(result)):
+                        deadline_note = deadline_facts(result)
+                        if deadline_note is not None:
+                            if not native_action_result and native_action_receipts_seen:
+                                same_target = matches_prior_written_target(receipts, args)
+                                deadline_note["independent_post_write_readback"] = same_target
+                                deadline_note["separate_post_write_read"] = True
+                                deadline_note["target_identity_match_verified"] = same_target
+                                deadline_note["source"] = "separate native MCP read after write"
+                            record["deadline_facts"] = deadline_note
+                            model_result["client_deadline_facts"] = deadline_note
+                        if native_action_result:
+                            write_skew = write_hub_clock_skew(result)
+                            if write_skew is not None:
+                                record["hub_clock_skew_notice"] = write_skew
+                                model_result["client_hub_clock_skew_notice"] = write_skew
+                            model_result["client_write_snapshot_scope"] = {
+                                "snapshot_in_write_response_is_independent_readback": False,
+                                "separate_followup_read_required_for_independent_readback": True,
+                            }
                     content = compact_tool_result(model_result)
                     record["response_characters"] = len(content)
                 except (MCPError, ValueError, asyncio.TimeoutError) as exc:

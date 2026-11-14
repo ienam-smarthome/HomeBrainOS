@@ -40,6 +40,14 @@ media power/off command as some other requested effect without evidence.
 Do not automatically prefer a particular tool; if a real one-off native rule
 is justified, inspect its source-reported trigger, action type, and lifecycle.
 
+For any numeric duration/offset derived from a wall-clock time, use a
+read-only CLIENT clock/target arithmetic receipt (and hub timezone source
+if available), explicitly identify the requested target instant, and
+check the derived number of minutes before dispatch. A guessed clock or
+a rounded proposal number is not a calculation. If no current clock receipt
+exists, read it before submitting a time-derived command. This checkpoint
+does not select or calculate the user's target for you.
+
 If the previous proposal is unsupported, abandon it and independently
 choose relevant READ-ONLY MCP tools before acting. If the sources and
 permissions truly support it, submit the intended native operation through

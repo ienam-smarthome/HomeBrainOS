@@ -1,5 +1,10 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## 14 November 2026 — alpha.80 safe clock and post-write error acceptance
+
+After alpha.80 CI and installation, ask an uncoached-but-read-only clock/timezone question, keep original PRIVATE Technical JSON and inspect source labels, timezone offsets and structured arithmetic. Later timed action acceptance requires explicit owner direction for a noncritical device and verification that requested and stored deadlines match; a native write-response snapshot is not a separate post-write read. Do not deliberately cause payment or network failures on the household hub; synthetic tests cover quota-after-write. Keep the separate alpha.79 installed capability diagnostic and 12 fresh uncoached Gate B source-quality cases distinct. No standing-defaults/premium model routing changes. [Note](HOMEBRAIN-V2-ALPHA80-TIME-GROUNDED-ACTIONS-20261114.md).
+
+
 ## 13 November 2026 — alpha.79 installed capability first-answer acceptance
 
 Alpha.78's read-only compatibility check returned server documentation and an app-type listing but did not verify a typed installed parent or dated-trigger schema; its affirmative installed-compatibility verdict exceeded the receipts. Alpha.79 generalises the existing optional source-verification checkpoint to explicit `Check whether ... Verify ...` questions and reinforces advertised-versus-installed-versus-executed evidence boundaries. Next: source-real **read-only** installed-version verification and a fresh natural capability query; check the model-selected extra reads and calibrated final answer, without native form navigation, writes, test rules or household cleanup. This diagnostic does not enter the uncoached Gate B denominator. [Note](HOMEBRAIN-V2-ALPHA79-CAPABILITY-SOURCE-VERIFICATION-20261113.md).
