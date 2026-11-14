@@ -78,7 +78,27 @@ _CAUSAL_QUESTION = re.compile(
     r"\bwhy\b|\bwhat\s+(?:caused|triggered|initiated|made|explains)\b"
     r"|\b(?:cause|reason|trigger)\s+(?:of|for|behind)\b"
     r"|\bwho\s+(?:turned|switched|set|changed|started|stopped|issued)\b"
-    r"|\b(?:was|were|is|are|been)\s+caused\s+by\b",
+    r"|\b(?:was|were|is|are|been)\s+caused\s+by\b"
+    r"|\bwhat\s+led\s+to\b",
+    re.IGNORECASE,
+)
+# Historical outcome reconstruction and command-issuer requests are causal
+# investigations even without the literal word 'why'. The model, not this
+# classifier, selects the device, evidence and any follow-up tools.
+_CAUSAL_RECONSTRUCTION = re.compile(
+    r"^\s*(?:investigate|analyse|analyze|trace|reconstruct|explain)\b"
+    r"[^.!?\n]{0,220}\b(?:transition|change|toggled|switched|turned|"
+    r"stopped|started|command|issuer|automation|controller|incident)\b",
+    re.IGNORECASE,
+)
+_CAUSAL_UNRESOLVED = re.compile(
+    r"\b(?:unknown|unverified|undetermined|unresolved|uncertain|"
+    r"not\s+(?:established|verified|determined|confirmed)|"
+    r"cannot\s+(?:determine|verify|confirm|attribute|establish)|"
+    r"insufficient\s+(?:evidence|source|information)|"
+    r"missing\s+(?:evidence|sources?|records?|logs?|link)|"
+    r"(?:further|additional)\s+(?:read|source|evidence|log|investigation)|"
+    r"no\s+(?:direct|decisive|clear)\s+evidence)\b",
     re.IGNORECASE,
 )
 
@@ -87,8 +107,17 @@ Your previous draft is NOT evidence. Decide independently whether the
 successful source receipts actually answer the user's causal question.
 
 Distinguish an observed outcome, the actor reporting it, a recorded command
-issuer, and an event-specific trigger or decision. Check actual returned
-filters, lookback, result limits, chronology and competing explanations.
+issuer, and an event-specific trigger or decision. Reconstruct the time line
+from ORIGINAL source timestamps: a previous state, the focal outcome, relevant
+commands, and subsequent state. A report of a new value does not prove the
+immediately previous value unless that previous value was observed. A later
+current snapshot or temperature reading cannot be projected back onto the
+focal event. When an apparent setpoint/state report precedes its recorded
+command, preserve that order and do not invent latency or rearrange entries.
+Distinguish whether the question asks about the latest event of a SPECIFIC
+type versus the latest overall state, and disclose later changes.
+Check actual returned filters, lookback, result limits, chronology and
+competing explanations.
 A filtered state history without command rows does not rule out unseen
 commands. A device/bridge reporter and notified listeners do not prove
 external initiation. Chronological compatibility alone does not prove cause.
@@ -401,6 +430,11 @@ Preserve positive findings, including verified issuers and direct readings.
 For causal questions, distinguish (a) a recorded state change,
 (b) the device/bridge reporting it, (c) a recorded command issuer if present,
 and (d) the internal decision or trigger that may remain unknown.
+Check the original previous-state event before calling a transition from X
+to Y verified; the returned Y state alone does not establish X. Do not use
+a temperature, level, demand, or other observation made AFTER a historical
+outcome as evidence for the earlier moment. Check the latest relevant state
+AFTER the focal event, rather than implying an old OFF/idle still holds.
 A physical-tagged state report is NOT proof of an external/manual initiator;
 a filtered event list or empty named-text log search is NOT proof the hub
 issued no command. A currently configured automation cannot, without
@@ -689,8 +723,74 @@ def read_only_review_catalog(tools: list[dict]) -> list[dict]:
 
 
 def is_causal_question(question: str) -> bool:
-    """Broad intent hint, independent of a specific device or subsystem."""
-    return isinstance(question, str) and bool(_CAUSAL_QUESTION.search(question))
+    """Broad causal/reconstruction intent, independent of device or subsystem."""
+    return (
+        isinstance(question, str)
+        and not bool(_WRITE_INTENT_AT_START.search(question))
+        and bool(
+            _CAUSAL_QUESTION.search(question)
+            or _CAUSAL_RECONSTRUCTION.search(question)
+        )
+    )
+
+
+CAUSAL_FOLLOW_THROUGH_PROMPT = """Unresolved causal-evidence follow-through (internal).
+Your previous reviewed answer still says a material initiating cause or
+historical link is unknown. You did not make a further native source read
+during the first source review. The user ALREADY authorised proportionate
+READ-ONLY investigation; do not ask permission to perform a read.
+
+Before accepting this unresolved conclusion, inspect the ORIGINAL receipts
+and their returned time window. Separate four potential links:
+1. The directly observed BEFORE state, not an assumed state.
+2. The focal event and reporter, with its exact timestamp.
+3. Any command and issuer, respecting command-versus-report chronological order.
+4. Event-specific input/decision evidence and any later observations.
+
+A command issuer is not the same as the internal reason for that command.
+A notified listener or physical event tag is not an initiating actor.
+Do not substitute a later sensor value or current configuration for a missing
+historical observation, and do not infer absence from bounded event rows.
+
+If a genuinely useful, currently advertised READ-ONLY source can distinguish
+the remaining hypotheses or fill a missing temporal link, CHOOSE the exact
+tool and arguments NOW. There is no mandated tool, device, log, app, source
+order, or automatic request. Tool catalog entries are not execution receipts.
+Do NOT merely restate that more logs might help if you can inspect such a
+source safely now. If no proportionate read can improve the answer, finish
+with supported facts and precisely delimited unknowns.
+
+Never execute a write, device command, refresh that changes state, or unsafe
+configuration probe; never infer consent to modify the home. This checkpoint
+does not guarantee any source exists or that any causal hypothesis is true.
+Do not mention this internal checkpoint.
+"""
+
+
+def should_recheck_causal_evidence(
+    question: str, *, review_kind_name: str | None,
+    first_review_receipt_count: int, receipt_count: int,
+    already_rechecked: bool, candidate_answer: str,
+    remaining_seconds: float, has_action_receipt: bool,
+    available_read_tools: bool,
+) -> bool:
+    """One optional model-only read decision when causal review stopped unresolved.
+
+    Never calls/selects a tool or creates a causal conclusion. A strict time
+    budget avoids turning every straightforward Ask into extra paid rounds.
+    """
+    return (
+        not already_rechecked
+        and review_kind_name == "causal"
+        and is_causal_question(question)
+        and available_read_tools
+        and not has_action_receipt
+        and first_review_receipt_count >= 0
+        and receipt_count == first_review_receipt_count
+        and remaining_seconds > 25
+        and isinstance(candidate_answer, str)
+        and bool(_CAUSAL_UNRESOLVED.search(candidate_answer))
+    )
 
 
 def should_review_completion(
