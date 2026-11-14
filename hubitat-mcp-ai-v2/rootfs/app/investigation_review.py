@@ -32,6 +32,23 @@ _CURRENT_READ_EXAMPLE = re.compile(
     re.IGNORECASE,
 )
 
+# Only spend an additional model round when the draft itself refuses or
+# defers an authorised READ. A direct answer without a tool receipt is still
+# separately labelled unverified; it is not automatically retried.
+_PENDING_READ_DRAFT = re.compile(
+    r"\b(?:please\s+confirm|would\s+you\s+like\s+me\s+to|"
+    r"need\s+to\s+(?:call|use|read|query|retrieve|fetch|check)|"
+    r"can\s+I\s+(?:read|query|fetch|check|inspect)|"
+    r"shall\s+I\s+(?:read|query|fetch|check))\b",
+    re.IGNORECASE,
+)
+
+
+def is_deferred_read_draft(answer: str) -> bool:
+    """Textual evidence of an unfinished read, never a tool or device router."""
+    return isinstance(answer, str) and bool(_PENDING_READ_DRAFT.search(answer))
+
+
 CURRENT_STATE_REVIEW_PROMPT = """Read-only live-state completion checkpoint (internal).
 The user's original question asks for a CURRENT reported fact. The earlier
 draft is NOT a device report, and no native MCP read has been attempted in
@@ -679,7 +696,7 @@ def is_causal_question(question: str) -> bool:
 def should_review_completion(
     question: str, *, available_tools: bool, already_reviewed: bool,
     remaining_seconds: float, has_action_receipt: bool = False,
-    has_tool_receipts: bool = False,
+    has_tool_receipts: bool = False, candidate_answer: str = "",
 ) -> bool:
     """Only open a model review when there is a chance to investigate safely.
 
@@ -692,6 +709,7 @@ def should_review_completion(
         and remaining_seconds > 8
         and (
             review_kind(question) is not None or has_action_receipt
-            or (not has_tool_receipts and is_current_state_question(question))
+            or (not has_tool_receipts and is_current_state_question(question)
+                and is_deferred_read_draft(candidate_answer))
         )
     )
