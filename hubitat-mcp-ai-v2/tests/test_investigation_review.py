@@ -107,10 +107,17 @@ class ReviewDecisionTests(unittest.TestCase):
                 self.assertTrue(should_review_completion(
                     question, available_tools=True, already_reviewed=False,
                     remaining_seconds=120, has_tool_receipts=False,
+                    candidate_answer="To retrieve it I need to call a read-only tool. Please confirm.",
+                ))
+                self.assertFalse(should_review_completion(
+                    question, available_tools=True, already_reviewed=False,
+                    remaining_seconds=120, has_tool_receipts=False,
+                    candidate_answer="The current sensor reports 4 W.",
                 ))
                 self.assertFalse(should_review_completion(
                     question, available_tools=True, already_reviewed=False,
                     remaining_seconds=120, has_tool_receipts=True,
+                    candidate_answer="Please confirm the read.",
                 ))
         for question in (
             "Show relay status",
@@ -277,7 +284,7 @@ class ReviewLoopTests(unittest.IsolatedAsyncioTestCase):
     async def test_readonly_followup_rejects_model_selected_writer(self):
         hub = FakeMCP()
         agent = ScriptedAgent([
-            {"content": "I can inspect it.", "tool_calls": []},
+            {"content": "Please confirm I can inspect it.", "tool_calls": []},
             {"content": "", "tool_calls": [{
                 "function": {"name": "hub_manage_apps", "arguments": {
                     "tool": "hub_set_native_app", "args": {},
