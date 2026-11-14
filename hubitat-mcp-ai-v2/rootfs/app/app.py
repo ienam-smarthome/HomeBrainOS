@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,7 @@ from device_monitor import HubDeviceMonitor
 from home_overview import OverviewUnavailable, read_overview
 from home_assistant_tts import HomeAssistantTTS, HomeAssistantTTSConfigurationError
 from mcp import MCPError, MCPClient
+from agent import InitialCatalogUnavailable
 from interaction import Interaction
 from one_off_cleanup import OneOffCleanup
 from conversation import ConversationEvidence
@@ -201,7 +203,7 @@ async def lifecycle(app: FastAPI):
             await app.state.model.close()
 
 
-app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.94", lifespan=lifecycle)
+app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.95", lifespan=lifecycle)
 app.include_router(benchmark_router)
 app.include_router(autonomous_router)
 app.include_router(reasoning_router)
@@ -457,6 +459,36 @@ async def ask(request: AskRequest, http_request: Request):
                         str(request.conversation_id), request.question, result["tool_calls"]
                     )
                 return result
+            except InitialCatalogUnavailable as exc:
+                # An initial catalog failure means no model request or native
+                # tool operation occurred. The provider account was not queried.
+                # Report only a safe class/status, never an upstream error body,
+                # credential-bearing URL, response headers or query parameters.
+                detail = str(exc)
+                match = re.fullmatch(r"MCP HTTP ([45][0-9]{2})", detail)
+                status = int(match.group(1)) if match else None
+                kind = ("http" if status is not None else
+                        "timeout" if detail == "MCP timed out" else
+                        "transport" if detail == "MCP transport failed" else
+                        "catalog_error")
+                safe_detail = (f"HTTP {status}" if status is not None else
+                               "timeout" if kind == "timeout" else
+                               "transport error" if kind == "transport" else
+                               "catalog unavailable")
+                return {
+                    "success": False,
+                    "answer": ("MCP catalog unavailable before investigation "
+                               f"({safe_detail}). No model inference or native "
+                               "domain read occurred. Retry manually after "
+                               "checking the MCP service; no automatic retry "
+                               "was made."),
+                    "tool_calls": [], "rounds": 0, "error": "mcp",
+                    "mcp_failure": {
+                        "phase": "initial_catalog", "error_kind": kind,
+                        "http_status": status, "model_invoked": False,
+                        "native_domain_calls": 0, "automatic_retry": False,
+                    },
+                }
             except MCPError as exc:
                 return {"success": False, "answer": f"MCP connection failure: {exc}",
                         "tool_calls": [], "error": "mcp"}
