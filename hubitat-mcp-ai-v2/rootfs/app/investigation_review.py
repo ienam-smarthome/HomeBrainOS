@@ -184,7 +184,7 @@ _HISTORICAL_PERIOD = re.compile(
     r"(?:past|last|previous)\s+(?:\d+|few|several|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s*(?:minutes?|hours?|days?|weeks?|months?)|"
     r"previous\s+(?:hour|day|week|month|night)|"
     r"this\s+(?:morning|afternoon|evening|week)|"
-    r"today|"
+    r"today|all\s+(?:night|day|morning|afternoon|evening)|"
     r"\d{4}-\d{2}-\d{2})\b"
     r"|\b(?:between|from|during)\b[^\n]{0,65}"
     r"\b(?:\d{1,2}:\d{2}|\d{1,2}\s*(?:am|pm)|"
@@ -207,7 +207,7 @@ _CONTINUITY_PERSISTENCE = re.compile(
     r"continu(?:ous|ously)|uninterrupted|throughout|"
     r"entire|whole|ever|all\s+(?:night|day|morning|evening)|"
     r"at\s+any\s+point|"
-    r"(?:been|kept)\s+(?:on|off|active|connected|online|running)|"
+    r"(?:been|kept)\s+(?:on|off|active|connected|online|running|heating)|"
     r"without\s+(?:any\s+)?(?:interruptions?|changes?|outages?|"
     r"disconnections?)|any\s+(?:interruptions?|changes?|"
     r"transitions?|outages?|disconnections?|switches?|"
@@ -220,7 +220,7 @@ _CONTINUITY_STATE_SUBJECT = re.compile(
     r"open|closed|state|status|switch(?:ed|es)?|"
     r"devices?|sensors?|lights?|thermostats?|plugs?|"
     r"motors?|motion|temperature|humidity|energy|"
-    r"interruptions?|changes?|transitions?|outages?)\b",
+    r"interruptions?|changes?|transitions?|outages?|disconnections?)\b",
     re.IGNORECASE,
 )
 _CONTINUITY_FOR_PERIOD = re.compile(
