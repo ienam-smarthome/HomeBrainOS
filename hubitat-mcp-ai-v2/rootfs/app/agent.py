@@ -919,6 +919,11 @@ class Agent:
                 "final_claim_audit_invoked": final_claim_audit_invoked,
                 "final_claim_audit_status": audit_status,
                 "deadline_finalization_invoked": deadline_finalization_invoked,
+                "deadline_finalization_status": (
+                    "completed" if deadline_finalization_invoked and bool(answer)
+                    else "empty_model_answer" if deadline_finalization_invoked
+                    else "not_invoked"
+                ),
                 "answer_stage_trace": answer_stage_trace,
                 "available_read_sources": source_catalog,
                 "file_read_coverage": file_reads.snapshot(),
@@ -1019,6 +1024,10 @@ class Agent:
                     "model_round_metrics": model_round_metrics,
                     "prior_receipts_used": prior_receipts,
                     "deadline_finalization_invoked": deadline_finalization_invoked,
+                    "deadline_finalization_status": (
+                        "model_error" if deadline_finalization_invoked
+                        else "not_invoked"
+                    ),
                     "prewrite_model_review_invoked": prewrite_model_review_invoked,
                     "prewrite_unsent_proposals": prewrite_unsent_proposals,
                     "prewrite_dispatch_changed": prewrite_dispatch_changed,
@@ -1108,9 +1117,9 @@ class Agent:
                         "model_round_metrics": model_round_metrics,
                         "elapsed_ms": round((time.monotonic() - started) * 1000),
                     }
-                return completed_answer(
-                    text, "deadline_finalized" if text else "deadline_empty",
-                )
+                # This is NOT the existing source-to-claim audit. Preserve
+                # that distinction in separate Technical JSON fields.
+                return completed_answer(text, "not_invoked")
 
             if not calls:
                 # Generic coverage recovery: a filtered inventory alone
