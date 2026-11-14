@@ -682,10 +682,10 @@ class Agent:
                         "messages": messages,
                         "tools": tools,
                         "stream": False,
-                        **({"think": self.local_think}
-                           if self.local_think is not None else {}),
-                        **({"options": {"num_ctx": self.local_num_ctx}}
-                           if self.local_num_ctx is not None else {}),
+                        **({"think": getattr(self, "local_think", None)}
+                           if getattr(self, "local_think", None) is not None else {}),
+                        **({"options": {"num_ctx": getattr(self, "local_num_ctx", None)}}
+                           if getattr(self, "local_num_ctx", None) is not None else {}),
                     },
                 ),
                 timeout=min(self.timeout, remaining),
