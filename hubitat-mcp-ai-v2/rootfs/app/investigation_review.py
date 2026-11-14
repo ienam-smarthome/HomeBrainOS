@@ -421,6 +421,33 @@ matches to that pattern in that returned interval, not other app logs.
 Do not let the FINAL conclusion silently broaden the evidence scope after
 a correctly qualified explanation.
 
+Before saying "only one" or "no other" command/event occurred, compare the
+claim with EVERY relevant exact event name/count in the original returned
+rows. More than one returned command of the same type disproves a claim
+that only one exists IN THE WHOLE RETURNED WINDOW; it does not preclude one
+specific command being closest in time to the focal outcome. Distinguish
+a unique command immediately adjacent to the focal event from unique
+history, no competing issuer in a bounded result, and proven exclusivity.
+Never infer that no competing action could exist beyond the returned rows.
+
+For log results, compare (1) requested since/until, (2) source-matched
+entries, (3) entries ACTUALLY returned, and (4) first/last returned log
+timestamps. If thousands matched but only a small capped page was returned,
+do not claim to have inspected the full requested log interval or to
+exclude commands in the unreturned pages. A log time without an explicit
+UTC offset must not be silently converted to a verified UTC timestamp.
+A hub log echo of a device state is not independent physical confirmation.
+
+For controller configuration pages, compare the actual selected input
+groups, not just the one sensor or actuator named in the draft. If several
+selected inputs could contribute to an internal decision, incorporate the
+independently observed relevant histories or state the unchecked inputs
+and conditions. Selected device labels, current app settings and UI status
+text cannot prove historical input values or which callback/timer fired.
+An enabled-but-unchecked backup/override/restriction input is not verified
+inactive at the focal time. Event-time alignment and a recorded command
+issuer are strong evidence, not proof of the controller's internal reason.
+
 An accompanying bounded receipt scope index may list call arguments,
 returned counts and source-derived limits. It is a NAVIGATION aid, not
 independent proof or a substitute for the original successful receipts.
@@ -492,6 +519,124 @@ _AUDIT_ORIGINAL_FIELDS = frozenset((
     "untilTimestamp", "hoursBack", "hasMore", "limit", "mode",
 ))
 _AUDIT_INDEX_LIMIT = 16
+_AUDIT_EVENT_GROUP_LIMIT = 20
+_AUDIT_SELECTED_GROUP_LIMIT = 12
+_AUDIT_SELECTED_ITEM_LIMIT = 12
+
+
+def _audit_event_groups(source: object) -> dict | None:
+    """Re-expose exact already-returned event-name counts, never causal proof."""
+    if not isinstance(source, dict):
+        return None
+    groups = source.get("event_names")
+    if not isinstance(groups, list):
+        return None
+    out = []
+    for row in groups[:_AUDIT_EVENT_GROUP_LIMIT]:
+        if not isinstance(row, dict):
+            continue
+        name = row.get("event_name")
+        count = row.get("returned_count")
+        if isinstance(name, str) and 0 < len(name) <= 100 and type(count) is int:
+            if 0 <= count <= 100000:
+                out.append({"event_name": name, "returned_count": count})
+    return {
+        "source_scope": "exact names/counts of returned event rows only",
+        "returned_event_name_counts": out,
+        "event_groups_omitted": max(0, len(groups) - _AUDIT_EVENT_GROUP_LIMIT),
+        "unreturned_events_proven_absent": False,
+    }
+
+
+def _audit_selected_inputs(source: object) -> dict | None:
+    """Show the model the selected participants already in a config receipt.
+
+    Existing config_source_map sanitises sensitive fields. Only bounded
+    names/labels are re-exposed; raw settings and embedded UI markup are not.
+    """
+    if not isinstance(source, dict):
+        return None
+    groups = source.get("selected_input_groups")
+    if not isinstance(groups, list):
+        return None
+    output = []
+    for row in groups[:_AUDIT_SELECTED_GROUP_LIMIT]:
+        if not isinstance(row, dict):
+            continue
+        name = row.get("name")
+        if not isinstance(name, str) or not 0 < len(name) <= 96:
+            continue
+        raw = row.get("selected")
+        participants = []
+        if isinstance(raw, list):
+            for item in raw[:_AUDIT_SELECTED_ITEM_LIMIT]:
+                if not isinstance(item, dict):
+                    continue
+                ident, label = item.get("value"), item.get("label")
+                if not isinstance(ident, str) or len(ident) > 96:
+                    continue
+                participants.append({
+                    "value": ident,
+                    **({"label": label} if isinstance(label, str)
+                       and 0 < len(label) <= 120 else {}),
+                })
+        else:
+            raw_values = row.get("selected_values")
+            if isinstance(raw_values, list):
+                participants = [
+                    {"value": v} for v in raw_values[:_AUDIT_SELECTED_ITEM_LIMIT]
+                    if isinstance(v, str) and 0 < len(v) <= 96
+                ]
+        returned_count = row.get("returned_selected_count")
+        output.append({
+            "input_group": name,
+            "returned_selected_count": returned_count
+            if type(returned_count) is int and 0 <= returned_count <= 100000
+            else len(participants),
+            "selected": participants,
+            "other_selected_items_omitted": max(
+                0, (returned_count if type(returned_count) is int
+                    and returned_count >= 0 else len(participants))
+                - len(participants),
+            ),
+        })
+    return {
+        "source_scope": "one currently returned configuration page",
+        "selected_input_groups": output,
+        "selected_input_groups_omitted": max(
+            0, len(groups) - _AUDIT_SELECTED_GROUP_LIMIT),
+        "historical_configuration_verified": False,
+        "event_specific_callback_verified": False,
+    }
+
+
+def _audit_log_scope(source: object) -> dict | None:
+    """Bounded original log-return counts/timestamps; do not read messages."""
+    if not isinstance(source, dict) or not isinstance(source.get("entries"), list):
+        return None
+    entries = source["entries"]
+    times = [
+        row["time"] for row in entries
+        if isinstance(row, dict)
+        and isinstance(row.get("time"), str)
+        and len(row["time"]) <= 45
+        and row["time"][:4].isdigit()
+    ]
+    matched = source.get("matched")
+    count = source.get("count")
+    # The source-provided log times can be naive local strings. Preserve them
+    # verbatim; sorting a uniform timestamp string is not timezone conversion.
+    return {
+        "source_scope": "returned hub-log entries, not entire requested interval",
+        "matched_count": matched if type(matched) is int and matched >= 0 else None,
+        "reported_count": count if type(count) is int and count >= 0 else None,
+        "returned_entries": len(entries),
+        "oldest_returned_time_as_reported": min(times) if times else None,
+        "newest_returned_time_as_reported": max(times) if times else None,
+        "time_zone_inferred_from_log_time": False,
+        "complete_requested_window_proven": False,
+        "log_entries_or_messages_reproduced": False,
+    }
 
 
 def _audit_scalars(data: object, allowed: frozenset[str]) -> dict:
@@ -550,6 +695,13 @@ def final_claim_receipt_scope_index(receipts: list[dict]) -> str:
                                          _AUDIT_SOURCE_FIELDS)
             if event_scope:
                 item["event_scope"] = event_scope
+            event_names = _audit_event_groups(parsed.get("client_event_attribute_scope"))
+            if event_names is not None:
+                item["event_names_in_returned_rows"] = event_names
+            selected_inputs = _audit_selected_inputs(
+                parsed.get("client_config_source_map"))
+            if selected_inputs is not None:
+                item["config_selected_inputs"] = selected_inputs
             monitor = parsed.get("client_monitor_evidence_scope")
             if isinstance(monitor, dict):
                 mon = _audit_scalars(monitor, _AUDIT_SOURCE_FIELDS)
@@ -571,6 +723,9 @@ def final_claim_receipt_scope_index(receipts: list[dict]) -> str:
             native = _audit_scalars(original, _AUDIT_ORIGINAL_FIELDS)
             if native:
                 item["original_returned_fields"] = native
+            log_scope = _audit_log_scope(original)
+            if log_scope is not None:
+                item["returned_log_scope"] = log_scope
         rows.append(item)
     return json.dumps({
         "note": "Navigation index from returned receipt fields ONLY; not independent evidence. Do not infer unseen records absent. Inspect original receipts for full detail.",
