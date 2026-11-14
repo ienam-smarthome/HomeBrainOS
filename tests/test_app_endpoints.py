@@ -95,12 +95,12 @@ def test_root_renders_ollama_dashboard_webui(monkeypatch, tmp_path):
     assert "Technical details" in response.text
     assert "api/dashboard" in response.text
     assert 'id="dashActiveRooms"' in response.text
-    assert "Loading live states…" in response.text
+    assert "Read-only snapshot" in response.text
     assert 'id="dashActiveRoomNames"' in response.text
     assert 'id="roomGrid"' not in response.text
     assert 'id="hubInfoGrid"' not in response.text
     assert "hmcp_last_query" in response.text
-    assert "query.value=text" in response.text
+    assert "query.value='';syncCommandBar()" in response.text
     assert "document.execCommand('copy')" in response.text
     assert "Copy technical" in response.text
     assert "renderMessage" in response.text
@@ -129,7 +129,7 @@ def test_root_renders_ollama_dashboard_webui(monkeypatch, tmp_path):
     assert "■ Stop audio" in response.text
     assert "function stopAudio()" in response.text
     assert "function speakAnswer(" in response.text
-    assert "function startVoice(){stopAudio()" in response.text
+    assert "function startVoice(){\n  stopAudio()" in response.text
     assert "(?:IDs?|device IDs?)" in response.text
     assert ".replace(/=/g,' ')" in response.text
     assert "'$1 hours'" in response.text
