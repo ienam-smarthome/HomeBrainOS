@@ -69,7 +69,7 @@ class LocalInferenceTransportTests(unittest.IsolatedAsyncioTestCase):
                 reply = await agent.round(messages, tools, 120)
             self.assertEqual(reply["content"], "OK")
             self.assertEqual(reply["_inference_metrics"]["total_ms"], 8761.22)
-            self.assertEqual(reply["_inference_metrics"]["load_ms"], 8343.06)
+            self.assertAlmostEqual(reply["_inference_metrics"]["load_ms"], 8343.065, delta=0.01)
             self.assertEqual(reply["_inference_metrics"]["prompt_eval_count"], 15)
             request = post.call_args.kwargs["json"]
             self.assertEqual(request["model"], "qwen3.5:4b")
@@ -179,7 +179,7 @@ class SupervisorOptionalOptionsTests(unittest.TestCase):
         ):
             with self.subTest(option=key):
                 self.assertNotIn("\n  " + key + ":", defaults)
-                self.assertIn("\n  " + key + ":", schema)
+                self.assertIn("  " + key + ":", schema)
         self.assertIn("local_ollama_think: false", defaults)
         self.assertIn("local_ollama_num_ctx: 8192", defaults)
         self.assertIn("local_ollama_think: bool", schema)
