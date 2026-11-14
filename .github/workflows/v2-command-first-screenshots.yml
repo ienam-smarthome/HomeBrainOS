@@ -1,0 +1,37 @@
+name: HomeBrainOS v2 command-first UI screenshot fixtures
+
+on:
+  pull_request:
+    paths:
+      - 'hubitat-mcp-ai-v2/rootfs/app/ui.html'
+      - 'hubitat-mcp-ai-v2/rootfs/app/interaction.py'
+      - 'scripts/capture_v2_command_ui_screenshots.py'
+      - '.github/workflows/v2-command-first-screenshots.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install fixture-only browser tooling
+        run: |
+          python -m pip install playwright==1.56.0
+          python -m playwright install --with-deps chromium
+      - name: Capture V2 before/after light/dark desktop and 390 px mobile
+        run: python scripts/capture_v2_command_ui_screenshots.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: homebrain-v2-alpha81-ui-before-after-fictional
+          path: ui-screenshots-v2/*.png
+          if-no-files-found: error
+          retention-days: 14

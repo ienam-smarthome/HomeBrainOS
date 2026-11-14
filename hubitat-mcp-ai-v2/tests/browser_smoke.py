@@ -329,7 +329,9 @@ with sync_playwright() as p:
   assert page.locator("#copyStatus").get_attribute("role")=="status"
   assert "Answer copied" in page.locator("#copyStatus").inner_text()
   assert page.evaluate("window.__clipboardValue")==answer
-  page.locator("summary",has_text="Technical details").click()
+  # The original receipt JSON now sits inside the per-answer Evidence drawer.
+  page.locator("#evidenceSummary").click()
+  page.locator("summary",has_text="Full PRIVATE Technical JSON").click()
   page.locator("#copyTechnical").click()
   page.wait_for_function("document.querySelector('#copyTechnical').textContent === '✓ Copied!'")
   assert json.loads(page.evaluate("window.__clipboardValue"))["response"]["answer"]==answer
@@ -358,8 +360,7 @@ with sync_playwright() as p:
   page.wait_for_function("turns.length===2")
   assert len(requests[-1]["history"])==2
   assert requests[0]["conversation_id"]==requests[1]["conversation_id"]
-  page.locator("#conversationHistory summary").click()
-  assert page.locator("#turns").inner_text().count("Read-only fixture question")==1
+  assert page.locator("#olderExchanges").inner_text().count("Read-only fixture question")==1
   page.locator("#newConversation").click()
   page.locator("#question").fill("Fresh question")
   page.locator("#send").click()
@@ -367,11 +368,13 @@ with sync_playwright() as p:
   assert requests[-1]["history"]==[]
   assert requests[-1]["conversation_id"]!=requests[-2]["conversation_id"]
   assert resets==[requests[-2]["conversation_id"]]
-  # Browser microphone recognizer: auto-submit exactly one final transcript.
+  # Browser microphone recognizer: first tap starts, second tap sends.
+  # No hardware microphone, speech service or new native hub call is used.
   page.evaluate("""() => {
     window.__recognizers=[];
     window.SpeechRecognition=class {
       start(){window.__recognizers.push(this);}
+      stop(){this.onend?.();}
       abort(){this.onend?.();}
     };
     window.webkitSpeechRecognition=undefined;
@@ -383,22 +386,23 @@ with sync_playwright() as p:
     const recognizer=window.__recognizers.at(-1);
     const row=[{transcript:'How is the hallway temperature?'}];row.isFinal=true;
     recognizer.onresult({results:[row]});
-    recognizer.onend();
   }""")
+  page.locator("#speak").click()
   page.wait_for_function("turns.length===2")
   assert len(requests)==before_voice+1
   assert requests[-1]["question"]=="How is the hallway temperature?"
   assert page.locator("#question").input_value()==requests[-1]["question"]
   assert page.locator("#speak").get_attribute("aria-pressed")=="false"
-  # Stop listening cancels; it must not send a partial or phantom question.
+  # A tap-to-send with no new transcript cannot invent a question.
   before_cancel=len(requests)
+  page.locator("#question").fill("")
   page.locator("#speak").click()
   page.locator("#speak").click()
   assert len(requests)==before_cancel
-  assert "cancelled" in page.locator("#voiceStatus").inner_text().lower()
+  assert "voice stopped" in page.locator("#voiceStatus").inner_text().lower()
   page.evaluate("window.SpeechRecognition=undefined;window.webkitSpeechRecognition=undefined")
   page.locator("#speak").click()
-  assert "not supported" in page.locator("#voiceStatus").inner_text()
+  assert "Voice unavailable" in page.locator("#voiceStatus").inner_text()
   assert len(requests)==before_cancel
   page.locator("#diagnosticsTab").click()
   page.wait_for_function("document.querySelector('#source').textContent.startsWith('online')")
@@ -608,7 +612,19 @@ with sync_playwright() as p:
   assert page.locator("#ask").is_visible()
   assert "do not change anything" in page.locator("#question").input_value().lower()
   assert len(requests)==count_before, "Preparing an AI question must never submit it"
-  assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+  width_audit=page.evaluate("""() => ({
+    width:innerWidth,scrollWidth:document.documentElement.scrollWidth,
+    offenders:[...document.querySelectorAll('body *')].filter(node => {
+      const rect=node.getBoundingClientRect();
+      return rect.right>innerWidth+2 || rect.left < -2;
+    }).slice(0,18).map(node=>({
+      tag:node.tagName,id:node.id||null,
+      cls:typeof node.className==='string'?node.className.slice(0,80):'',
+      left:Math.round(node.getBoundingClientRect().left),
+      right:Math.round(node.getBoundingClientRect().right)
+    }))
+  })""")
+  assert width_audit["scrollWidth"] <= width_audit["width"],width_audit
   # Everyday UI: retired experiment controls are absent. Browser-side
   # study code is not required to load, and nothing should auto-run.
   for retired in ("#labMenu","#benchmarkTab","#autonomousTab","#reasoningTab",
@@ -616,7 +632,9 @@ with sync_playwright() as p:
    assert page.locator(retired).count()==0,retired
   assert page.locator("#askTab").is_visible()
   assert page.locator("#diagnosticsTab").is_visible()
+  page.locator("#statusPill").click()
   assert page.locator("#checkMonitor").is_visible()
+  page.locator("#statusPill").click()
   assert page.locator("#copyReview").is_visible()
   assert page.locator("#downloadTechnical").count()==1
   assert page.locator("#speak").is_visible()

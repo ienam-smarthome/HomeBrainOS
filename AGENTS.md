@@ -1,5 +1,10 @@
 # HomeBrainOS development agent instructions
 
+## V2 alpha.81 UI scope
+
+Command-first redesign is **V2-only** (`hubitat-mcp-ai-v2/`). Do not copy, revert, modify or depend on `hubitat-mcp-ai/` V1 as part of alpha.81. V2's session-bound `Interaction` is the authoritative request-UUID approval system; no V1 ConfirmedActionCoordinator is imported. No client prompt parser, deterministic device selector, answer rewriting, fabricated model-phase timing or simulated physical outcome. Original MCP receipts and source scope remain intact; approval previews are display-only redacted structured arguments, and edited chips require decline plus a fresh model proposal. [Release note](docs/HOMEBRAIN-V2-ALPHA81-COMMAND-FIRST-UI-20261114.md).
+
+
 ## V2 alpha.80 clock and executed-write error integrity (14 November 2026)
 
 The model receives a read-only client-clock arithmetic tool, never a client-selected timer, device or command. A client UTC instant with sourced IANA timezone is not an independently observed hub clock; dated/deferred native action reports require requested-versus-stored deadline comparison and independent post-write read labelling. Track the first reviewed-unsent proposal versus actual selected write arguments as private evidence, not a command gate. An HTTP 402/429 or other later model failure must preserve already-returned successful native write receipts and separate reads, with no automatic retry or claimed future outcome. The connected model keeps natural reasoning, target/command selection and approval requirements. Do not introduce paid-routing changes or household-specific aliases/patches. [Alpha.80 note](docs/HOMEBRAIN-V2-ALPHA80-TIME-GROUNDED-ACTIONS-20261114.md).

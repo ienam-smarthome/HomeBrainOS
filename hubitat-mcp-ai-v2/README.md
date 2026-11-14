@@ -1,5 +1,8 @@
 # Hubitat MCP AI v2 — native MCP client
 
+**Alpha.81 (14 November 2026) — command-first V2 interface.** The V2 UI itself now has sticky Ask/voice, newest-first answers, receipt drawers and real MCP work trace, a compact live overview / desktop rail, status popover and session-bound pending-action cards. The V2 `Interaction` flow approves native writes before dispatch; there is no V1 coordinator or UI code dependency, no fake dry-run outcome, no change to model routing. V1 is unchanged. [Release note](../docs/HOMEBRAIN-V2-ALPHA81-COMMAND-FIRST-UI-20261114.md).
+
+
 **Alpha.80 — time-grounded timed actions and executed-write error receipts.** The model can inspect a read-only `homebrain_read_clock` (client instant, sourced hub timezone and structured DST-aware target arithmetic) and source-labelled native pending deadlines. The action-outcome review asks the model to compare requested/stored instants; write-response snapshots are not independent post-write reads. Private Technical JSON preserves reviewed-versus-dispatched arguments, and post-write model failures preserve successful native write/read evidence without retry. No scheduler, device routing, prompt parser or paid-model change. [Development note](../docs/HOMEBRAIN-V2-ALPHA80-TIME-GROUNDED-ACTIONS-20261114.md).
 
 

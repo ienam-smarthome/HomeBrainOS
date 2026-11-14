@@ -240,20 +240,158 @@ button{transition:border-color .15s ease,background-color .15s ease}button:hover
 .eval-review-case{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .eval-review-summary{white-space:pre-wrap;line-height:1.5;font-size:13px;color:var(--muted);margin:12px 0}
 @media(max-width:680px){.eval-review-grid{grid-template-columns:1fr}.eval-claim-item{grid-template-columns:1fr}}
+
+/* alpha.81 command-first UI (V2 only). Existing diagnostics and evaluation are intact. */
+:root{--hb-bg:#0b1421;--hb-panel:#142136;--hb-edge:#30445e;--hb-text:#eff5ff;--hb-sub:#b5c6dd;--hb-accent:#83bfff;--hb-ink:#071c32;--hb-tile:#1a2b43}
+body{background:var(--hb-bg);color:var(--hb-text)}
+header{position:relative;z-index:25}.header-status{position:relative}
+#statusPill{background:var(--hb-panel);border:1px solid var(--hb-edge);border-radius:999px;padding:0;margin:0;font-size:12px;min-height:39px}
+#statusPill #state{display:inline-flex;align-items:center;border:0;background:transparent;color:var(--hb-text);padding:8px 12px}
+.status-popover{position:absolute;top:calc(100% + 8px);right:0;width:min(345px,calc(100vw - 26px));padding:16px;background:var(--hb-panel);border:1px solid var(--hb-edge);border-radius:13px;box-shadow:0 18px 40px #0007;color:var(--hb-text);z-index:45}
+.status-popover[hidden]{display:none}.status-popover p{font-size:12px;color:var(--hb-sub);line-height:1.55;overflow-wrap:anywhere}
+#checkConnection{font-size:12px;padding:8px;margin-top:4px}
+main{max-width:1280px}
+.ask-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;min-width:0}
+.ask-main{min-width:0;display:flex;flex-direction:column;gap:12px;position:sticky;top:0;z-index:19;align-self:start;grid-column:1;grid-row:1}
+#ask .compose-card{position:relative;z-index:1;margin:0;padding:13px 15px;background:var(--hb-bg);border:1px solid var(--hb-edge);box-shadow:0 7px 16px #0002;border-radius:16px}
+#ask .compose-heading{margin:0 0 5px;min-height:20px}
+#ask .compose-subtitle{margin:0;font-size:12px;color:var(--hb-sub)}
+#newConversation{padding:5px 8px;font-size:12px;min-height:29px}
+#ask .compose-card .session-note{margin:2px 0;font-size:11px}
+#ask .monitor-row[hidden]{display:none}
+.command-form{display:flex;gap:10px;align-items:center;background:var(--hb-panel);border:1.5px solid var(--hb-edge);border-radius:16px;padding:9px}
+.command-form:focus-within{border-color:var(--hb-accent)}
+#ask #question{background:transparent;flex:1;min-width:0;width:auto;height:48px;min-height:45px;max-height:138px;border:0;box-shadow:none;outline:0;padding:8px 0;resize:none;font-size:16px;color:var(--hb-text);line-height:1.45}
+#ask #question::placeholder{color:var(--hb-sub)}
+.mic-round{flex:0 0 51px;width:51px;height:51px;border-radius:50%;border:0;background:#286fac;color:#fff;font-size:20px;padding:0;touch-action:none;user-select:none;-webkit-user-select:none}
+.mic-round.listening{background:#b12434;color:#fff;box-shadow:0 0 0 3px #b1243433}
+#ask #send{width:auto;flex:0 0 auto;border:0;padding:12px 17px;background:var(--hb-tile);color:var(--hb-sub);opacity:.7}
+#ask #send.is-ready:not(:disabled){background:var(--hb-accent);color:var(--hb-ink);opacity:1}
+.command-footer{display:flex;gap:7px 13px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin:7px 4px 0}
+.command-footer .voice-status,.command-footer .voice-privacy,.command-footer .voice-toggle{font-size:11.5px;line-height:1.4;color:var(--hb-sub);min-width:0;overflow-wrap:anywhere}
+.command-footer .voice-status{flex:1 1 180px}
+.command-footer .voice-privacy{flex:1 1 160px}
+.command-footer .voice-toggle{flex:0 1 auto}
+.command-footer .voice-toggle input{vertical-align:middle}
+.answer-feed{display:flex;flex-direction:column;gap:12px;min-width:0;grid-column:1;grid-row:3}
+.feed-empty{padding:14px 2px;font-size:20px;font-weight:600;margin:0;color:var(--hb-text)}
+.feed-empty span{display:block;font-size:14px;font-weight:400;margin-top:5px;color:var(--hb-sub)}
+#ask #currentExchange[hidden],#ask #activityCard[hidden]{display:none}
+#ask #currentExchange,#ask #activityCard{margin:0;background:var(--hb-panel);border:1px solid var(--hb-edge);border-radius:15px;padding:15px}
+#ask #requestQuestion:not([hidden]){font-size:13px;font-weight:650;color:var(--hb-sub);margin:0 0 11px}
+#ask #currentExchange .answer-heading{justify-content:flex-end;gap:7px;flex-wrap:wrap}
+#ask #currentExchange .answer-heading button{font-size:12px;padding:7px 10px}
+#ask #answer{color:var(--hb-text);min-height:0}
+#ask .answer-meta{border-color:var(--hb-edge)}
+#ask #requestSummary,#ask #responseTime{color:var(--hb-sub)}
+.work-steps{list-style:none;padding:0 0 0 13px;margin:9px 0 10px 8px;border-left:2px solid var(--hb-edge)}
+.work-steps li{position:relative;margin:4px 0;padding:4px 0;font-size:12px;color:var(--hb-sub)}
+.work-steps li:before{content:'';position:absolute;left:-18px;top:10px;width:8px;height:8px;border-radius:50%;background:var(--hb-accent)}
+.work-steps strong{color:var(--hb-text)}
+.work-steps small{margin-left:8px;font-variant-numeric:tabular-nums}
+#activityCard .activity-raw{display:none}
+#completedTrace summary,#ask .evidence-panel summary{font-size:12px;color:var(--hb-sub)}
+.evidence-receipt{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 2px;border-bottom:1px solid var(--hb-edge);font-size:12px;overflow-wrap:anywhere}
+.evidence-receipt small{color:var(--hb-sub)}
+.private-warning{color:var(--hb-sub);font-size:12px;line-height:1.5}
+.action-card{border:1px solid var(--hb-edge);border-left:4px solid var(--hb-accent);background:var(--hb-tile);padding:13px;border-radius:12px;margin-top:10px}
+.action-card.sensitive_write{border-left-color:#f6ba4e}.action-card.destructive_write{border-left-color:#fa7d86}
+.action-card h3{color:var(--hb-text);font-size:15px;margin:0 0 7px}
+.action-note{color:var(--hb-sub);font-size:12px;margin:6px 0}
+.action-chips,.action-buttons{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:9px 0}
+.action-chip{border:1px solid var(--hb-edge);border-radius:9px;padding:6px 8px;background:var(--hb-panel);color:var(--hb-text);font-size:12px}
+.action-chip input{width:135px;max-width:100%;padding:5px;margin-left:5px;border-radius:6px;font-size:12px;background:var(--hb-bg);color:var(--hb-text)}
+.action-buttons button{flex:0 0 auto;font-size:12px;padding:8px 12px}
+.older-exchange{padding:14px;background:var(--hb-panel);border:1px solid var(--hb-edge);border-radius:14px;margin:11px 0;opacity:.72;overflow-wrap:anywhere}
+.older-exchange .exchange-query{font-size:13px;color:var(--hb-sub);margin:0 0 12px}
+.older-exchange .exchange-actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
+.older-exchange .exchange-actions button{font-size:12px;padding:7px 9px}
+#conversationHistory{display:none!important}
+.overview-aside{grid-row:2;grid-column:1;min-width:0}.overview-shell{margin:0;padding:10px 12px;background:var(--hb-panel);border:1px solid var(--hb-edge);box-shadow:none}
+.overview-head{margin:0 0 6px}.overview-head h2{font-size:12px;color:var(--hb-sub)}
+.overview-head p{display:none}#refreshOverview{font-size:11px;padding:5px 8px}
+.overview-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}
+.overview-tile{font:inherit;text-align:left;cursor:pointer;background:transparent;color:var(--hb-text);border:0;padding:7px 5px;box-shadow:none;min-width:0}
+.overview-tile span{font-size:11px;color:var(--hb-sub)}
+.overview-tile strong{font-size:22px;color:var(--hb-text)}
+.overview-tile small{font-size:10px;color:var(--hb-sub)}
+.overview-tile .overview-names{display:none}
+.overview-footer{margin:5px 0 0;gap:6px}
+.overview-footer small,.overview-limits summary{font-size:10.5px;color:var(--hb-sub)}
+@media(min-width:1000px){.ask-grid{grid-template-columns:minmax(0,1fr) 205px;column-gap:22px;align-items:start}
+.ask-main{grid-column:1;grid-row:1}.answer-feed{grid-column:1;grid-row:2}.overview-aside{grid-column:2;grid-row:1 / span 2;position:sticky;top:14px}
+.overview-grid{grid-template-columns:1fr;gap:6px}
+.overview-tile{min-height:65px}.overview-tile strong{font-size:25px}
+.overview-head{flex-wrap:wrap}#refreshOverview{margin:0}
+}
+@media(max-width:650px){main{padding:11px}.ask-grid{gap:9px}
+#ask .compose-card{padding:10px 11px}
+.command-form{gap:7px;padding:7px}.mic-round{flex-basis:45px;width:45px;height:45px}
+#ask #send{padding:11px 13px;min-width:58px}
+.overview-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.overview-tile{padding:5px 2px}
+.overview-tile span{font-size:10px}.overview-tile strong{font-size:19px}
+#ask #currentExchange .answer-heading button{flex:1 1 auto}
+}
+@media(max-width:375px){.command-footer .voice-privacy{flex-basis:100%}}
+@media(prefers-color-scheme:light){
+:root{color-scheme:light;--hb-bg:#f2f5fa;--hb-panel:#fff;--hb-edge:#c9d4e4;--hb-text:#182640;--hb-sub:#53637c;--hb-accent:#136aca;--hb-ink:#fff;--hb-tile:#edf2f9}
+body{background:var(--hb-bg);color:var(--hb-text)}
+header{background:#fff;border-bottom:1px solid var(--hb-edge)}
+.brand h1,.brand-mark{color:var(--hb-text)}.brand-copy small{color:var(--hb-sub)}
+#ask .card,#ask .overview-shell,.app-tabs,.status-popover{background:var(--hb-panel);color:var(--hb-text);border-color:var(--hb-edge);box-shadow:none}
+.app-tabs button{color:var(--hb-sub)}.app-tabs button.active{background:var(--hb-accent);color:#fff}
+button,textarea,select{color:var(--hb-text);border-color:var(--hb-edge);background:var(--hb-panel)}
+#ask #currentExchange .answer-heading button{color:var(--hb-text)}
+#ask #answer h2,#ask #answer h3{color:#145caa}
+#ask .answer-table-wrap th{background:#e2eaf6;color:var(--hb-text)}
+#ask .answer-table-wrap td{color:var(--hb-text)}
+#ask .answer-timestamp{background:#d9e8fc;color:#164b85;border-color:#90afe0}
+#ask code{background:#e7edf7;color:var(--hb-text)}
+#ask pre{background:#edf2f9;color:var(--hb-text)}
+#ask .overview-shell .overview-limits p{color:var(--hb-sub)}
+}
+button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-visible,.overview-tile:focus-visible{outline:3px solid var(--hb-accent);outline-offset:2px}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
+
 </style></head>
 <body>
-<header><div class="header-inner"><div class="brand"><div class="brand-mark" aria-hidden="true">⌘</div><div class="brand-copy"><h1>Hubitat MCP AI <span class="brand-v">v2</span></h1><small>HomeBrainOS · Smart home assistant</small></div></div><div class="header-status"><small id="state">Checking configuration…</small><button id="reloadUI" hidden onclick="reloadInterface()">Reload interface</button></div></div></header>
+<header><div class="header-inner"><div class="brand"><div class="brand-mark" aria-hidden="true">⌘</div><div class="brand-copy"><h1>Hubitat MCP AI <span class="brand-v">v2</span></h1><small>HomeBrainOS · Smart home assistant</small></div></div><div class="header-status"><button type="button" id="statusPill" aria-controls="statusPanel" aria-expanded="false" onclick="toggleStatusPill()"><span id="state">Checking configuration…</span></button><div id="statusPanel" class="status-popover" hidden><strong>V2 connection details</strong><p id="statusMeta">Model and MCP status not yet loaded.</p><div id="statusMonitor"></div><button id="checkConnection" type="button" onclick="checkMonitorSource()">Check Hub & Device Monitor</button></div><button id="reloadUI" hidden onclick="reloadInterface()">Reload interface</button></div></div></header>
 <main>
 <nav class="app-tabs" aria-label="Main navigation"><button id="askTab" class="active" onclick="tab('ask')">Ask / Chat</button><button id="diagnosticsTab" onclick="tab('diagnostics')">Hub Diagnostics</button><button id="evaluationTab" onclick="tab('evaluation')">AI Evaluation</button></nav>
-<section id="ask" class="active">
-<div class="overview-shell" aria-label="Current hub overview">
+<section id="ask" class="active"><div class="ask-grid"><div class="ask-main">
+<div class="card compose-card" id="commandBar"><div class="row compose-heading"><div><h2 class="sr-only">Ask HomeBrain</h2><p class="compose-subtitle">Ask or command · live MCP evidence, not a simulated assistant</p></div><button id="newConversation" class="right" onclick="newConversation()">New chat</button></div><details class="session-note evidence-disclosure"><summary>Conversation and privacy</summary><p>Conversation stays in this open page only. Follow-ups include an index of earlier sources and redacted excerpts. The AI can inspect older receipts in chunks when needed. Live-state questions and new actions still require fresh verification. Evidence is memory-only.</p></details>
+<div class="row monitor-row" hidden><span class="monitor-indicator" aria-hidden="true"></span><small id="monitorSourceStatus" class="muted" role="status" aria-live="polite">Saved history · checking connection…</small><button type="button" onclick="checkMonitorSource()" id="checkMonitor" title="One read-only status request; no device changes">Check connection</button></div>
+<form class="command-form" id="commandForm" onsubmit="event.preventDefault();submitAsk()">
+ <button id="speak" type="button" class="mic-round" aria-label="Start listening" aria-pressed="false" title="Tap to listen, tap again to send; hold to speak">🎤</button>
+ <label class="sr-only" for="question">Ask HomeBrain a question</label>
+ <textarea id="question" aria-label="Your question" placeholder="Ask HomeBrain…" rows="2" spellcheck="true"></textarea>
+ <button id="send" type="submit" class="primary" disabled>Ask</button>
+</form>
+<div class="command-footer"><span id="voiceStatus" class="voice-status" role="status" aria-live="polite">Enter to send · Shift+Enter for new line · / to focus</span>
+ <span class="voice-privacy">Voice input may use a browser speech service.</span>
+ <label class="voice-toggle" for="readAnswers"><input id="readAnswers" type="checkbox" onchange="toggleAutoRead(this.checked)">Read replies aloud</label>
+</div>
+</div>
+</div><div class="answer-feed" id="answerFeed" aria-label="Newest answers first" aria-live="polite"><p class="feed-empty" id="feedEmpty">Ask HomeBrain about your home. <span>The latest answer will appear here.</span></p>
+<div class="card live-activity" id="activityCard" hidden><h2>Active operation <small>actual native MCP activity</small></h2><pre id="activity" class="activity-raw"></pre><ol id="activityTrace" class="work-steps"></ol>
+<div id="approval" class="action-card" hidden><h3 id="approvalTitle">Action awaiting approval</h3><p id="approvalSummary" class="action-note">Review this native operation before approving.</p><div id="approvalChips" class="action-chips"></div><p id="approvalKind" role="status"></p>
+<div class="action-buttons"><button id="approve" class="primary" onclick="decide(true)">Approve</button><button id="editApproval" type="button" onclick="editProposedAction()">Edit</button><button id="dryRunApproval" type="button" onclick="previewProposedAction()">Dry-run</button><button id="decline" onclick="decide(false)">Dismiss</button></div><p id="approvalError" role="alert"></p></div></div>
+<article class="card answer-card" id="currentExchange" hidden>
+<div class="row answer-heading"><h2 class="sr-only">Latest answer</h2><span id="copyStatus" class="copy-status right" role="status" aria-live="polite" aria-atomic="true"></span><button id="readAnswer" disabled type="button" onclick="toggleAnswerAudio()">🔊 Read answer</button><button id="copyAnswer" disabled onclick="copyResult('answer')">Copy answer</button><button id="copyReview" disabled onclick="copyResult('review')">Copy for review</button></div>
+<div class="answer-meta"><p id="requestSummary" role="status" aria-live="polite">Your answer will appear here.</p><p id="responseTime" class="muted" aria-live="polite">Response time: —</p></div><p id="requestQuestion" hidden></p>
+<div id="answer" class="muted"></div><details class="work-trace-panel" id="completedTrace"><summary>Observed work trace</summary><ol id="completedTraceList" class="work-steps"></ol></details>
+<details class="evidence-panel"><summary id="evidenceSummary">Evidence · 0 calls</summary><div id="evidenceRows"></div><p class="private-warning">PRIVATE source evidence may contain device names, IDs, timestamps and household data. Inspect it before sharing.</p>
+<button id="copyTechnical" disabled onclick="copyResult('technical')">Copy technical details</button>
+<button id="downloadTechnical" disabled onclick="downloadTechnical()">Download PRIVATE JSON</button><details><summary>Full PRIVATE Technical JSON</summary><pre id="receipts">No tool calls yet.</pre></details></details><p class="live-review-note">For live review, ask normally, then Copy for review and paste into your review chat. This includes private Technical JSON; check before sharing. Nothing is uploaded automatically.</p>
+<details class="evidence-panel"><summary>Original answer text</summary><pre id="rawAnswer">No answer yet.</pre></details></article><div id="olderExchanges"></div></div><details class="card" id="conversationHistory" hidden><summary>Earlier in this conversation</summary><div id="turns"></div></details>
+<aside class="overview-aside" aria-label="Read-only home overview"><div class="overview-shell" aria-label="Current hub overview">
  <div class="row overview-head"><div><h2>Home overview</h2><p>Observed native device states · read-only snapshot</p></div>
   <button id="refreshOverview" type="button" onclick="refreshOverview()" title="One read-only native Hubitat device inventory request; no commands or model calls">↻ Refresh overview</button></div>
  <div class="overview-grid">
-  <div class="overview-tile"><span>Lights ON</span><strong id="overviewLights" aria-live="polite">—</strong><small id="overviewLightsScope">Waiting for source</small><div class="overview-names" id="overviewLightsNames" aria-label="Names of lights reporting on"></div></div>
-  <div class="overview-tile"><span>Motion active</span><strong id="overviewMotion" aria-live="polite">—</strong><small id="overviewMotionScope">Waiting for source</small><div class="overview-names" id="overviewMotionNames" aria-label="Names of active motion sensors"></div></div>
-  <div class="overview-tile"><span>Low battery · below 20%</span><strong id="overviewBattery" aria-live="polite">—</strong><small id="overviewBatteryScope">Waiting for source</small><div class="overview-names" id="overviewBatteryNames" aria-label="Names and percentages of low battery devices"></div></div>
-  <div class="overview-tile"><span>Devices inspected</span><strong id="overviewDevices" aria-live="polite">—</strong><small id="overviewDevicesScope">Waiting for source</small></div>
+  <button type="button" class="overview-tile" onclick="askOverview(this)" data-question="Which lights are on right now? Verify with live read-only Hubitat evidence." aria-label="Ask which lights are on"><span>Lights ON</span><strong id="overviewLights" aria-live="polite">—</strong><small id="overviewLightsScope">Waiting for source</small><div class="overview-names" id="overviewLightsNames" aria-label="Names of lights reporting on"></div></button>
+  <button type="button" class="overview-tile" onclick="askOverview(this)" data-question="Which motion sensors currently report active? Verify with fresh Hubitat evidence." aria-label="Ask which motion sensors are active"><span>Motion active</span><strong id="overviewMotion" aria-live="polite">—</strong><small id="overviewMotionScope">Waiting for source</small><div class="overview-names" id="overviewMotionNames" aria-label="Names of active motion sensors"></div></button>
+  <button type="button" class="overview-tile" onclick="askOverview(this)" data-question="Which battery devices report below 20 percent? Check current values and gaps." aria-label="Ask which batteries are low"><span>Low battery · below 20%</span><strong id="overviewBattery" aria-live="polite">—</strong><small id="overviewBatteryScope">Waiting for source</small><div class="overview-names" id="overviewBatteryNames" aria-label="Names and percentages of low battery devices"></div></button>
+  <button type="button" class="overview-tile" onclick="askOverview(this)" data-question="How many Hubitat devices were inspected, and is the read-only inventory coverage complete?" aria-label="Ask about inventory coverage"><span>Devices inspected</span><strong id="overviewDevices" aria-live="polite">—</strong><small id="overviewDevicesScope">Waiting for source</small></button>
  </div>
  <div class="overview-footer">
   <small id="overviewStatus" role="status" aria-live="polite">Loading read-only device overview…</small>
@@ -261,28 +399,7 @@ button{transition:border-color .15s ease,background-color .15s ease}button:hover
  </div>
  <details class="overview-limits"><summary>About these counts</summary><p>Counts cover only returned devices with a reported matching attribute. Lights ON requires light-identifying names, device types or colour capabilities: plugs and uncertain ON switches are not silently counted as lights. Member lists reflect the same snapshot, not a live feed. Missing or stale attributes are unknown, not proven OFF, inactive or healthy. This is not V1's scheduled system check.</p></details>
 </div>
-<div class="card compose-card"><div class="row compose-heading"><div><h2>Ask HomeBrain</h2><p class="compose-subtitle">Ask about a device, automation or saved history.</p></div><button id="newConversation" class="right" onclick="newConversation()">New chat</button></div><details class="session-note evidence-disclosure"><summary>Conversation and privacy</summary><p>Conversation stays in this open page only. Follow-ups include an index of earlier sources and redacted excerpts. The AI can inspect older receipts in chunks when needed. Live-state questions and new actions still require fresh verification. Evidence is memory-only.</p></details>
-<div class="row monitor-row"><span class="monitor-indicator" aria-hidden="true"></span><small id="monitorSourceStatus" class="muted" role="status" aria-live="polite">Saved history · checking connection…</small><button type="button" onclick="checkMonitorSource()" id="checkMonitor" title="One read-only status request; no device changes">Check connection</button></div>
-<label class="sr-only" for="question">Ask HomeBrain a question</label><textarea id="question" aria-label="Your question" placeholder="Ask a question, investigate an event, or compare device histories…" spellcheck="true"></textarea>
-<div class="row voice-controls compose-actions" role="group" aria-label="Voice controls">
- <button id="speak" type="button" onclick="startVoice()" aria-pressed="false">🎤 Speak</button>
- <label class="voice-toggle" for="readAnswers"><input id="readAnswers" type="checkbox" onchange="toggleAutoRead(this.checked)">Read replies aloud</label>
- <span id="voiceStatus" class="voice-status" role="status" aria-live="polite">Voice input may use a browser speech service.</span>
-<button id="send" class="primary right" onclick="submitAsk()">Ask <span aria-hidden="true">↗</span></button>
-</div>
-</div>
-<details class="card" id="conversationHistory" hidden><summary>Earlier in this conversation</summary><div id="turns"></div></details><div class="card" id="activityCard" hidden><h2>Current operation</h2><pre id="activity"></pre>
-<div id="approval" hidden><p>Review this operation and its effects. Approve only if you intend this exact change.</p><p id="approvalKind" role="status"></p>
-<button id="approve" class="primary" onclick="decide(true)">Approve operation</button>
-<button id="decline" onclick="decide(false)">Decline</button><p id="approvalError" role="alert"></p></div></div>
-<div class="card answer-card">
-<div class="row answer-heading"><h2>Answer</h2><span id="copyStatus" class="copy-status right" role="status" aria-live="polite" aria-atomic="true"></span><button id="readAnswer" disabled type="button" onclick="toggleAnswerAudio()">🔊 Read answer</button><button id="copyAnswer" disabled onclick="copyResult('answer')">Copy answer</button><button id="copyReview" disabled onclick="copyResult('review')">Copy for review</button></div>
-<div class="answer-meta"><p id="requestSummary" role="status" aria-live="polite">Your answer will appear here.</p><p id="responseTime" class="muted" aria-live="polite">Response time: —</p></div><p id="requestQuestion" hidden></p>
-<div id="answer" class="muted">Your response will appear here.</div>
-<details class="evidence-panel"><summary>Evidence & technical details</summary>
-<button id="copyTechnical" disabled onclick="copyResult('technical')">Copy technical details</button>
-<button id="downloadTechnical" disabled onclick="downloadTechnical()">Download PRIVATE JSON</button><pre id="receipts">No tool calls yet.</pre></details><p class="live-review-note">For live review, ask normally, then Copy for review and paste into your review chat. This includes private Technical JSON; check before sharing. Nothing is uploaded automatically.</p>
-<details class="evidence-panel"><summary>Original answer text</summary><pre id="rawAnswer">No answer yet.</pre></details></div></section>
+</aside></div></section>
 <section id="diagnostics">
 <div class="row"><h2>Hub Diagnostics — external recorder</h2><button class="right" onclick="refreshDiagnostics()">Refresh</button></div>
 <p class="muted">Independent SQLite observations outside Hubitat. Probe losses are not necessarily reboots. CPU shows five-minute load equivalent, not measured utilisation.</p>
@@ -385,7 +502,7 @@ button{transition:border-color .15s ease,background-color .15s ease}button:hover
 </section>
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.80";
+const UI_VERSION="2.0.0-alpha.81";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
@@ -651,7 +768,11 @@ async function loadStatus(){
       : 'Hub & Device Monitor: not configured';
   ttsInfo=d.tts||{enabled:false};
   setRecorderOverview(d.recorder);
-  byId('state').textContent=d.version+' · '+(d.configured?'Ready · '+d.model:(d.configuration_error||'Configure MCP + model'));
+  byId('state').textContent=d.configured?'● Connected · '+d.version:'● Setup required · '+d.version;
+  byId('statusMeta').textContent='Version: '+d.version+' · Model: '+(d.model||'unknown')
+   +' · MCP: '+(d.configured?'configured (connection not independently probed)':'not ready')
+   +' · Hub: '+(d.hub||'name unavailable from status source')
+   +' · Devices: '+byId('overviewDevices').textContent;
   return true;
  }catch(e){byId('state').textContent=String(e.message);return false;}
 }
@@ -773,16 +894,178 @@ async function checkMonitorSource(){
  }finally{btn.disabled=false;}
 }
 
+// Command-first V2 is a presentation of original receipts, not a planner.
+let observedActivitySteps=[],activityFingerprint='',requestStartedAt=0;
+function syncCommandBar(){
+ const q=byId('question'),button=byId('send');
+ const ready=!!q.value.trim()&&!activeRequest;
+ button.disabled=!ready;button.classList.toggle('is-ready',ready);
+ if(q.style){q.style.height='auto';q.style.height=Math.min(138,Math.max(47,q.scrollHeight||47))+'px';}
+}
+function toggleStatusPill(){
+ const panel=byId('statusPanel');panel.hidden=!panel.hidden;
+ byId('statusPill').setAttribute('aria-expanded',String(!panel.hidden));
+ if(!panel.hidden){
+  const meta=byId('statusMeta');
+  meta.textContent=meta.textContent.replace(/ · Devices: [^·]*$/, ' · Devices: '+byId('overviewDevices').textContent);
+  const row=byId('checkMonitor').parentElement;
+  if(row){row.hidden=false;byId('statusMonitor').appendChild(row);}
+ }
+}
+function askOverview(tile){
+ if(byId('send').disabled&&activeRequest)return;
+ const question=tile?.dataset?.question;
+ if(typeof question!=='string'||!question)return;
+ byId('question').value=question;syncCommandBar();byId('question').focus();
+}
+function workStep(target,text,timing){
+ const list=byId(target),item=document.createElement('li');
+ const label=document.createElement('strong');label.textContent=text;item.appendChild(label);
+ if(timing!==null&&timing!==undefined){
+  const clock=document.createElement('small');clock.textContent=timing;item.appendChild(clock);
+ }
+ list.appendChild(item);
+}
+function observedActivity(current){
+ if(!current||!activeRequest)return;
+ const tool=current.name;
+ if(typeof tool!=='string'||!tool)return;
+ const elapsed=Math.max(0,Math.round(performance.now()-requestStartedAt));
+ const key=tool+' '+JSON.stringify(current.arguments||{});
+ if(activityFingerprint===key)return;
+ activityFingerprint=key;
+ const stage={label:'MCP selected · '+tool,observed_after_ms:elapsed};
+ observedActivitySteps.push(stage);if(observedActivitySteps.length>50)observedActivitySteps.shift();
+ workStep('activityTrace',stage.label,'observed +'+(elapsed/1000).toFixed(1)+'s');
+}
+function evidenceRows(response){
+ const entries=Array.isArray(response?.tool_calls)?response.tool_calls:[];
+ const host=byId('evidenceRows');host.replaceChildren();
+ byId('evidenceSummary').textContent='Evidence · '+entries.length+' calls';
+ for(const item of entries){
+  if(!item||typeof item!=='object')continue;
+  const line=document.createElement('div');line.className='evidence-receipt';
+  const name=document.createElement('span');name.textContent=String(item.name||'MCP tool');
+  const outcome=document.createElement('small');
+  outcome.textContent=(item.success===true?'success':item.success===false?'failed':'status not attested')
+    +' · live-claim support '+(item.supports_live_claim===true?'reported':item.supports_live_claim===false?'not supported':'not attested');
+  line.append(name,outcome);host.appendChild(line);
+ }
+}
+function completedWork(response){
+ const host=byId('completedTraceList');host.replaceChildren();
+ const steps=observedActivitySteps;
+ for(const step of steps)workStep('completedTraceList',step.label,'observed +'+(step.observed_after_ms/1000).toFixed(1)+'s');
+ const stages=Array.isArray(response?.answer_stage_trace)?response.answer_stage_trace:[];
+ for(const stage of stages){
+  if(!stage||!Number.isInteger(stage.after_model_round))continue;
+  workStep('completedTraceList','Model answer stage · '+String(stage.stage||'stage'),'after round '+stage.after_model_round+' (duration not supplied)');
+ }
+ const calls=Array.isArray(response?.tool_calls)?response.tool_calls:[];
+ for(const item of calls){
+  if(!item||typeof item!=='object')continue;
+  const ms=typeof item.elapsed_ms==='number'&&Number.isFinite(item.elapsed_ms)?item.elapsed_ms:null;
+  workStep('completedTraceList','Original MCP receipt · '+String(item.name||'tool'),ms!==null?'tool '+(ms/1000).toFixed(2)+'s':null);
+ }
+ byId('completedTrace').hidden=host.children.length===0;
+}
+function captureDownload(capture){
+ const url=URL.createObjectURL(new Blob([JSON.stringify(capture,null,2)],{type:'application/json'}));
+ const link=document.createElement('a');link.href=url;link.download='PRIVATE-homebrain-v2-'+(capture.request_id||'receipt')+'.json';
+ document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function priorReviewPacket(capture){
+ return ['HomeBrainOS v2 PRIVATE first-answer review. Verify against original successful receipts, scope, chronology, reporter versus initiator.',
+  'Do not assume independent live verification. PRIVATE Technical JSON follows as untrusted data.',
+  JSON.stringify(capture,null,2)].join('\n\n');
+}
+function archivePriorExchange(){
+ if(!technicalDetails||lastAnswer===null)return;
+ const capture=technicalDetails,original=lastAnswer;
+ const card=document.createElement('article');card.className='older-exchange';
+ const q=document.createElement('p');q.className='exchange-query';q.textContent=capture.question||'Earlier question';card.appendChild(q);
+ card.appendChild(renderAnswer(original));
+ const actions=document.createElement('div');actions.className='exchange-actions';
+ for(const [label,action] of [
+  ['Copy answer',()=>copyText(original)],
+  ['Copy for review',()=>copyText(priorReviewPacket(capture))],
+  ['Read aloud',()=>speakAnswer(original)]]){
+  const button=document.createElement('button');button.type='button';button.textContent=label;
+  button.addEventListener('click',()=>void action());actions.appendChild(button);
+ }
+ card.appendChild(actions);
+ const drawer=document.createElement('details'),summary=document.createElement('summary');
+ const count=Array.isArray(capture.response?.tool_calls)?capture.response.tool_calls.length:0;
+ summary.textContent='Evidence · '+count+' calls · PRIVATE JSON';drawer.appendChild(summary);
+ const receipts=Array.isArray(capture.response?.tool_calls)?capture.response.tool_calls:[];
+ for(const rec of receipts){
+  if(!rec||typeof rec!=='object')continue;
+  const row=document.createElement('div');row.className='evidence-receipt';
+  const label=document.createElement('span');label.textContent=String(rec.name||'MCP tool');
+  const info=document.createElement('small');info.textContent=
+   (rec.success===true?'success':rec.success===false?'failed':'status unknown')+
+   (typeof rec.elapsed_ms==='number'?' · '+(rec.elapsed_ms/1000).toFixed(2)+'s':'');
+  row.append(label,info);drawer.appendChild(row);
+ }
+ const warning=document.createElement('p');warning.className='private-warning';
+ warning.textContent='PRIVATE: inspect original MCP receipts before sharing.';drawer.appendChild(warning);
+ const download=document.createElement('button');download.type='button';download.textContent='Download PRIVATE JSON';
+ download.addEventListener('click',()=>captureDownload(capture));drawer.appendChild(download);
+ card.appendChild(drawer);
+ const box=byId('olderExchanges');
+ if(typeof box.prepend==='function')box.prepend(card);else box.appendChild(card);
+ while(box.children.length>11&&box.lastChild?.remove)box.lastChild.remove();
+}
+function previewPendingAction(pending){
+ const card=byId('approval'),preview=pending?.preview,kind=pending?.effect_class||'sensitive_write';
+ card.classList.remove('routine_write','sensitive_write','destructive_write');card.classList.add(kind);
+ byId('approvalTitle').textContent=kind==='destructive_write'?'Destructive write · approval required':
+  kind==='sensitive_write'?'Sensitive write · approval required':'Routine write · approval required';
+ byId('approvalSummary').textContent=preview?
+   String(preview.tool||pending.name)+' · '+String(preview.verb||'native operation')+' · proposed, not executed':
+   'Structured native action pending. Verify the exact source arguments before approval.';
+ const host=byId('approvalChips');host.replaceChildren();
+ for(const [field,value] of Object.entries(preview?.fields||{})){
+  if(!['device','time','days'].includes(field)||typeof value!=='string')continue;
+  const chip=document.createElement('label');chip.className='action-chip';chip.append(field+' ');
+  const input=document.createElement('input');input.value=value;input.maxLength=90;
+  input.setAttribute('data-field',field);input.setAttribute('aria-label','Proposed '+field);
+  input.addEventListener('input',()=>{
+   byId('approve').disabled=true;
+   byId('approvalSummary').textContent='Edited proposal: the original cannot be approved. Use Edit to dismiss and request a new proposal.';
+  });chip.appendChild(input);host.appendChild(chip);
+ }
+}
+function previewProposedAction(){
+ byId('approvalError').textContent='Preview only. No native dry-run was submitted and no future outcome is simulated.';
+}
+async function editProposedAction(){
+ if(!pendingApproval)return;
+ const original=byId('question').value;
+ const fields=Array.from(byId('approvalChips').children||[]).map(chip=>{
+  const input=chip.querySelector?.('input');return input?.dataset?.field&&input.value?
+   input.dataset.field+': '+input.value:'';
+ }).filter(Boolean);
+ await decide(false);
+ byId('question').value=original+(fields.length?'\nRequested revised settings: '+fields.join('; '):'\nPlease revise the previous proposal.');
+ syncCommandBar();byId('question').focus();
+ byId('approvalError').textContent='Previous proposal declined. Press Ask for a fresh model-selected action.';
+}
 async function pollActivity(){
  if(!activeRequest)return;
  const requestId=activeRequest;
  try{
   const d=await readJson('api/activity/'+requestId);
   if(activeRequest!==requestId)return;
-  byId('activityCard').hidden=!d.current;
+  byId('activityCard').hidden=!(d.current||d.pending);
   byId('activity').textContent=d.current?JSON.stringify(d.current,null,2):'';
+  observedActivity(d.current);
+  const previousId=pendingApproval?.id;
   pendingApproval=d.pending;
   byId('approval').hidden=!pendingApproval;
+  if(pendingApproval&&pendingApproval.id!==previousId){
+   byId('approve').disabled=false;previewPendingAction(pendingApproval);
+  }
   byId('approvalKind').textContent=pendingApproval&&pendingApproval.approval_kind==='automation_write'
    ? 'Persistent automation: review the trigger and actions in Current operation above. A chat “yes” is not approval. Do not approve an invented mode/event trigger for a one-off timer.'
    : '';
@@ -790,6 +1073,12 @@ async function pollActivity(){
 }
 async function decide(approved){
  if(!activeRequest||!pendingApproval)return;
+ const effect=pendingApproval.effect_class;
+ if(approved&&['sensitive_write','destructive_write'].includes(effect)){
+  if(typeof window.confirm!=='function'||!window.confirm(
+   'Approve this exact native action? It could change your home. Review its original details first.'))return;
+ }
+ if(approved&&byId('approve').disabled)return;
  const requestId=activeRequest,approvalId=pendingApproval.id;
  byId('approve').disabled=true;byId('decline').disabled=true;byId('approvalError').textContent='';
  try{
@@ -826,16 +1115,20 @@ function clearResult(){
  byId('responseTime').textContent='Response time: —';
  byId('receipts').textContent='No tool calls yet.';
  byId('downloadTechnical').disabled=true;
+ byId('evidenceSummary').textContent='Evidence · 0 calls';
+ byId('evidenceRows').replaceChildren();
+ byId('completedTraceList').replaceChildren();
 }
 function showResult(question,answer,response,clientMs,error=null,requestId=activeRequest){
  lastAnswer=answer;
  technicalDetails={ui_version:UI_VERSION,model:configuredModel,request_id:requestId,question,
   captured_at:new Date().toISOString(),client_elapsed_ms:Math.round(clientMs),
   server_elapsed_ms:response?.elapsed_ms??null,response,error};
+ byId('currentExchange').hidden=false;byId('feedEmpty').hidden=true;
  byId('answer').classList.remove('muted');byId('answer').replaceChildren(renderAnswer(answer));
  byId('rawAnswer').textContent=answer;
- // The question remains visible in the composer and private receipts.
- byId('requestQuestion').hidden=true;byId('requestQuestion').textContent=question;
+ byId('requestQuestion').hidden=false;byId('requestQuestion').textContent=question;
+ evidenceRows(response);completedWork(response);
  const calls=response?.tool_calls||[],failed=calls.filter(c=>c.success===false).length;
  byId('requestSummary').textContent=error?'Request could not complete.':response?.success===false?'Request ended without a successful response.':'Response received — review the supporting evidence.';
  if(response)byId('requestSummary').textContent+=' '+calls.length+' tool attempts'+(failed?' · '+failed+' unsuccessful':'')+'.';
@@ -898,15 +1191,19 @@ async function copyResult(which){
  },copied?2600:4800);
 }
 async function submitAsk(){
- const q=byId('question').value.trim();if(!q)return;const send=byId('send');if(send.disabled)return;send.disabled=true;
+ const q=byId('question').value.trim();if(!q||activeRequest)return;
+ syncCommandBar();const send=byId('send');if(send.disabled)return;
+ archivePriorExchange();send.disabled=true;
  clearResult();byId('newConversation').disabled=true;
+ byId('currentExchange').hidden=false;byId('feedEmpty').hidden=true;
+ observedActivitySteps=[];activityFingerprint='';byId('activityTrace').replaceChildren();
  if(!await loadStatus()){
   showResult(q,'Unable to start: check the interface status above.',null,0,
    {type:'preflight',message:byId('state').textContent},null);
   send.disabled=false;byId('newConversation').disabled=false;return;
  }
  activeRequest=newRequestId();byId('requestSummary').textContent='Working — selecting tools and gathering evidence…';byId('requestQuestion').hidden=false;byId('requestQuestion').textContent=q;pendingApproval=null;byId('approvalError').textContent='';
- const started=performance.now();
+ const started=performance.now();requestStartedAt=started;
  const activityTimer=setInterval(pollActivity,750);
  const responseTimer=setInterval(()=>{byId('responseTime').textContent='Waiting: '+((performance.now()-started)/1000).toFixed(1)+' s';},250);
  byId('answer').classList.remove('muted');byId('answer').textContent='Investigating with native MCP tools…';byId('receipts').textContent='Fetching…';
@@ -917,7 +1214,7 @@ async function submitAsk(){
  }catch(e){
   showResult(q,'Request failed: '+e.message,null,performance.now()-started,{type:'transport',message:e.message});
  }
- finally{clearInterval(activityTimer);clearInterval(responseTimer);activeRequest=null;pendingApproval=null;byId('activityCard').hidden=true;byId('approval').hidden=true;send.disabled=false;byId('newConversation').disabled=false;}
+ finally{clearInterval(activityTimer);clearInterval(responseTimer);activeRequest=null;pendingApproval=null;byId('activityCard').hidden=true;byId('approval').hidden=true;byId('newConversation').disabled=false;syncCommandBar();}
 }
 
 // V1 Speak and answer playback, isolated from agent/MCP tool semantics.
@@ -934,52 +1231,62 @@ function toggleAutoRead(enabled){
  if(!readAnswers)stopAudio();
  voiceMessage(readAnswers?'Replies will be read aloud when playback is allowed.':'Read-aloud is off; you can still select Read answer.');
 }
-function stopVoice(){
+let voiceSendOnStop=false,voiceTranscript='',voicePointerStart=0;
+function stopVoice(send=false){
  const previous=activeRecognition;
- activeRecognition=null;
- byId('speak').textContent='🎤 Speak';byId('speak').classList.remove('listening');
- byId('speak').setAttribute('aria-pressed','false');
- if(previous){try{previous.abort()}catch{}}
+ if(!previous)return;
+ voiceSendOnStop=!!send;
+ try{if(send)previous.stop();else previous.abort()}
+ catch(error){activeRecognition=null;voiceMessage('Unable to stop voice: '+String(error.message||error));}
+ if(!send){
+  activeRecognition=null;
+  byId('speak').textContent='🎤';byId('speak').classList.remove('listening');
+  byId('speak').setAttribute('aria-pressed','false');
+ }
 }
 function startVoice(){
- if(activeRecognition){stopVoice();voiceMessage('Voice capture cancelled; nothing submitted.');return;}
- if(byId('send').disabled){voiceMessage('Finish the current request before speaking.');return;}
+ if(activeRecognition){stopVoice(true);return;}
+ if(byId('send').disabled&&activeRequest){voiceMessage('Finish the current request before speaking.');return;}
  stopAudio();
  const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
  if(!Recognition){
-  voiceMessage('Speech recognition is not supported in this browser. Use Chrome or Edge for Speak, or type your question.');return;
+  voiceMessage('Voice unavailable in this browser. Try Chrome or Edge or type a question.');return;
  }
- const recognition=new Recognition();let transcript='',cancelled=false;
+ const recognition=new Recognition();voiceTranscript='';voiceSendOnStop=false;
  activeRecognition=recognition;
- recognition.lang='en-GB';recognition.continuous=false;
- recognition.interimResults=false;recognition.maxAlternatives=1;
+ recognition.lang='en-GB';recognition.continuous=true;
+ recognition.interimResults=true;recognition.maxAlternatives=1;
  recognition.onresult=event=>{
   if(activeRecognition!==recognition)return;
-  for(const row of Array.from(event.results||[])){
-   if(row.isFinal!==false&&row[0]&&typeof row[0].transcript==='string')transcript=row[0].transcript.trim();
-  }
-  if(transcript){byId('question').value=transcript;voiceMessage('Heard: '+transcript);}
+  const transcript=Array.from(event.results||[]).map(row=>row?.[0]?.transcript||'').join(' ').trim();
+  if(transcript){voiceTranscript=transcript;byId('question').value=transcript;syncCommandBar();voiceMessage('Listening · '+transcript);}
  };
  recognition.onerror=event=>{
   if(activeRecognition!==recognition)return;
-  cancelled=true;
+  voiceSendOnStop=false;
   const error=String(event.error||'unknown');
   voiceMessage(error==='not-allowed'||error==='service-not-allowed'?
-   'Microphone or speech-service permission denied. Allow microphone access, or type your question.':
-   'Speech recognition stopped: '+error+'. You can type your question.');
+   'Microphone or speech-service permission denied. Allow access or type your question.':
+   'Voice unavailable: '+error+'. You can type your question.');
  };
  recognition.onend=()=>{
   if(activeRecognition!==recognition)return;
-  activeRecognition=null;byId('speak').textContent='🎤 Speak';
-  byId('speak').classList.remove('listening');byId('speak').setAttribute('aria-pressed','false');
-  if(!cancelled&&transcript&&!byId('send').disabled){voiceMessage('Submitting spoken question…');void submitAsk();}
-  else if(!cancelled&&!transcript)voiceMessage('No speech recognised. Try again or type your question.');
+  const shouldSend=voiceSendOnStop;
+  activeRecognition=null;voiceSendOnStop=false;
+  byId('speak').textContent='🎤';byId('speak').classList.remove('listening');
+  byId('speak').setAttribute('aria-pressed','false');
+  if(shouldSend&&byId('question').value.trim()&&!activeRequest){
+   voiceMessage('Sending spoken question…');void submitAsk();
+  }else if(shouldSend&&!byId('question').value.trim()){
+   voiceMessage('Voice stopped: no speech recognised; nothing was sent.');
+  }else if(!shouldSend&&voiceTranscript)voiceMessage('Speech captured. Press Ask to send or tap mic to retry.');
+  else if(!shouldSend)voiceMessage('Voice stopped. Type or try again.');
  };
  try{
-  recognition.start();byId('speak').textContent='■ Stop listening';
+  recognition.start();byId('speak').textContent='■';
   byId('speak').classList.add('listening');byId('speak').setAttribute('aria-pressed','true');
-  voiceMessage('Listening… tap Stop listening to cancel without submitting.');
- }catch(error){stopVoice();voiceMessage('Unable to start microphone: '+(error.message||error));}
+  voiceMessage('Listening… tap again to send; hold and release to send.');
+ }catch(error){stopVoice();voiceMessage('Unable to start voice: '+(error.message||error));}
 }
 function spokenAnswerText(value){
  return String(value||'')
@@ -1058,7 +1365,35 @@ async function speakAnswer(answer){
  }catch(error){audioUtterance=null;audioButtonIdle();voiceMessage('Browser audio unavailable: '+(error.message||error));return false;}
 }
 
-byId('question').addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey))submitAsk();});
+byId('question').addEventListener('input',syncCommandBar);
+byId('question').addEventListener('keydown',e=>{
+ if(e.isComposing)return;
+ if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();void submitAsk();}
+ if(e.key==='Escape'){e.preventDefault();byId('question').value='';syncCommandBar();}
+});
+window.addEventListener('keydown',e=>{
+ if(e.key==='/'&&!e.altKey&&!e.ctrlKey&&!e.metaKey
+  &&document.activeElement!==byId('question')
+  &&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)){
+  e.preventDefault();byId('question').focus();
+ }
+});
+const micButton=byId('speak');
+micButton.addEventListener('pointerdown',e=>{
+ if(e.button!==0)return;
+ e.preventDefault();voicePointerStart=Date.now();startVoice();
+});
+const releaseVoice=()=>{
+ if(!voicePointerStart)return;
+ const duration=Date.now()-voicePointerStart;voicePointerStart=0;
+ if(duration>400&&activeRecognition)stopVoice(true);
+};
+micButton.addEventListener('pointerup',releaseVoice);
+micButton.addEventListener('pointercancel',releaseVoice);
+micButton.addEventListener('pointerleave',releaseVoice);
+micButton.addEventListener('click',e=>{if(e.detail===0)startVoice();});
+micButton.addEventListener('contextmenu',e=>e.preventDefault());
+syncCommandBar();
 
 // Small, offline-safe *display* subset of common inline TeX, not a math
 // evaluator or a general LaTeX engine. Unsupported commands remain visible
@@ -1193,7 +1528,9 @@ function newConversation(){
  void readJson('api/conversation/clear',{method:'POST',
   headers:{'Content-Type':'application/json','X-Homebrain-Request':'1'},
   body:JSON.stringify({conversation_id:oldConversation})}).catch(()=>{});
- messages=[];turns=[];clearResult();renderTurns();byId('question').value='';byId('answer').textContent='Your response will appear here.';
+ messages=[];turns=[];clearResult();renderTurns();byId('question').value='';byId('answer').textContent='';
+ byId('olderExchanges').replaceChildren();byId('currentExchange').hidden=true;byId('feedEmpty').hidden=false;
+ observedActivitySteps=[];byId('activityTrace').replaceChildren();syncCommandBar();
  byId('rawAnswer').textContent='No answer yet.';byId('requestQuestion').hidden=true;byId('requestQuestion').textContent='';byId('requestSummary').textContent='New conversation. Previous prose and stored MCP evidence are cleared.';byId('question').focus();
 }
 function downloadTechnical(){
