@@ -692,7 +692,7 @@ class Agent:
         prior_reader=None, enable_source_review: bool = True,
         device_monitor=None, enable_final_claim_audit: bool = True,
         enable_action_proposal_review: bool = True,
-        hub_timezone: str = "Europe/London",
+        hub_timezone: str | None = None,
     ) -> dict[str, Any]:
         started = time.monotonic()
         deadline = started + max(30, int(deadline_seconds))
@@ -798,7 +798,7 @@ class Agent:
         prewrite_dispatch_comparison = None
         first_write_dispatch_recorded = False
         reported_hub_clock = None
-        clock_timezone_name = hub_timezone
+        clock_timezone_name = hub_timezone or getattr(self, "hub_timezone", "Europe/London")
         clock_timezone_source = "add-on configured timezone"
         temporal_scope_text = scoped_request_text(question, history)
         automation_confirmation_requests = 0
