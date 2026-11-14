@@ -33,7 +33,8 @@ from investigation_review import (
     is_read_only_review_tool, read_only_review_catalog,
     review_kind, review_prompt, is_current_state_question,
     FINAL_CLAIM_AUDIT_PROMPT, should_audit_completion,
-    final_claim_receipt_scope_index,
+    final_claim_receipt_scope_index, CAUSAL_FOLLOW_THROUGH_PROMPT,
+    should_recheck_causal_evidence,
 )
 from config_evidence import config_source_map
 from device_monitor import TOOL_NAME as MONITOR_TOOL, TOOL_DEFINITION as MONITOR_TOOL_DEFINITION
@@ -727,6 +728,7 @@ class Agent:
         prior_evidence: str = "", prior_receipts: int = 0,
         prior_reader=None, enable_source_review: bool = True,
         device_monitor=None, enable_final_claim_audit: bool = True,
+        enable_causal_follow_through: bool = True,
         enable_action_proposal_review: bool = True,
         hub_timezone: str | None = None,
     ) -> dict[str, Any]:
@@ -823,6 +825,8 @@ class Agent:
         leaf_schema_discoveries = 0
         source_review_invoked = False
         source_review_kind = None
+        causal_follow_through_invoked = False
+        causal_review_receipt_count = -1
         native_action_receipts_seen = 0
         inventory_recovery_invoked = False
         inventory_recovery_status = "not_invoked"
@@ -871,6 +875,13 @@ class Agent:
                 "leaf_schema_discoveries": leaf_schema_discoveries,
                 "source_review_invoked": source_review_invoked,
                 "source_review_kind": source_review_kind,
+                "causal_follow_through_invoked": causal_follow_through_invoked,
+                "causal_review_read_receipts_added": (
+                    sum(row.get("success") is True
+                        and is_read_only_review_tool(row.get("name", ""))
+                        for row in receipts[causal_review_receipt_count:])
+                    if causal_review_receipt_count >= 0 else 0
+                ),
                 "current_state_source_status": (
                     "read_only_receipt_present" if is_current_state_question(question)
                     and any(
@@ -1178,7 +1189,44 @@ class Agent:
                         or ("current_state" if not receipts
                             and is_current_state_question(question) else None)
                     )
-                    messages.append({"role": "user", "content": review_prompt(source_review_kind)})
+                    if source_review_kind == "causal":
+                        causal_review_receipt_count = len(receipts)
+                        # The index navigates ORIGINAL received source scope;
+                        # it is not an independent receipt or evidence of a cause.
+                        guidance = review_prompt(source_review_kind)
+                        guidance += (
+                            "\n\nOriginal receipt-scope navigation index (not independent proof):\n"
+                            + final_claim_receipt_scope_index(receipts)
+                        )
+                    else:
+                        guidance = review_prompt(source_review_kind)
+                    messages.append({"role": "user", "content": guidance})
+                    continue
+                # If the causal source review still ends at an unresolved
+                # cause without any fresh evidence read, give the model ONE
+                # additional bounded chance to choose a relevant READ-ONLY
+                # discriminating source. No tool is selected or auto-called.
+                # The original model+native write-approval loop is preserved.
+                if (enable_source_review and enable_causal_follow_through
+                        and should_recheck_causal_evidence(
+                            question,
+                            review_kind_name=source_review_kind,
+                            first_review_receipt_count=causal_review_receipt_count,
+                            receipt_count=len(receipts),
+                            already_rechecked=causal_follow_through_invoked,
+                            candidate_answer=text,
+                            remaining_seconds=deadline - time.monotonic(),
+                            has_action_receipt=native_action_receipts_seen > 0,
+                            available_read_tools=bool(read_only_review_catalog(tools)),
+                        )):
+                    causal_follow_through_invoked = True
+                    capture_answer_stage("pre_causal_follow_through", text)
+                    messages.append({
+                        "role": "user",
+                        "content": CAUSAL_FOLLOW_THROUGH_PROMPT
+                                   + "\n\nReturned-receipt scope index (navigation only):\n"
+                                   + final_claim_receipt_scope_index(receipts),
+                    })
                     continue
                 if final_claim_audit_invoked:
                     capture_answer_stage("post_final_audit", text)
