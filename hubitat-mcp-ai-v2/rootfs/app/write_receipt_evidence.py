@@ -90,6 +90,9 @@ def write_failure_evidence(receipts: list[dict]) -> dict:
             })
         elif seen_write and record.get("result_kind") == "tool_result" and (
                 name.startswith(("hub_get_", "hub_list_", "hub_read_", "hub_search_"))
+                or (isinstance(record.get("arguments"), dict)
+                    and str(record["arguments"].get("tool") or "").startswith(
+                        ("hub_get_", "hub_list_", "hub_read_", "hub_search_")))
                 or record.get("read_only") is True):
             # A distinct read request was submitted after a write. A successful
             # read may return a snapshot, but cannot prove downstream effects.
