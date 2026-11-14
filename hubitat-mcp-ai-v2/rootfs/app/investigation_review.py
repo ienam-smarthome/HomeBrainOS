@@ -125,6 +125,13 @@ times, and inspect relevant configured selected-input groups rather than
 fixating on a single participant. Return-limit and match-count differences
 are evidence of bounded coverage, not missing actions or proven exclusivity.
 Selected current input references are not historical trigger execution proof.
+Also inspect capability inputs whose currently returned value is explicitly
+null or empty. If the proposed causal explanation relies on an input that
+this source reports as unselected, identify this contradiction explicitly.
+Do not resolve it by assuming the input used to be selected or was inherited:
+a linked page, another controller or historic settings could differ, but
+must be checked or acknowledged as unknown. A timing match alone cannot
+erase a conflicting configuration or turn a source failure into no evidence.
 A filtered state history without command rows does not rule out unseen
 commands. A device/bridge reporter and notified listeners do not prove
 external initiation. Chronological compatibility alone does not prove cause.
@@ -152,6 +159,12 @@ answer is more useful than hiding verified receipts behind an overall
 "unresolved" label. Do not equate a configuration match with an
 execution-specific callback or say that no alternatives remain without
 source evidence excluding them.
+If a relevant source read FAILED (HTTP error, timeout, unsupported tool),
+say which read failed and that it provides NO evidence in either direction;
+do not reword a failed query into "no events found" or "logs unavailable"
+without disclosing the failure. When reporting, prefer a compact sequence
+and concise source-limit and uncertainty paragraphs over exhaustive prose;
+do not reconstruct the same evidence in repeated tables.
 Do not request unnecessary reads, invent missing evidence, or change any
 device, automation, setting, or external record. Follow the original user's
 read-only or approval restrictions. Do not mention this internal checkpoint.
@@ -454,6 +467,11 @@ text cannot prove historical input values or which callback/timer fired.
 An enabled-but-unchecked backup/override/restriction input is not verified
 inactive at the focal time. Event-time alignment and a recorded command
 issuer are strong evidence, not proof of the controller's internal reason.
+If the CURRENT configuration explicitly returns null/empty for a capability
+input required by the proposed causal story, flag that as contrary or
+unresolved evidence: do not confidently select that path just because its
+timing matches. It may have been configured differently historically or
+another controller may own the input; neither is verified until read.
 
 An accompanying bounded receipt scope index may list call arguments,
 returned counts and source-derived limits. It is a NAVIGATION aid, not
@@ -493,6 +511,23 @@ does not establish trigger precision or runtime execution. Never claim
 installed compatibility from a guide alone.
 For all domains, retain relevant positive facts and original uncertainty.
 
+A FAILED receipt is not an empty successful response. If a relevant read
+failed with an HTTP error/timeout or unsupported operation, preserve its
+tool identity and failure in the final answer, and state that the attempted
+source does not support an affirmative or negative claim. Do not silently
+remove failed-source status when revising an earlier draft. Explicitly
+distinguish an unattempted source, an attempted FAILED source, and a
+successful source that returned zero matching records.
+
+Be efficient while preserving the evidence. Unless the user expressly asks
+for a comprehensive report, aim for about 350–550 words: one compact focal
+chronology, key positive/negative command facts, actual returned source
+limits, one concise causal assessment, and the important unknowns/failures.
+Avoid repeating the same tables or lengthy preparatory reasoning. Keep
+exact event timestamps when available, but omit irrelevant historical
+details and redundant restatements. This is an answer-writing target, not
+an instruction to omit important qualifications or truncate output.
+
 There are NO tools in this final writing pass. Do not claim to have checked
 additional records. If evidence is insufficient, say which fact is unknown
 and why, while answering useful verified parts of the question. Produce ONLY
@@ -529,6 +564,7 @@ _AUDIT_INDEX_LIMIT = 16
 _AUDIT_EVENT_GROUP_LIMIT = 20
 _AUDIT_SELECTED_GROUP_LIMIT = 12
 _AUDIT_SELECTED_ITEM_LIMIT = 12
+_AUDIT_EMPTY_INPUT_LIMIT = 16
 
 
 def _audit_event_groups(source: object) -> dict | None:
@@ -607,11 +643,32 @@ def _audit_selected_inputs(source: object) -> dict | None:
                 - len(participants),
             ),
         })
+    explicitly_empty = source.get("explicitly_empty_capability_inputs")
+    null_or_empty = []
+    if isinstance(explicitly_empty, list):
+        for row in explicitly_empty[:_AUDIT_EMPTY_INPUT_LIMIT]:
+            if not isinstance(row, dict):
+                continue
+            name = row.get("name")
+            kind = row.get("type")
+            val_kind = row.get("returned_value_kind")
+            if (isinstance(name, str) and 0 < len(name) <= 96
+                    and isinstance(kind, str) and kind.startswith("capability.")
+                    and len(kind) <= 70 and val_kind in ("null", "empty_list")):
+                null_or_empty.append({
+                    "input_group": name,
+                    "type": kind,
+                    "returned_value_kind": val_kind,
+                })
     return {
         "source_scope": "one currently returned configuration page",
         "selected_input_groups": output,
         "selected_input_groups_omitted": max(
             0, len(groups) - _AUDIT_SELECTED_GROUP_LIMIT),
+        "explicitly_null_or_empty_capability_inputs": null_or_empty,
+        "empty_capability_inputs_omitted": max(
+            0, len(explicitly_empty) - _AUDIT_EMPTY_INPUT_LIMIT)
+            if isinstance(explicitly_empty, list) else 0,
         "historical_configuration_verified": False,
         "event_specific_callback_verified": False,
     }
@@ -683,7 +740,19 @@ def final_claim_receipt_scope_index(receipts: list[dict]) -> str:
             "arguments": _audit_request(record.get("arguments")),
         }
         if record.get("success") is not True:
+            # A failed call cannot be treated as an empty event result.
+            # Never reproduce arbitrary error text (it may contain private
+            # arguments). A simple status code is safe diagnostic metadata.
             item["read_failed"] = True
+            error = record.get("error")
+            match = re.search(r"\bHTTP\s+([45]\d{2})\b", error,
+                              re.IGNORECASE) if isinstance(error, str) else None
+            if match is not None:
+                item["read_error_class"] = "http"
+                item["http_status"] = int(match.group(1))
+            else:
+                item["read_error_class"] = "unknown"
+            item["no_matching_records_proven"] = False
             rows.append(item)
             continue
         if record.get("operation_executed") is False:
@@ -735,8 +804,10 @@ def final_claim_receipt_scope_index(receipts: list[dict]) -> str:
                 item["returned_log_scope"] = log_scope
         rows.append(item)
     return json.dumps({
-        "note": "Navigation index from returned receipt fields ONLY; not independent evidence. Do not infer unseen records absent. Inspect original receipts for full detail.",
+        "note": "Navigation index from returned receipt fields ONLY; not independent evidence. Do not infer unseen records absent. Failed calls are not empty successes. Inspect original receipts for full detail.",
         "indexed_receipts": rows,
+        "failed_calls_in_indexed_receipts": sum(
+            row.get("read_failed") is True for row in rows),
         "additional_receipts_not_indexed": max(0, len(receipts) - _AUDIT_INDEX_LIMIT),
     }, separators=(",", ":"), ensure_ascii=False)
 

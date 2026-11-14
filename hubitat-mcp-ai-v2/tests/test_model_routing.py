@@ -261,7 +261,7 @@ class AddonCloudConfigTests(unittest.TestCase):
 
     def test_schema_has_no_local_and_free_paid_requires_explicit_consent(self):
         config = (Path(__file__).resolve().parents[1] / "config.yaml").read_text()
-        self.assertIn("version: \"2.0.0-alpha.93\"", config)
+        self.assertIn("version: \"2.0.0-alpha.94\"", config)
         self.assertNotIn("model_base_url:", config)
         self.assertNotIn("local_ollama_num_ctx:", config)
         self.assertIn("cloud_mode: list(free|paid)", config)

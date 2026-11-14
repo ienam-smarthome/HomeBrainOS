@@ -250,6 +250,15 @@ The optional `client_config_source_map` is a **client-side index of one
 returned configuration page**, not a hub execution trace or a historical
 settings audit. It lists page links, selected inputs and returned scalar
 control values without interpreting them; its omission counters are explicit.
+The map may also identify capability inputs whose value on the CURRENT
+returned page is explicitly null or empty. That positive observation
+differs from an input whose value is absent from the page (unknown).
+If an explanation requires a controller to subscribe to a particular
+input, but the retrieved current page reports that input unselected,
+treat the mismatch as a material uncertainty or contrary observation,
+not as proof it was selected historically or proof it never executed.
+Do not resolve the mismatch by silently assuming inherited subscriptions,
+older configuration, alternate callback paths or cached UI text.
 The original MCP `content` remains authoritative. A missing item in this
 bounded map, an unread linked page or a raw settings map not requested must
 **not** be assumed absent from the app. Do not describe every possible path

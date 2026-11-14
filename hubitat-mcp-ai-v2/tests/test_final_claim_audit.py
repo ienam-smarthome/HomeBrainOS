@@ -381,6 +381,79 @@ class SourceCoverageNavigationTests(unittest.TestCase):
         self.assertEqual(index[2]["returned_log_scope"]["matched_count"], 7)
         self.assertFalse(index[2]["returned_log_scope"]["complete_requested_window_proven"])
 
+    def test_failed_source_remains_visible_without_leaking_raw_error(self):
+        receipts = [
+            {"name": "hub_read_app_events",
+             "arguments": {"appId": "LAB-APP", "hoursBack": 2},
+             "success": False,
+             "error": "MCP HTTP 503 source contained FAKE-PRIVATE-CREDENTIAL"},
+            {"name": "hub_read_app_events",
+             "arguments": {"appId": "LAB-APP", "hoursBack": 4},
+             "success": False,
+             "error": "Upstream response lost FAKE-PRIVATE-CREDENTIAL"},
+            {"name": "hub_read_app_events",
+             "arguments": {"appId": "LAB-APP", "hoursBack": 1},
+             "success": True,
+             "response": json.dumps({"content": [{"type": "text",
+                 "text": json.dumps({"events": [], "count": 0})}]})},
+        ]
+        index = json.loads(final_claim_receipt_scope_index(receipts))
+        self.assertEqual(index["failed_calls_in_indexed_receipts"], 2)
+        self.assertEqual(index["indexed_receipts"][0]["http_status"], 503)
+        self.assertEqual(index["indexed_receipts"][0]["read_error_class"], "http")
+        self.assertFalse(index["indexed_receipts"][0]["no_matching_records_proven"])
+        self.assertEqual(index["indexed_receipts"][1]["read_error_class"], "unknown")
+        self.assertFalse(index["indexed_receipts"][1]["no_matching_records_proven"])
+        self.assertNotIn("read_failed", index["indexed_receipts"][2])
+        self.assertNotIn("FAKE-PRIVATE-CREDENTIAL", json.dumps(index))
+
+    def test_empty_capability_inputs_are_bounded_and_current_only(self):
+        source = {
+            "client_config_source_map": {
+                "selected_input_groups": [{"name": "configured",
+                    "selected": [{"value": "LAB-1", "label": "Test light"}],
+                    "returned_selected_count": 1}],
+                "explicitly_empty_capability_inputs": [
+                    {"name": "motionInput", "type": "capability.motionSensor",
+                     "returned_value_kind": "null"},
+                    {"name": "otherInput", "type": "capability.switch",
+                     "returned_value_kind": "empty_list"},
+                    {"name": "badType", "type": "html",
+                     "returned_value_kind": "null"},
+                ],
+            },
+            "content": [{"type": "text", "text": json.dumps({
+                "app": {"id": "LAB-APP"},
+                "page": {"sections": []},
+            })}],
+        }
+        index = json.loads(final_claim_receipt_scope_index([{
+            "name": "hub_get_app_config",
+            "arguments": {"appId": "LAB-APP"},
+            "success": True, "response": json.dumps(source),
+        }]))["indexed_receipts"][0]["config_selected_inputs"]
+        self.assertEqual(
+            [(v["input_group"], v["returned_value_kind"])
+             for v in index["explicitly_null_or_empty_capability_inputs"]],
+            [("motionInput", "null"), ("otherInput", "empty_list")],
+        )
+        self.assertFalse(index["historical_configuration_verified"])
+        self.assertFalse(index["event_specific_callback_verified"])
+
+    def test_final_audit_preserves_failed_status_and_requests_concise_prose(self):
+        for expected in (
+            "A FAILED receipt is not an empty successful response.",
+            "relevant read",
+            "failed",
+            "about 350–550 words",
+            "contrary or",
+            "zero matching records",
+            "There are NO tools",
+        ):
+            self.assertIn(expected, FINAL_CLAIM_AUDIT_PROMPT)
+        self.assertNotIn("Bathroom Light", FINAL_CLAIM_AUDIT_PROMPT)
+        self.assertNotIn("4013", FINAL_CLAIM_AUDIT_PROMPT)
+
     def test_final_audit_prompt_checks_all_returned_commands_and_selected_inputs(self):
         p = FINAL_CLAIM_AUDIT_PROMPT
         for text in (

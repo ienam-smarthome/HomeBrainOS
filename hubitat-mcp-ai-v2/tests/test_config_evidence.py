@@ -109,6 +109,39 @@ class ConfigSourceMapTests(unittest.TestCase):
         self.assertNotIn("verified", json.dumps(controls).lower())
         self.assertFalse(index["event_specific_callback_or_timer_proven_by_this_page"])
 
+    def test_explicit_null_capabilities_not_confused_with_missing_inputs(self):
+        """Current empty control fields are evidence of what this page returned,
+        not evidence of past execution or unreported linked pages."""
+        reply = config_reply({
+            "name": "fictionalController",
+            "sections": [{"title": "Participants", "inputs": [
+                {"name": "sensorInput", "type": "capability.motionSensor",
+                 "title": "Sensor candidates", "value": None},
+                {"name": "holdInput", "type": "capability.motionSensor",
+                 "title": "Auxiliary sensors", "value": []},
+                {"name": "inputNotReturned", "type": "capability.switch"},
+                {"name": "configuredInput", "type": "capability.switch",
+                 "value": ["LAB-3"], "selected": [
+                     {"value": "LAB-3", "label": "Fictional switch"}]},
+                {"name": "secretToken", "type": "capability.switch",
+                 "value": None},
+                {"name": "ignoredHtml", "type": "html", "value": None},
+            ]}],
+        })
+        before = json.dumps(reply, sort_keys=True)
+        result = config_source_map(reply)
+        self.assertEqual(json.dumps(reply, sort_keys=True), before)
+        self.assertEqual(
+            [(x["name"], x["returned_value_kind"])
+             for x in result["explicitly_empty_capability_inputs"]],
+            [("sensorInput", "null"), ("holdInput", "empty_list")],
+        )
+        self.assertTrue(result["explicit_empty_input_scopes_are_current_only"])
+        self.assertEqual(result["selected_input_groups"][0]["name"], "configuredInput")
+        self.assertFalse(result["historical_configuration_proven_by_this_page"])
+        self.assertNotIn("secretToken", json.dumps(result))
+        self.assertNotIn("inputNotReturned", json.dumps(result))
+
     def test_unknown_nonconfig_and_failed_responses_are_unchanged(self):
         self.assertIsNone(config_source_map({"content": [
             {"type": "text", "text": '{"events":[]}'}]}))

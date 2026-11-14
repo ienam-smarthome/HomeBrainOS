@@ -70,6 +70,7 @@ def config_source_map(result: dict) -> dict | None:
     sections = page.get("sections") if isinstance(page.get("sections"), list) else []
     controls = []
     selected = []
+    explicitly_empty_capabilities = []
     total_inputs = 0
     for section in sections:
         if not isinstance(section, dict):
@@ -88,6 +89,21 @@ def config_source_map(result: dict) -> dict | None:
                     title and _SENSITIVE_FIELD.search(title)):
                 continue
             chosen = row.get("selected")
+            # Distinguish an explicitly returned unselected capability input
+            # (null or []) from an absent value (unknown) and from a populated
+            # selected input. A current UI value is NOT historical execution
+            # evidence and may not enumerate sources configured elsewhere.
+            value_present = "value" in row
+            raw_value = row.get("value")
+            if (kind.startswith("capability.") and value_present
+                    and not chosen and (raw_value is None or raw_value == [])
+                    and len(explicitly_empty_capabilities) < 32):
+                explicitly_empty_capabilities.append({
+                    "name": name, "title": title, "type": kind,
+                    "returned_value_kind": (
+                        "null" if raw_value is None else "empty_list"
+                    ),
+                })
             if isinstance(chosen, list) and chosen:
                 refs = []
                 for item in chosen:
@@ -157,6 +173,8 @@ def config_source_map(result: dict) -> dict | None:
         "inputs_on_returned_page": total_inputs,
         "selected_input_groups": selected[:24],
         "selected_input_groups_omitted": max(0, len(selected) - 24),
+        "explicitly_empty_capability_inputs": explicitly_empty_capabilities,
+        "explicit_empty_input_scopes_are_current_only": True,
         "returned_scalar_control_values": controls[:64],
         "scalar_control_values_omitted": max(0, len(controls) - 64),
         "raw_settings_included_in_source": isinstance(payload.get("settings"), dict),
@@ -171,6 +189,9 @@ def config_source_map(result: dict) -> dict | None:
             "It neither establishes historical settings nor proves which "
             "internal path ran. Linked pages can contain additional controls; "
             "selected input groups are not proof of their historical state. "
+            "Explicitly null/empty capability inputs indicate only the value "
+            "returned by this current page; other or linked pages, internal "
+            "settings, and historical inputs have not thereby been excluded. "
             "For a causal question, compare the observed initiating event with "
             "materially plausible configured paths and the relevant input "
             "histories or execution records when available. The model decides "
