@@ -71,7 +71,7 @@ def test_read_and_pending_write_remain_distinct() -> None:
 
 
 def test_routine_write_queues_via_existing_policy() -> None:
-    policy = ConfirmationPolicy()
+    policy = ConfirmationPolicy(confirm_routine_writes=True)
     assert policy.requires_confirmation(ToolEffect.ROUTINE_WRITE)
     assert policy.requires_confirmation(ToolEffect.SENSITIVE_WRITE)
     assert policy.requires_confirmation(ToolEffect.DESTRUCTIVE_WRITE)
@@ -121,7 +121,7 @@ def test_evidence_and_stage_renderers_use_only_received_data() -> None:
         "api/confirmation/dismiss",
         "window.confirm(",
         "void submit('confirm')",
-        "edits require",
+        "Editing requires",
     ):
         assert contract.lower() in page.lower(), contract
     assert "Math.random()*500" not in page
