@@ -694,7 +694,70 @@ function renderPendingAction(data,host){
   };
   actions.append(approve,edit,dry,dismiss);card.appendChild(actions);host.appendChild(card);
 }
-function showAnswer(data){answer.replaceChildren();const meta=document.createElement('div');meta.className='answer-meta';const outcome=data.outcome_presentation;if(outcome&&['positive','warning','neutral','critical'].includes(outcome.tone)&&typeof outcome.label==='string'&&outcome.label){const outcomeBadge=document.createElement('span');outcomeBadge.className=`badge outcome-badge outcome-${outcome.tone}`;outcomeBadge.textContent=outcome.label;meta.appendChild(outcomeBadge)}[data.route,data.model_tier_requested&&data.model_tier_requested!=='auto'?'Selected '+data.model_tier_requested:null,data.model,data.elapsed_ms===undefined?null:`${(data.elapsed_ms/1000).toFixed(1)}s`].filter(Boolean).forEach(value=>{const badge=document.createElement('span');badge.className='badge';badge.textContent=value;meta.appendChild(badge)});if(meta.children.length)answer.appendChild(meta);if(data.model_usage){const parts=[];const names=data.model_usage.models||{};for(const [name,n] of Object.entries(names)){if(n>0){const short=/deepseek/i.test(name)?'DeepSeek Pro':/claude/i.test(name)?'Claude':/gemma/i.test(name)?'Gemma':name;parts.push(short+': '+n)}}if(parts.length){const usage=document.createElement('span');usage.className='badge';usage.textContent=parts.join(' · ');meta.appendChild(usage);if(!meta.isConnected)answer.appendChild(meta)}}const rawMessage=data.message||data.detail||'No response';const text=renderMessage(rawMessage);answer.appendChild(text);if(data.route==='automation-status'&&Array.isArray(data.automation_items)&&data.automation_items.length)answer.appendChild(renderAutomationItems(data));if(Array.isArray(data.choices)){const originalQuestion=query.value.trim();data.choices.forEach(choice=>{const option=document.createElement('button');option.className='confirm';option.textContent=choice;option.onclick=()=>submit(choicePrompt(originalQuestion,choice));answer.appendChild(option)})}suggestedAction=firmwareUpdateAvailable(data,rawMessage)?'firmware-update':null;if(suggestedAction==='firmware-update'){const install=document.createElement('button');install.className='confirm';install.textContent='Update hub firmware';install.onclick=()=>submit('Install the available Hubitat firmware update');answer.appendChild(install)}if(data.confirmation_required===true){const confirm=document.createElement('button');confirm.className='confirm';confirm.textContent='Confirm action';confirm.onclick=()=>submit('confirm');answer.appendChild(confirm)}const audioButton=document.createElement('button');audioButton.className='secondary copy-button audio-button';audioButton.textContent='🔊 Read answer';audioButton.onclick=()=>{if(activeSpeech||nativeSpeechActive)stopAudio();else void speakAnswer(rawMessage,audioButton)};answer.appendChild(audioButton);const copy=document.createElement('button');copy.className='secondary copy-button';copy.textContent='Copy answer';copy.onclick=()=>copyText(rawMessage,copy,'Copy answer');answer.appendChild(copy);const details=document.createElement('details');details.className='technical';const summary=document.createElement('summary');summary.textContent='Technical details';const technical=JSON.stringify(data,null,2);const technicalCopy=document.createElement('button');technicalCopy.className='secondary copy-button technical-copy';technicalCopy.textContent='Copy technical';technicalCopy.onclick=event=>{event.preventDefault();copyText(technical,technicalCopy,'Copy technical')};const pre=document.createElement('pre');pre.textContent=technical;details.append(summary,technicalCopy,pre);answer.appendChild(details);document.getElementById('lastRoute').textContent=data.route||'—';document.getElementById('lastTime').textContent=data.elapsed_ms===undefined?'—':`${(data.elapsed_ms/1000).toFixed(1)}s`;if(readAnswers&&speechText(rawMessage).length<1500)void speakAnswer(rawMessage,audioButton)}
+function showAnswer(data){
+  if(answer.hidden)beginExchange(query.value.trim()||currentQuestion||'Request');
+  const body=answer.querySelector('.exchange-body')||answer;body.replaceChildren();
+  const meta=document.createElement('div');meta.className='answer-meta';
+  const outcome=data.outcome_presentation;
+  if(outcome&&['positive','warning','neutral','critical'].includes(outcome.tone)&&typeof outcome.label==='string'&&outcome.label){
+    const outcomeBadge=document.createElement('span');
+    outcomeBadge.className='badge outcome-badge outcome-'+outcome.tone;
+    outcomeBadge.textContent=outcome.label;meta.appendChild(outcomeBadge);
+  }
+  [data.route,data.model_tier_requested&&data.model_tier_requested!=='auto'?'Selected '+data.model_tier_requested:null,
+   data.model,data.elapsed_ms===undefined?null:(data.elapsed_ms/1000).toFixed(1)+'s'].filter(Boolean).forEach(value=>{
+    const badge=document.createElement('span');badge.className='badge';badge.textContent=value;meta.appendChild(badge);
+  });
+  if(data.model_usage){
+    const parts=[],names=data.model_usage.models||{};
+    for(const [name,n] of Object.entries(names)){if(n>0)parts.push(name+': '+n)}
+    if(parts.length){const usage=document.createElement('span');usage.className='badge';usage.textContent=parts.join(' · ');meta.appendChild(usage)}
+  }
+  if(meta.children.length)body.appendChild(meta);
+  const rawMessage=data.message||data.detail||'No response';
+  body.appendChild(renderMessage(rawMessage));
+  if(data.route==='automation-status'&&Array.isArray(data.automation_items)&&data.automation_items.length)
+    body.appendChild(renderAutomationItems(data));
+  if(Array.isArray(data.choices)){
+    const originalQuestion=answer.dataset.question||query.value.trim();
+    data.choices.forEach(choice=>{
+      const option=document.createElement('button');option.className='confirm choice-button';
+      option.textContent=choice;
+      option.onclick=()=>submit(choicePrompt(originalQuestion,choice));body.appendChild(option);
+    });
+  }
+  suggestedAction=firmwareUpdateAvailable(data,rawMessage)?'firmware-update':null;
+  if(suggestedAction==='firmware-update'){
+    const install=document.createElement('button');install.className='confirm choice-button';
+    install.textContent='Review firmware update';install.onclick=()=>submit('Install the available Hubitat firmware update');
+    body.appendChild(install);
+  }
+  if(data.confirmation_required===true)renderPendingAction(data,body);
+  const footer=document.createElement('div');footer.className='exchange-actions';
+  const audioButton=document.createElement('button');audioButton.className='secondary audio-button';
+  audioButton.textContent='🔊 Read aloud';
+  audioButton.onclick=()=>{if(activeSpeech||nativeSpeechActive)stopAudio();else void speakAnswer(rawMessage,audioButton)};
+  const copy=document.createElement('button');copy.className='secondary';copy.textContent='Copy answer';
+  copy.onclick=()=>copyText(rawMessage,copy,'Copy answer');
+  const review=document.createElement('button');review.className='secondary';review.textContent='Copy for review';
+  review.onclick=()=>copyText(
+    'HomeBrainOS PRIVATE first-answer review. Verify against original receipts. No independent Hubitat verification is implied.\n\n'
+    +JSON.stringify({question:answer.dataset.question,response:data},null,2),review,'Copy for review');
+  footer.append(audioButton,copy,review);body.appendChild(footer);
+  renderEvidence(data,body);renderWorkTrace(data);
+  const details=document.createElement('details');details.className='technical';
+  const summary=document.createElement('summary');summary.textContent='Technical details';
+  const technical=JSON.stringify(data,null,2);
+  const technicalCopy=document.createElement('button');technicalCopy.className='secondary copy-button technical-copy';
+  technicalCopy.textContent='Copy technical';technicalCopy.onclick=event=>{
+    event.preventDefault();void copyText(technical,technicalCopy,'Copy technical');
+  };
+  const pre=document.createElement('pre');pre.textContent=technical;
+  details.append(summary,technicalCopy,pre);body.appendChild(details);
+  document.getElementById('lastRoute').textContent=data.route||'—';
+  document.getElementById('lastTime').textContent=data.elapsed_ms===undefined?'—':(data.elapsed_ms/1000).toFixed(1)+'s';
+  if(readAnswers&&speechText(rawMessage).length<1500)void speakAnswer(rawMessage,audioButton);
+}
 async function status(){try{const data=await jsonResponse(await fetch(apiPath('api/status')));pill('mcp',data.mcp?.online,data.mcp?.online?'MCP online':`MCP offline · ${data.mcp?.error||'unavailable'}`);pill('ollama',data.ollama?.configured,data.ollama?.configured?'Ollama ready':'Ollama API key required');const paidOption=modelTier.querySelector('option[value="paid"]');if(paidOption)paidOption.disabled=data.paid_routing?.enabled===false;const claudeOption=modelTier.querySelector('option[value="claude"]');if(claudeOption)claudeOption.disabled=data.claude?.configured!==true;if((modelTier.value==='paid'&&paidOption?.disabled)||(modelTier.value==='claude'&&claudeOption?.disabled))modelTier.value='free';describeModelTier();document.getElementById('tools').textContent=data.mcp?.tools??'—';document.getElementById('model').textContent=data.ollama?.model||'—'}catch(error){pill('mcp',false,'Status error · '+error.message)}try{const dash=await jsonResponse(await fetch(apiPath('api/dashboard')));document.getElementById('dashLights').textContent=dash.lights_on??'—';document.getElementById('dashMotion').textContent=dash.motion_active??'—';document.getElementById('dashBatteries').textContent=dash.low_batteries??'—';const active=dash.active_rooms||[];const loaded=[dash.lights_on,dash.motion_active,dash.low_batteries].some(value=>value!=null);document.getElementById('dashActiveRooms').textContent=loaded?active.length:'—';document.getElementById('dashActiveRoomNames').textContent=loaded?(active.length?active.map(room=>room.name).join(', '):'No motion or lights on'):'Loading live states…'}catch(error){console.warn('Dashboard unavailable',error)}loadHealthAudit();loadJournal()}
 const MAX_CHAT_PROMPT_CHARS=12000;
 function askApiErrorMessage(response,data,length){
