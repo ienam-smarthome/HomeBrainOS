@@ -1,34 +1,75 @@
-"""Fictional local-first/cloud-free routing tests. No network, Hubitat or paid AI."""
+"""Fictional OpenRouter-only cloud model tests. No network or Hubitat calls."""
 from __future__ import annotations
 
 import asyncio
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "rootfs" / "app"))
 
-from agent import Agent, ModelEndpointUnavailable
-from model_routing import RoutedAgent, OpenRouterFree, free_model_name, openai_messages
+from agent import Agent
+from model_routing import (
+    CloudAgent, OpenRouterChat, cloud_configuration, free_model_name,
+    paid_model_name, openai_messages, probe_cloud_tool_call,
+)
 
 
-class ModelNameAndMessagesTests(unittest.TestCase):
-    def test_only_explicit_free_cloud_names_are_accepted(self):
+class ModelConfigurationTests(unittest.TestCase):
+    def test_free_mode_strictly_forbids_paid_model(self):
         self.assertEqual(free_model_name("openrouter/free"), "openrouter/free")
-        self.assertEqual(free_model_name("fictional/logic:free"), "fictional/logic:free")
-        for model in ("", "openrouter/auto", "paid/gemini", "bad :free"):
-            with self.subTest(model=model), self.assertRaises(ValueError):
-                free_model_name(model)
+        self.assertEqual(free_model_name("provider/tool-model:free"),
+                         "provider/tool-model:free")
+        for bad in ("", "openrouter/auto", "openrouter/auto-beta",
+                    "google/gemini-3.1-flash-lite", " paid/tool:free " + " broken",
+                    "http://localhost:11434", "model:free"):
+            with self.subTest(model=bad), self.assertRaises(ValueError):
+                free_model_name(bad)
 
-    def test_convert_multiple_ollama_tool_receipts_without_changing_source(self):
+    def test_paid_model_has_two_explicit_opt_ins_and_no_automatic_router(self):
+        with self.assertRaisesRegex(ValueError, "explicit"):
+            cloud_configuration(
+                mode="paid", free_model="openrouter/free",
+                paid_model="google/gemini-3.1-flash-lite",
+                paid_consent=False, api_key="fictional-secret",
+            )
+        with self.assertRaises(ValueError):
+            cloud_configuration(
+                mode="free", free_model="google/gemini-3.1-flash-lite",
+                paid_model="google/gemini-3.1-flash-lite",
+                paid_consent=True, api_key="fictional-secret",
+            )
+        for invalid in ("openrouter/auto", "openrouter/free", "model/foo:free",
+                        "http://localhost:11434", ""):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                paid_model_name(invalid)
+        configured = cloud_configuration(
+            mode="paid", free_model="openrouter/free",
+            paid_model="google/gemini-3.1-flash-lite",
+            paid_consent=True, api_key="fixture-secret",
+        )
+        self.assertEqual(configured["model"], "google/gemini-3.1-flash-lite")
+
+    def test_missing_key_and_wrong_mode_fail_closed(self):
+        with self.assertRaisesRegex(ValueError, "API key"):
+            CloudAgent(api_key="")
+        with self.assertRaisesRegex(ValueError, "free or paid"):
+            CloudAgent(mode="local", api_key="fixture")
+        with self.assertRaisesRegex(ValueError, "boolean"):
+            CloudAgent(mode="paid", paid_consent="true", api_key="fixture")
+        with self.assertRaisesRegex(ValueError, "explicit"):
+            CloudAgent(mode="paid", paid_consent=False, api_key="fixture")
+
+    def test_openai_tool_receipt_ids_preserve_raw_mcp_content(self):
         original = [
-            {"role": "system", "content": "test system"},
-            {"role": "user", "content": "What happened?"},
+            {"role": "system", "content": "fictional tool agent"},
+            {"role": "user", "content": "Inspect two synthetic devices"},
             {"role": "assistant", "content": "", "tool_calls": [
                 {"function": {"name": "hub_list_devices",
-                              "arguments": {"labelFilter": "fictional"}}},
+                              "arguments": {"labelFilter": "FICTIONAL"}}},
                 {"function": {"name": "hub_list_device_events",
                               "arguments": '{"deviceId":"LAB-1"}'}},
             ]},
@@ -36,176 +77,198 @@ class ModelNameAndMessagesTests(unittest.TestCase):
              "content": '{"count":1}'},
             {"role": "tool", "tool_name": "hub_list_device_events",
              "content": '{"events":[]}'},
-            {"role": "assistant", "content": "Only bounded reads were checked."},
+            {"role": "assistant", "content": "The source rows are incomplete."},
         ]
-        before = json.dumps(original, sort_keys=True)
+        before = json.dumps(original)
         converted = openai_messages(original)
-        self.assertEqual(json.dumps(original, sort_keys=True), before)
-        calls = converted[2]["tool_calls"]
-        self.assertEqual(len(calls), 2)
-        self.assertEqual([c["id"] for c in calls], [
-            converted[3]["tool_call_id"], converted[4]["tool_call_id"],
-        ])
-        self.assertEqual(json.loads(calls[0]["function"]["arguments"]),
-                         {"labelFilter": "fictional"})
-        self.assertEqual(json.loads(calls[1]["function"]["arguments"]),
-                         {"deviceId": "LAB-1"})
+        self.assertEqual(json.dumps(original), before)
+        self.assertEqual(converted[2]["tool_calls"][0]["id"],
+                         converted[3]["tool_call_id"])
+        self.assertEqual(converted[2]["tool_calls"][1]["id"],
+                         converted[4]["tool_call_id"])
         self.assertEqual(converted[-1]["content"], original[-1]["content"])
+        self.assertEqual(json.loads(
+            converted[2]["tool_calls"][0]["function"]["arguments"]),
+            {"labelFilter": "FICTIONAL"})
 
-    def test_unpaired_tool_result_is_refused(self):
-        with self.assertRaisesRegex(ValueError, "Unpaired"):
+    def test_orphaned_tool_receipts_rejected_without_execution(self):
+        with self.assertRaises(ValueError):
             openai_messages([{"role": "tool", "tool_name": "x", "content": "a"}])
-        with self.assertRaisesRegex(ValueError, "lack matching"):
+        with self.assertRaises(ValueError):
             openai_messages([{"role": "assistant", "tool_calls": [
                 {"function": {"name": "x", "arguments": {}}},
             ]}])
 
 
-class RouterRequestIsolationTests(unittest.IsolatedAsyncioTestCase):
+class FakeResponse:
+    def __init__(self, body=None, status=200):
+        self.body = body or {"choices": [{"message": {
+            "content": "Synthetic answer", "tool_calls": []
+        }}]}
+        self.status_code = status
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            import httpx
+            raise httpx.HTTPStatusError(
+                "non-public failure",
+                request=httpx.Request("POST", "https://openrouter.ai"),
+                response=httpx.Response(self.status_code,
+                                        request=httpx.Request("POST", "https://openrouter.ai")))
+    def json(self):
+        return self.body
+
+
+class CloudTransportTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.router = RoutedAgent(
-            "http://192.0.2.5:11434", "fictional:4b", "", 30,
-            cloud_fallback_enabled=True,
-            cloud_fallback_model="openrouter/free",
-            cloud_fallback_api_key="fictional-test-key",
+        self.cloud = OpenRouterChat(
+            mode="free", free_model="openrouter/free",
+            paid_model="google/gemini-3.1-flash-lite",
+            paid_consent=False, api_key="fixture-secret", timeout=30,
         )
-
     async def asyncTearDown(self):
-        await self.router.close()
+        await self.cloud.close()
 
-    async def test_local_connection_failure_uses_free_cloud_once_then_pins(self):
-        local = AsyncMock(side_effect=ModelEndpointUnavailable("offline"))
-        cloud = AsyncMock(side_effect=[
-            {"content": "Cloud tool plan", "tool_calls": []},
-            {"content": "Cloud final", "tool_calls": []},
-        ])
-        with patch.object(Agent, "round", local), patch.object(self.router.cloud, "round", cloud):
-            state = {"provider": None}
-            token = self.router._route.set(state)
-            try:
-                first = await self.router.round([{"role": "user", "content": "hi"}], [], 25)
-                second = await self.router.round([{"role": "user", "content": "again"}], [], 25)
-            finally:
-                self.router._route.reset(token)
-        self.assertEqual(first["content"], "Cloud tool plan")
-        self.assertEqual(second["content"], "Cloud final")
-        self.assertEqual(state["provider"], "cloud")
-        self.assertEqual(local.await_count, 1)
-        self.assertEqual(cloud.await_count, 2)
-        self.assertEqual(self.router.last_attempt["reason"], "local_connect_failed")
-        self.assertNotIn("fictional-test-key", json.dumps(self.router.route_status()))
+    async def test_free_cloud_transmits_native_tool_schema_and_reports_usage(self):
+        body = {"model": "provider/synthetic:free", "usage": {
+            "prompt_tokens": 3200, "completion_tokens": 36,
+            "total_tokens": 3236, "cost": 0.0,
+        }, "choices": [{"message": {"content": "",
+            "tool_calls": [{"function": {"name": "hub_list_devices",
+                 "arguments": '{"labelFilter":"FICTIONAL"}'}}]}}]}
+        tools = [{"type": "function", "function": {
+            "name": "hub_list_devices", "description": "Fictional read",
+            "parameters": {"type": "object"},
+        }}]
+        with patch.object(self.cloud.client, "post",
+                          AsyncMock(return_value=FakeResponse(body))) as post:
+            reply = await self.cloud.round(
+                [{"role": "user", "content": "fictional status"}], tools, 20)
+        self.assertEqual(reply["tool_calls"][0]["function"]["name"],
+                         "hub_list_devices")
+        self.assertEqual(reply["_inference_metrics"]["provider_reported_model"],
+                         "provider/synthetic:free")
+        self.assertEqual(reply["_inference_metrics"]["prompt_tokens"], 3200)
+        self.assertEqual(reply["_inference_metrics"]["provider_reported_cost_usd"], 0.0)
+        request = post.call_args.kwargs["json"]
+        self.assertEqual(request["model"], "openrouter/free")
+        self.assertEqual(request["tools"], tools)
+        self.assertEqual(request["tool_choice"], "auto")
+        self.assertEqual(request["stream"], False)
+        self.assertNotIn("fixture-secret", json.dumps(request))
+        self.assertEqual(post.call_args.args[0],
+                         "https://openrouter.ai/api/v1/chat/completions")
 
-    async def test_successful_local_round_cannot_switch_mid_request(self):
-        local = AsyncMock(side_effect=[
-            {"content": "Local tool plan"}, ModelEndpointUnavailable("off"),
-        ])
-        cloud = AsyncMock()
-        with patch.object(Agent, "round", local), patch.object(self.router.cloud, "round", cloud):
-            state = {"provider": None}
-            token = self.router._route.set(state)
-            try:
-                self.assertEqual(
-                    (await self.router.round([], [], 25))["content"],
-                    "Local tool plan",
-                )
-                with self.assertRaisesRegex(ModelEndpointUnavailable, "mid-request"):
-                    await self.router.round([], [], 25)
-            finally:
-                self.router._route.reset(token)
-        self.assertEqual(state["provider"], "local")
-        cloud.assert_not_awaited()
-
-    async def test_timeout_rate_limit_and_http_failures_do_not_use_cloud(self):
-        cloud = AsyncMock()
-        with patch.object(self.router.cloud, "round", cloud):
-            for failure in (
-                RuntimeError("Model request timed out"),
-                RuntimeError("Model API returned HTTP 429"),
-                RuntimeError("Model API returned HTTP 500"),
-            ):
-                with self.subTest(failure=str(failure)):
-                    with patch.object(Agent, "round", AsyncMock(side_effect=failure)):
-                        with self.assertRaises(RuntimeError):
-                            await self.router.round([], [], 25)
-        cloud.assert_not_awaited()
-
-    async def test_fallback_disabled_and_broken_configuration(self):
-        with self.assertRaisesRegex(ValueError, "API key"):
-            RoutedAgent("http://192.0.2.5:11434", "fictional", "", 30,
-                        cloud_fallback_enabled=True)
-        with self.assertRaisesRegex(ValueError, "free"):
-            RoutedAgent("http://192.0.2.5:11434", "fictional", "", 30,
-                        cloud_fallback_enabled=True,
-                        cloud_fallback_model="premium/large",
-                        cloud_fallback_api_key="test")
-        disabled = RoutedAgent("http://192.0.2.5:11434", "fictional", "", 30)
+    async def test_paid_mode_requires_consent_and_keeps_one_model(self):
+        agent = CloudAgent(mode="paid", paid_consent=True,
+                           paid_model="google/gemini-3.1-flash-lite",
+                           api_key="fixture-secret")
         try:
-            with patch.object(Agent, "round",
-                              AsyncMock(side_effect=ModelEndpointUnavailable("offline"))):
-                with self.assertRaises(ModelEndpointUnavailable):
-                    await disabled.round([], [], 25)
-            self.assertFalse(disabled.route_status()["fallback_enabled"])
-        finally:
-            await disabled.close()
-
-    async def test_request_scope_is_reset_even_if_answer_fails(self):
-        async def parent_answer(_self, *args, **kwargs):
-            await _self.round([{"role": "user", "content": "fictional"}], [], 25)
-            return {"success": True, "answer": "fictional", "tool_calls": []}
-        local = AsyncMock(side_effect=[
-            ModelEndpointUnavailable("offline"), {"content": "Local", "tool_calls": []},
-        ])
-        cloud = AsyncMock(return_value={"content": "Cloud", "tool_calls": []})
-        with patch.object(Agent, "round", local), \
-             patch.object(Agent, "answer", parent_answer), \
-             patch.object(self.router.cloud, "round", cloud):
-            a = await self.router.answer("one", [], None, 30)
-            b = await self.router.answer("two", [], None, 30)
-        self.assertEqual(a["model_route"]["provider"], "cloud")
-        self.assertEqual(b["model_route"]["provider"], "local")
-        self.assertEqual(local.await_count, 2)
-        self.assertEqual(cloud.await_count, 1)
-
-
-class FreeCloudTransportTests(unittest.IsolatedAsyncioTestCase):
-    async def test_openai_compatible_tools_and_api_key_are_server_side(self):
-        cloud = OpenRouterFree(model="openrouter/free", api_key="fixture-secret", timeout=20)
-        data = {
-            "choices": [{"message": {
-                "content": None,
-                "tool_calls": [{
-                    "id": "call1", "type": "function",
-                    "function": {"name": "hub_list_devices",
-                                 "arguments": '{"labelFilter":"test"}'},
-                }],
-            }}],
-        }
-        class FakeResponse:
-            def raise_for_status(self):
-                return None
-            def json(self):
-                return data
-        try:
-            with patch.object(cloud.client, "post",
+            self.assertTrue(agent.route_status()["paid_mode"])
+            self.assertFalse(agent.route_status()["automatic_paid_fallback"])
+            with patch.object(agent.cloud.client, "post",
                               AsyncMock(return_value=FakeResponse())) as post:
-                out = await cloud.round(
-                    [{"role": "user", "content": "hello"}],
-                    [{"type": "function", "function": {"name": "hub_list_devices",
-                       "description": "List", "parameters": {"type": "object"}}}], 20,
-                )
-            self.assertEqual(out["tool_calls"][0]["function"]["name"],
-                             "hub_list_devices")
-            self.assertEqual(out["tool_calls"][0]["function"]["arguments"],
-                             '{"labelFilter":"test"}')
-            self.assertEqual(post.call_args.args[0],
-                             "https://openrouter.ai/api/v1/chat/completions")
-            body = post.call_args.kwargs["json"]
-            self.assertEqual(body["model"], "openrouter/free")
-            self.assertEqual(body["tools"][0]["function"]["name"], "hub_list_devices")
-            self.assertNotIn("fixture-secret", json.dumps(body))
-            self.assertTrue(post.call_args.kwargs["json"]["stream"] is False)
+                await agent.round([{"role": "user", "content": "fixture"}], [], 30)
+                await agent.round([{"role": "user", "content": "fixture 2"}], [], 30)
+            self.assertEqual(post.await_count, 2)
+            for call in post.call_args_list:
+                self.assertEqual(call.kwargs["json"]["model"],
+                                 "google/gemini-3.1-flash-lite")
         finally:
-            await cloud.close()
+            await agent.close()
+
+    async def test_429_and_timeout_never_escalate_to_paid_or_other_provider(self):
+        agent = CloudAgent(api_key="fixture-secret")
+        try:
+            with patch.object(agent.cloud.client, "post",
+                              AsyncMock(return_value=FakeResponse(status=429))) as post:
+                with self.assertRaisesRegex(RuntimeError, "HTTP 429"):
+                    await agent.round([{"role": "user", "content": "test"}], [], 30)
+                self.assertEqual(post.await_count, 1)
+            with patch.object(agent.cloud.client, "post",
+                              AsyncMock(side_effect=asyncio.TimeoutError)):
+                with self.assertRaisesRegex(RuntimeError, "timed out"):
+                    await agent.round([{"role": "user", "content": "test"}], [], 30)
+            self.assertEqual(agent.route_status()["mode"], "free")
+        finally:
+            await agent.close()
+
+    async def test_synthetic_probe_requires_correct_arguments_and_no_real_mcp(self):
+        agent = CloudAgent(api_key="fixture-secret")
+        try:
+            with patch.object(agent.cloud, "round", AsyncMock(return_value={
+                "content": "", "tool_calls": [{"function": {
+                    "name": "fixture_read_state",
+                    "arguments": '{"fixture_id":"DEMO_SWITCH"}',
+                }}], "_inference_metrics": {"prompt_tokens": 90},
+            })) as model:
+                outcome = await probe_cloud_tool_call(agent)
+            self.assertTrue(outcome["tool_call_test_passed"])
+            self.assertEqual(outcome["model_rounds"], 1)
+            self.assertIn("no actual tool executed", outcome["note"])
+            args = model.call_args.args
+            self.assertEqual([x["function"]["name"] for x in args[1]],
+                             ["fixture_read_state"])
+            self.assertEqual(args[0][-1]["content"].count("DEMO_SWITCH"), 1)
+            with patch.object(agent.cloud, "round", AsyncMock(return_value={
+                "content": "I will use the tool", "tool_calls": [],
+            })):
+                failed = await probe_cloud_tool_call(agent)
+            self.assertFalse(failed["tool_call_test_passed"])
+        finally:
+            await agent.close()
+
+    async def test_agent_provenance_only_after_actual_answer(self):
+        agent = CloudAgent(api_key="fixture-secret")
+        try:
+            async def simulated_parent(_agent, *args, **kwargs):
+                response = await _agent.round([{"role": "user", "content": "fixture"}],
+                                               [], 25)
+                return {"success": True, "answer": response["content"],
+                        "rounds": 1, "tool_calls": []}
+            with patch.object(Agent, "answer", simulated_parent), \
+                 patch.object(agent.cloud, "round", AsyncMock(
+                     return_value={"content": "synthetic", "tool_calls": []}
+                 )):
+                result = await agent.answer("fixture", [], None, 90)
+            self.assertEqual(result["model_route"]["provider"], "cloud")
+            self.assertEqual(result["model_route"]["mode"], "free")
+            self.assertEqual(result["model_route"]["status"], "completed_model_round")
+            self.assertEqual(result["model_route"]["attempted_provider"], "openrouter")
+        finally:
+            await agent.close()
+
+
+class AddonCloudConfigTests(unittest.TestCase):
+    def test_legacy_model_options_ignored_and_new_key_required(self):
+        import app as addon
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as temp:
+            options_file = Path(temp) / "options.json"
+            options_file.write_text(json.dumps({
+                "model_base_url": "http://192.168.1.2:11434",
+                "model_name": "qwen3.5:4b",
+                "model_api_key": "legacy-secret",
+                "cloud_fallback_api_key": "legacy-cloud-secret",
+            }), encoding="utf-8")
+            settings = addon.config(options_file)
+        for obsolete in ("model_base_url", "model_name", "model_api_key",
+                         "cloud_fallback_api_key", "local_ollama_think"):
+            self.assertNotIn(obsolete, settings)
+        self.assertEqual(settings["cloud_mode"], "free")
+        self.assertEqual(settings["cloud_api_key"], "")
+        self.assertFalse(settings["cloud_paid_consent"])
+
+    def test_schema_has_no_local_and_free_paid_requires_explicit_consent(self):
+        config = (Path(__file__).resolve().parents[1] / "config.yaml").read_text()
+        self.assertIn("version: \"2.0.0-alpha.89\"", config)
+        self.assertNotIn("model_base_url:", config)
+        self.assertNotIn("local_ollama_num_ctx:", config)
+        self.assertIn("cloud_mode: list(free|paid)", config)
+        self.assertIn("cloud_api_key: password?", config)
+        defaults = config.split("options:", 1)[1].split("\nschema:", 1)[0]
+        self.assertNotIn("cloud_api_key:", defaults)
+        self.assertIn("cloud_paid_consent: false", defaults)
 
 
 if __name__ == "__main__":
