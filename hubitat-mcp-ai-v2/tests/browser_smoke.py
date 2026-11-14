@@ -612,7 +612,19 @@ with sync_playwright() as p:
   assert page.locator("#ask").is_visible()
   assert "do not change anything" in page.locator("#question").input_value().lower()
   assert len(requests)==count_before, "Preparing an AI question must never submit it"
-  assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+  width_audit=page.evaluate("""() => ({
+    width:innerWidth,scrollWidth:document.documentElement.scrollWidth,
+    offenders:[...document.querySelectorAll('body *')].filter(node => {
+      const rect=node.getBoundingClientRect();
+      return rect.right>innerWidth+2 || rect.left < -2;
+    }).slice(0,18).map(node=>({
+      tag:node.tagName,id:node.id||null,
+      cls:typeof node.className==='string'?node.className.slice(0,80):'',
+      left:Math.round(node.getBoundingClientRect().left),
+      right:Math.round(node.getBoundingClientRect().right)
+    }))
+  })""")
+  assert width_audit["scrollWidth"] <= width_audit["width"],width_audit
   # Everyday UI: retired experiment controls are absent. Browser-side
   # study code is not required to load, and nothing should auto-run.
   for retired in ("#labMenu","#benchmarkTab","#autonomousTab","#reasoningTab",
