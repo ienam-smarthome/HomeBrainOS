@@ -130,7 +130,7 @@ class ContinuityCoverageAuditTests(unittest.TestCase):
         for phrase in (
             "state CONTINUOUSLY", "historical power bins",
             "historical state", "READ-ONLY state/transition source",
-            "Do not mandate a history call", "interrupted",
+            "Do not mandate a history call", "interruptions",
         ):
             # Some concepts appear across the two existing stages.
             self.assertIn(phrase, MEASUREMENT_REVIEW_PROMPT +
