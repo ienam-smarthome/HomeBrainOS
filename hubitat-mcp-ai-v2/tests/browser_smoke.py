@@ -25,7 +25,7 @@ with sync_playwright() as p:
  browser=p.chromium.launch()
  for width in [1280,390]:
   page=browser.new_page(viewport={"width":width,"height":1000})
-  requests=[];resets=[];bench={"imported":False,"answered":False,"scored":False};bench_runs=[];lab={"answered":False,"graded":False};lab_runs=[];paired={"answered":False,"graded":False};paired_runs=[]
+  requests=[];overview_requests=[];resets=[];bench={"imported":False,"answered":False,"scored":False};bench_runs=[];lab={"answered":False,"graded":False};lab_runs=[];paired={"answered":False,"graded":False};paired_runs=[]
   def api(route):
    request=route.request
    if "/api/reasoning-ab/" in request.url:
@@ -176,6 +176,7 @@ with sync_playwright() as p:
     route.fulfill(status=200,content_type="application/json",body=json.dumps(data))
     return
    if "/api/overview" in request.url:
+    overview_requests.append(request.url)
     assert request.headers.get("x-homebrain-request")=="1"
     data={"available":True,"read_only":True,"returned_devices":5,
           "source_declared_total":6,"inventory_full_coverage_verified":False,
@@ -186,7 +187,12 @@ with sync_playwright() as p:
            "motion_active":{"count":1,"devices_with_state":2,"members":[
                 {"name":"Lab Motion A"}],"members_omitted":0},
            "battery_low":{"count":1,"devices_with_state":4,"members":[
-                {"name":"Lab Battery Sensor","battery_pct":9}],"members_omitted":0}},
+                {"name":"Lab Battery Sensor","battery_pct":9}],"members_omitted":0},
+           "contact_open":{"count":1,"devices_with_state":2,"members":[{"name":"Lab Front Door"}],"members_omitted":0},
+           "water_wet":{"count":0,"devices_with_state":2,"members":[],"members_omitted":0},
+           "heating_active":{"count":1,"devices_with_state":2,"members":[{"name":"Lab TRV"}],"members_omitted":0},
+           "reported_offline":{"count":1,"devices_with_state":3,"members":[{"name":"Lab Mesh Plug"}],"members_omitted":0},
+           "other_switches_on":{"count":1,"devices_with_state":3,"members":[{"name":"Lab Smart Socket"}],"members_omitted":0}},
            "unclassified_on_switches":1}
    elif "/api/status" in request.url:data={
     "version":version,"configured":True,"model":"fixture-model",
@@ -241,6 +247,13 @@ with sync_playwright() as p:
   errors=[];page.on("pageerror",lambda e:errors.append(str(e)))
   page.goto(f"http://127.0.0.1:{server.server_port}")
   page.wait_for_function("document.querySelector('#overviewLights').textContent === '1'")
+  assert page.locator("#overviewLightsPreview").inner_text()=="Lab Sample Light 2"
+  assert page.locator("#overviewMotionPreview").inner_text()=="Lab Motion A"
+  assert page.locator("#overviewBatteryPreview").inner_text()=="Lab Battery Sensor · 9%"
+  page.locator("#overviewLightsToggle").click()
+  page.locator("#overviewMotionToggle").click()
+  page.locator("#overviewBatteryToggle").click()
+  assert page.locator("#overviewLightsNames").is_visible()
   assert page.locator("#overviewLightsNames").inner_text()=="Lab Sample Light 2"
   assert page.locator("#overviewMotionNames").inner_text()=="Lab Motion A"
   assert page.locator("#overviewBatteryNames").inner_text()=="Lab Battery Sensor · 9%"
@@ -253,11 +266,30 @@ with sync_playwright() as p:
   assert "807 MB" in page.locator("#overviewRecorder").inner_text()
   assert "20.0%" in page.locator("#overviewRecorder").inner_text()
   assert len(requests)==0,"Overview must not invoke the model or ordinary Ask"
+  assert len(overview_requests)==1,"Startup uses one inventory request"
+  page.locator("#systemHealthTab").click()
+  assert page.locator("#healthAttention").is_visible()
+  assert page.locator("#healthAttention .health-card").count()==4
+  assert page.locator("#healthActive .health-card").count()==4
+  assert "Lab Front Door" in page.locator("#healthAttention").inner_text()
+  assert "Lab Mesh Plug" in page.locator("#healthAttention").inner_text()
+  assert "Lab TRV" in page.locator("#healthActive").inner_text()
+  assert page.locator("#healthSnapshotNotes").inner_text().startswith("No new scan")
+  page.locator("#systemHealthTab").click()
+  assert len(overview_requests)==1,"Opening System Health never refreshes inventory"
+  assert len(requests)==0,"System Health never calls Ollama"
+  page.locator("#systemHealth .health-guide button").first.click()
+  assert page.locator("#ask").is_visible()
+  assert "Investigate" in page.locator("#question").input_value()
+  assert len(overview_requests)==1,"Preparing investigation does not refresh inventory"
+  assert len(requests)==0,"Preparing question does not submit to model"
+  page.locator("#question").fill("")
   assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
   page.locator("#refreshOverview").click()
   page.wait_for_function("!document.querySelector('#refreshOverview').disabled")
   assert page.locator("#overviewLights").inner_text()=="1"
   assert len(requests)==0,"Overview refresh is read-only; no Ask call"
+  assert len(overview_requests)==2,"Only manual refresh adds an inventory read"
   page.locator("#question").fill("Read-only fixture question")
   page.locator("#send").click()
   page.locator("#answer table").wait_for()
