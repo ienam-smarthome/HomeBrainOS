@@ -1,5 +1,5 @@
 name: "Hubitat MCP AI v2 (Preview)"
-version: "2.0.0-alpha.89"
+version: "2.0.0-alpha.90"
 slug: hubitat_mcp_ai_v2
 description: "Clean, model-led Hubitat MCP assistant with external diagnostics recorder"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
@@ -23,15 +23,16 @@ ports_description:
   8789/tcp: "Optional direct interface; use Home Assistant ingress"
 webui: "http://[HOST]:[PORT:8789]"
 # Home Assistant Supervisor treats options with defaults as required even
-# if schema uses '?'. The OpenRouter API key is optional in this schema
-# until supplied by the operator; V2 fails closed without a key.
-# Do not include a blank cloud_api_key in options. Existing legacy Ollama
-# settings are ignored and never used by the alpha.89 runtime.
+# if schema uses '?'. Provider API keys are optional in the add-on editor
+# and required only for the active selected provider. No blank password
+# defaults in options: and no migration of old local-Ollama credentials.
 options:
-  # Cloud-only: one selected OpenRouter model, no LAN Ollama transport.
+  # Free always uses OpenRouter. Paid mode chooses exactly one provider.
   cloud_mode: "free"
   cloud_free_model: "openrouter/free"
+  cloud_paid_provider: "openrouter"
   cloud_paid_model: "google/gemini-3.1-flash-lite"
+  ollama_cloud_model: "nemotron-3-super"
   cloud_paid_consent: false
   model_timeout_seconds: 120
   mcp_timeout_seconds: 25
@@ -54,9 +55,12 @@ schema:
   hubitat_mcp_token: password?
   cloud_mode: list(free|paid)
   cloud_free_model: str
+  cloud_paid_provider: list(openrouter|ollama)
   cloud_paid_model: str
+  ollama_cloud_model: str
   cloud_paid_consent: bool
   cloud_api_key: password?
+  ollama_cloud_api_key: password?
   model_timeout_seconds: int(10,300)
   mcp_timeout_seconds: int(5,90)
   investigation_timeout_seconds: int(30,1800)
