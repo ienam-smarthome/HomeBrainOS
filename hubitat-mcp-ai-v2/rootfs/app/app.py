@@ -22,7 +22,7 @@ from prospective_routes import router as prospective_router
 from prospective_source_ab import ProspectiveWorkspace
 from pydantic import BaseModel, Field, StrictBool
 
-from model_routing import RoutedAgent
+from model_routing import CloudAgent, probe_cloud_tool_call
 from write_receipt_evidence import model_error_kind
 from external_hub_diagnostics import ExternalHubDiagnostics
 from device_monitor import HubDeviceMonitor
@@ -38,14 +38,11 @@ from frozen_evaluation import FrozenEvaluationError, freeze_capture, replay_froz
 DEFAULTS: dict[str, Any] = {
     "hubitat_mcp_url": "",
     "hubitat_mcp_token": "",
-    "model_base_url": "https://ollama.com",
-    "model_name": "gemma4:31b-cloud",
-    "model_api_key": "",
-    "local_ollama_think": False,
-    "local_ollama_num_ctx": 8192,
-    "cloud_fallback_enabled": False,
-    "cloud_fallback_model": "openrouter/free",
-    "cloud_fallback_api_key": "",
+    "cloud_mode": "free",
+    "cloud_free_model": "openrouter/free",
+    "cloud_paid_model": "google/gemini-3.1-flash-lite",
+    "cloud_paid_consent": False,
+    "cloud_api_key": "",
     "model_timeout_seconds": 120,
     "mcp_timeout_seconds": 25,
     "investigation_timeout_seconds": 300,
@@ -128,19 +125,20 @@ async def lifecycle(app: FastAPI):
         media_stream=str(options["ha_tts_media_stream"]),
     )
     try:
-        app.state.model = RoutedAgent(
-            http_base(str(options["model_base_url"])),
-            str(options["model_name"]),
-            str(options["model_api_key"]),
-            int(options["model_timeout_seconds"]),
+        app.state.model = CloudAgent(
+            mode=str(options["cloud_mode"]),
+            free_model=str(options["cloud_free_model"]),
+            paid_model=str(options["cloud_paid_model"]),
+            paid_consent=options["cloud_paid_consent"],
+            api_key=str(options["cloud_api_key"]),
+            model_timeout=int(options["model_timeout_seconds"]),
             cpu_cores=int(options["external_hub_diagnostics_cpu_cores"]),
-            cloud_fallback_enabled=bool(options["cloud_fallback_enabled"]),
-            cloud_fallback_model=str(options["cloud_fallback_model"]),
-            cloud_fallback_api_key=str(options["cloud_fallback_api_key"]),
-            local_ollama_think=bool(options["local_ollama_think"]),
-            local_ollama_num_ctx=int(options["local_ollama_num_ctx"]),
         )
         app.state.model.hub_timezone = str(options["hub_timezone"])
+    except ValueError as exc:
+        app.state.configuration_error = str(exc)
+    # Model key/config must not disable independent read-only System Health.
+    try:
         if str(options["hubitat_mcp_url"]).strip():
             app.state.mcp = MCPClient(
                 str(options["hubitat_mcp_url"]),
@@ -207,7 +205,7 @@ async def lifecycle(app: FastAPI):
             await app.state.model.close()
 
 
-app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.88", lifespan=lifecycle)
+app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.89", lifespan=lifecycle)
 app.include_router(benchmark_router)
 app.include_router(autonomous_router)
 app.include_router(reasoning_router)
@@ -248,12 +246,12 @@ async def status():
     return {
         "version": app.version,
         "mode": "native-model-led-mcp",
-        "configured": bool(mcp and app.state.model and (
-            str(options["model_base_url"]).rstrip("/") != "https://ollama.com"
-            or bool(str(options["model_api_key"]).strip())
-        )),
+        "configured": bool(mcp and app.state.model and
+                           not app.state.configuration_error),
         "configuration_error": app.state.configuration_error,
-        "model": str(options["model_name"]),
+        "model": (app.state.model.model if app.state.model else
+                  str(options["cloud_free_model"] if options["cloud_mode"] == "free"
+                      else options["cloud_paid_model"])),
         "model_routing": (app.state.model.route_status()
                           if hasattr(app.state.model, "route_status") else None),
         "recorder": app.state.recorder.status(),
@@ -266,6 +264,23 @@ async def status():
         "tts": app.state.tts.status(),
         "one_off_cleanup": app.state.one_off_cleanup.status(),
     }
+
+
+
+@app.post("/api/model/probe")
+async def model_probe(request: Request):
+    """Explicit model-only fixture tool-call check; zero native MCP access."""
+    require_ui_request(request)
+    model = getattr(app.state, "model", None)
+    if model is None or app.state.configuration_error:
+        raise HTTPException(503, "Configure cloud inference and OpenRouter API key first")
+    try:
+        return await asyncio.wait_for(probe_cloud_tool_call(model), timeout=65)
+    except (RuntimeError, ValueError, asyncio.TimeoutError) as exc:
+        # Never forward provider message/body that may include private data.
+        raise HTTPException(502, "Cloud test failed: " + (
+            str(exc) if isinstance(exc, RuntimeError) else "model response invalid"
+        )) from None
 
 
 def require_ui_request(request: Request):
@@ -393,9 +408,6 @@ async def ask(request: AskRequest, http_request: Request):
     require_ui_request(http_request)
     if app.state.configuration_error:
         raise HTTPException(503, app.state.configuration_error)
-    if (str(app.state.options["model_base_url"]).rstrip("/") == "https://ollama.com"
-            and not str(app.state.options["model_api_key"]).strip()):
-        raise HTTPException(503, "Configure the Ollama Cloud API key in add-on options")
     if app.state.mcp is None or app.state.model is None:
         raise HTTPException(503, "Configure the model and Hubitat MCP URL in add-on options")
     request_id = str(request.request_id)
@@ -471,9 +483,6 @@ async def evaluation_replay(payload: EvaluationReplayRequest, http_request: Requ
     model = app.state.model
     if model is None or app.state.configuration_error:
         raise HTTPException(503, "Configure the V2 model before using evaluation")
-    if (str(app.state.options["model_base_url"]).rstrip("/") == "https://ollama.com"
-            and not str(app.state.options["model_api_key"]).strip()):
-        raise HTTPException(503, "Configure the Ollama Cloud API key first")
     try:
         frozen = freeze_capture(payload.capture)
     except FrozenEvaluationError as exc:
