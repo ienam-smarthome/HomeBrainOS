@@ -1,5 +1,9 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## Alpha.94 read-only source-real acceptance
+
+On a genuinely new causal first answer after V2 Preview alpha.94 upgrade, confirm a model independently distinguishes: (1) direct prior/target state and timestamps, (2) recorded command issuer from reporter and listeners, (3) configured selected inputs vs explicitly null/empty current inputs and unknown historical inputs, and (4) a failed read versus a successful empty query. Retain original source scope/lookback and material unknowns. Compare actual response length, nine-versus-fewer model rounds where applicable, cumulative output/input tokens, duration and no writes. The 350–550-word final audit target is only model guidance, not guaranteed performance. [Acceptance details](HOMEBRAIN-V2-ALPHA94-EVIDENCE-CONTRADICTION-ERROR-20261114.md).
+
 ## Alpha.93 V2 UI check
 
 Confirm the Ask composer with a several-line read-only query: the scrollbar should be narrow and subtle, without bulky arrow buttons, while preserving the input's max height, wheel/touch/keyboard scrolling, paste, Enter-to-send and Shift+Enter newlines. This is cosmetic and should not change model tokens or MCP results. Continue to evaluate source-real alpha.92 causal evidence quality separately; the source-real read of Bathroom Light 2 had 8 successful MCP calls and a failed app-history read, with a plausible but unverified inactive-motion cause and an unusually long 299s response.
