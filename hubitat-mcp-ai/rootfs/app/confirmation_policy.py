@@ -186,9 +186,11 @@ class ConfirmationPolicy:
         *,
         enabled: bool = True,
         max_actions: int = DEFAULT_MAX_CONFIRMATION_ACTIONS,
+        confirm_routine_writes: bool = False,
     ) -> None:
         self.enabled = bool(enabled)
         self.max_actions = max(1, int(max_actions))
+        self.confirm_routine_writes = bool(confirm_routine_writes)
 
     def requires_confirmation(
         self,
@@ -196,13 +198,15 @@ class ConfirmationPolicy:
         *,
         declared: bool = True,
     ) -> bool:
-        """Queue every declared mutation before execution, including routine writes.
+        """Opt-in routine approvals while retaining non-UI agent defaults.
 
-        The existing confirmation store and ConfirmedActionCoordinator still
-        own approval, revalidation, execution and no-replay protections.
+        The configured web add-on explicitly opts in so a browser approval
+        card can only represent an unexecuted, session-queued native write.
         """
 
-        return self.enabled and declared and effect.mutates
+        return (self.enabled and declared and
+                (effect.requires_confirmation or
+                 (self.confirm_routine_writes and effect is ToolEffect.ROUTINE_WRITE)))
 
     def decide(
         self,
@@ -256,11 +260,11 @@ class ConfirmationPolicy:
                 )
             name = names[0] if names else "unknown"
             return (
-                "Please confirm before I run the queued Hubitat action "
+                "Please confirm before I run the sensitive Hubitat action "
                 f"`{name}`."
             )
         return (
-            f"Please confirm before I run {len(actions)} queued Hubitat actions "
+            f"Please confirm before I run {len(actions)} sensitive Hubitat actions "
             f"through `{', '.join(names)}`."
         )
 
