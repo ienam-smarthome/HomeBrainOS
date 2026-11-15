@@ -1,0 +1,27 @@
+# HomeBrainOS V2 alpha.120 — preserve positive context under temporal uncertainty
+
+**15 November 2026. V2 Preview only.** This note is a public engineering handoff; all names and native event fixtures in tests are fictional.
+
+## Source-real motivation and bounded conclusion
+
+The owner's installed alpha.119 first answer received **6/8** on the specific 12-hour heating/idle question: factual grounding 2/2, source completeness 1/2, causal calibration 2/2, usefulness 1/2. It correctly refused to invent a Bedroom 1 TRV heating→idle pair, but its narrow source-derived final projection suppressed positive native evidence: the target TRV's last returned setpoint command, its later setpoint/temperature/valve reports, and a separate main thermostat's reported mode OFF after an observed heating/idle sequence. Five historical native event reads and six total successful native MCP calls did not establish complete 12-hour focal coverage. Configured Hub & Device Monitor was available but not selected; no execution-specific scheduler decision was returned. The alpha.119 run used ~843,879 input tokens, 9 AI rounds and ~55.8 seconds server time. Those measurements describe **one installed run, not a baseline distribution**.
+
+Alpha.119's temporal verification safeguard is necessary; do not relax its requirement for a same-device, same-attribute, inspectable before/after pair. There is no evidence that a command time, state-change flag on duplicate idle reports, uninspected response prefix or a peer device's state constitutes the requested focal transition.
+
+## alpha.120 change — general, source-led and no new AI/read calls
+
+- Retain the source-derived publication contract, but construct a compact **positive context ledger** from already returned, fully inspectable, successful ORIGINAL `hub_list_device_events` receipts. Capture the latest report per narrowly eligible, non-sensitive scalar operational field (including temperature, setpoints, valve level, thermostat mode, power and battery), up to five focal fields, plus up to two focal command records. Preserve original offset-aware timestamps, field names and numeric values, with bounded/allowlisted rendered text. Do not copy arbitrary untrusted event contents into the final answer.
+- Preserve a separately returned peer thermostat mode report as **other-device context** alongside alpha.119's latest peer state chronology and latest recorded command. Report a later mode-OFF observation as a device report, **not a causal explanation for the focal device**. Commands are recorded issuers/arguments, never proof of internal automation decision or physical outcome.
+- Correct requested relative lookback attestation: **only the focal device's own matching native event query** may verify the requested focal window. A peer's matching lookback cannot attest to focal history. Even a focal matching query does **not** certify complete history or absence of unreturned events.
+- Reuse the same existing model-selected read-only source review and typed final publication. Pass the enriched compact ledger into the existing model review context, asking the model to preserve supporting facts without causal transfer. No forced historian, fixed follow-up source, extra native read, model round, source router, new write authority or V1 change.
+- Keep the original alpha.116–117 routine-light approval/readback guarantees, sensitive native confirmation, cancellation, operational deadlines and action receipts unchanged.
+
+## Tests, acceptance and rollback
+
+Fictional regressions cover a target idle-only series with its own setpoint command and temperature/setpoint/valve reports; an independently reported peer heating→idle sequence, later peer OFF command and OFF mode report; missing focal lookback despite a peer having the requested 12h lookback; and hostile or irrelevant event-value exclusion. Original alpha.119 target identity, timestamps, capped/truncated data, state pairs, current-state and action non-interference tests remain.
+
+**CI green does not establish an installed improvement.** There is no measured reduction in the ~844k token use or 9 model rounds in this change. It preserves evidence at final publication, not full autonomous source sufficiency. Further general research should tackle original receipt pagination/size, returned window coverage, redundant source/model rounds and model-selected discriminating sources without weakening safe uncertainty. Continue the frozen 53-case human-reviewed cross-domain quality program; targets remain >=90% grounded conclusions, **zero** definite unsupported causes, >=80% useful first attempts, and no unsafe writes. Complex investigation latency has no fixed failure cutoff.
+
+**Next installed acceptance:** after exact-head required workflows succeed, update V2 Preview to alpha.120 and run a new uncoached read-only latest-transition or latest-event query. Review complete PRIVATE original Technical JSON, focal/peer identity, source windows, row caps, included positive context, and any Monitor/controller decision reads. Compare server time, model rounds and token use independently against alpha.119, but do not treat unmatched questions as controlled latency A/B.
+
+**Rollback:** revert only the alpha.120 V2 code if context lacks original receipt provenance, discloses unrelated values, claims cause from a recorded command, or regresses any native authorization. Retain alpha.119 focal temporal verification and V1 unchanged.
