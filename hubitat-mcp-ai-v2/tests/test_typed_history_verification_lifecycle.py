@@ -66,7 +66,7 @@ class TypedHistoryLifecycleTests(unittest.IsolatedAsyncioTestCase):
         model,mcp=Model(),MCP()
         try:
             result=await model.answer(
-                "List all "
+                "List the "
                 "returned ON/OFF state changes during the past six hours, exact timestamps, intervals, "
                 "recorded commands and issuers. Do not change anything.",
                 [],mcp,90,enable_causal_follow_through=False)
