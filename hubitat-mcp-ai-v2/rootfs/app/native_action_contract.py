@@ -129,9 +129,18 @@ def _deadline(doc: dict) -> tuple[str, str] | None:
             continue
         value = entry.get("value") if isinstance(entry, dict) else entry
         if isinstance(value, str) and value.strip() and value.lower() != "none":
+            # Display an actual parseable native timestamp only. Native
+            # source content is untrusted text, not a tool directive.
+            from datetime import datetime
+            if len(value) > 60:
+                continue
+            try:
+                datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                continue
             # Original native text; not a locally calculated or independent
             # readback. Never infer duration or automatic resumption.
-            return name, value[:80]
+            return name, value
     return None
 
 
@@ -206,7 +215,12 @@ def source_derived_timing_answer(
     if len(accepted) != 1:
         return {"status": "not_projected", "answer": draft_answer}
     device_id, command, minutes, doc = accepted[0]
-    label = devices[device_id]["label"]
+    # Device labels come from native read evidence, but remain untrusted
+    # user content. Escape Markdown before composing the final answer.
+    label = re.sub(
+        r"([\\`*_{}\[\]()#+!|>])", r"\\\1",
+        devices[device_id]["label"]
+    )
     kind = wanted[0]
     requested_text = (f"after {minutes} minutes" if kind == "delay"
                       else f"for {minutes} minutes")
@@ -228,9 +242,10 @@ def source_derived_timing_answer(
         "",
         "**Evidence limit:** The returned timer/state fields are part of the "
         "write response, **not an independent post-write readback**. "
-        "A future physical or network change has not been observed in this "
-        "request. The original source does not establish an automatic "
-        "reversal or a fixed action duration.",
+        "Downstream physical/network effects and any future transition have "
+        "not been independently verified in this request. The original "
+        "source does not establish an automatic reversal or a fixed action "
+        "duration.",
     ])
     return {
         "status": "source_derived_native_acceptance",
