@@ -1,5 +1,12 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 15 November 2026 — alpha.108 verified device label and action temporal contract
+
+The latest installed alpha.107 test improved end-to-end performance to about 24.7 seconds and seven cloud-model rounds but still published a material factual error: treated a correctly accepted native `*InMinutes` deferred-onset command as a block lasting `N` minutes, then guaranteed future restoration. Its native write response contained the scheduled deadline, not separate post-write readback, and the later outcome remained unknown. The existing approval card showed only numeric device ID because it relied solely on the model's structured write arguments and omitted string `"5"` timer parameters.
+
+Alpha.108 binds a validated current-request `hub_get_device` ID/label/advertised command receipt to the **display-only** fields of the existing per-request approval. The original device ID remains visible, the bounded label cannot change the writer or its target, and numeric string arguments display correctly. For accepted native minute commands with exact same-request identity, command, requested amount and original native success evidence, the final response uses a source-derived representation of `InMinutes` delayed start versus `ForMinutes` duration rather than trusting contradictory model prose. Embedded write fields are labelled as such, and later physical effect is not claimed. Ambiguous or unsupported requests do not trigger synthetic conclusions. No new evidence reads, extra model rounds, timer polls, provider spend or V1 modifications. [Design note](HOMEBRAIN-V2-ALPHA108-SOURCE-VERIFIED-ACTION-CONTRACT-20261115.md).
+
+
 ## 15 November 2026 — alpha.107 source-sufficient action fast path
 
 The installed alpha.106 native one-off device action eventually returned an accepted six-minute delayed command but took roughly 92.8 seconds and ten cloud model rounds. It initially proposed an unrelated persistent automation and then re-ran broad inventory plus extra reasoning despite a current-request native device detail listing the correct dedicated timer. The initial proposal was never executed, and the later native write receipt confirms only command acceptance and embedded returned timer state—not independent post-write readback or subsequent physical enforcement.
