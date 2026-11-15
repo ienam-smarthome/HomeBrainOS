@@ -1,0 +1,21 @@
+# HomeBrainOS V2 alpha.113 — routine ON/OFF fastpath source verification
+
+15 November 2026. V2 Preview only. This note excludes private device IDs, labels, IP addresses and raw household receipts.
+
+## Live alpha.112 failure
+
+An ordinary immediate OFF request took ~78 seconds including ~59 seconds waiting for a human approval decision. The model used six inference rounds and a partial unfiltered inventory, then a COMPLETE filtered native context inventory, followed by a native OFF proposal with a switch-attribute waitFor condition. The original native write reported acceptance and waitFor convergence. Alpha.112 fast path did NOT activate: the model did not request full device details, while the shortcut required them and rejected waitFor parameters. This is an eligibility-contract defect, not a demonstrated MCP transport failure. A write response reporting switch OFF is not a separately verified physical transition, and source timestamps alone cannot establish cause.
+
+## V2-only implementation
+
+The model still selects native tools and original write arguments. When and only when a model-selected, single immediate turn/switch ON/OFF exactly matches the unique requested device label/ID in a complete current filtered native context inventory, with opposite switch state and Light or Outlet plus Switch capabilities, the agent may make ONE additional native READ-ONLY hub_get_device verification call. An unfiltered partial page never suffices. The original read receipt is preserved as a separately tagged client verification source, not a model-selected tool or an authorization. Current native device details must independently confirm requested/returned identity, label, device capability, advertised no-argument command and opposite switch state (including supported currentStates representation). Mismatches and source failures fail closed to the original model-led prewrite review.
+
+Only strictly matched optional waitFor parameters (attribute switch; expectedValue identical to command; timeoutMs positive integer <=5000) are permitted. No native arguments are modified, and actual UI Approve/Edit/Dismiss still gates the proposed native write. After genuine approval and native submission, the agent may end without an additional model review only when an original matching successful write receipt reports explicit acceptance and, when requested, switch waitFor convergence. The short final response distinguishes Hubitat in-command state reporting from independent later physical verification. Negative/unknown write results retain the model review.
+
+Delayed, recurring, compound, ambiguous, network-effect, timer, automation and other non-basic operations still use the normal V2 reasoning and safety path. This patch does not select a device or issue an action from a literal user string, bypass permission, retry uncertain writes, change V1 or claim that 5-second live performance was achieved.
+
+## Validation and rollback
+
+Scripted tests use a fictional native response shaped like the live source (partial context, complete filtered context, selected waitFor and accepted write). They require original target details, three AI rounds for the simulated two searches and selected write, the separate real pending approval, no dispatch before approval, exact original native writer/arguments, and a short truthful acknowledgement. Tests also challenge wrong IDs, label mismatch, pagination, incomplete source, missing or contradictory states and commands, malformed or nonmatching waitFor, rejected write and complex request semantics. They DO NOT demonstrate real cloud speed or physical device outcome.
+
+Next live test: install alpha.113 only after CI green; run a fresh uncoached low-risk direct ON/OFF, approve it, collect PRIVATE original native receipts, detail-verification status, model round count, and native approval wait. Compare model time + native I/O separately from human approval time. If real hub_get_device returns unsupported or contradictory fields, retain normal review and refine the general source contract only with additional grounded source evidence. Roll back this shortcut if real approval is bypassed or any unsupported physical certainty is published.
