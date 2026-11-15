@@ -28,6 +28,7 @@ from control_surface_recovery import (
     DEVICE_ACTION_FOLLOW_THROUGH_PROMPT, should_follow_through_device_action,
     ACTION_APPROVAL_HANDOFF_PROMPT, prose_only_action_confirmation,
     should_recover_action_approval_handoff,
+    draft_has_source_backed_native_command,
 )
 from evidence_scope import model_result_with_scope
 from typed_history_verification import verify_and_project_history
@@ -977,6 +978,11 @@ class Agent:
                 "inventory_recovery_invoked": inventory_recovery_invoked,
                 "inventory_recovery_status": inventory_recovery_status,
                 "action_follow_through_invoked": action_follow_through_invoked,
+                "action_source_sufficiency": (
+                    "model_draft_matched_fresh_native_command"
+                    if draft_has_source_backed_native_command(answer, receipts)
+                    else "not_established"
+                ),
                 "action_approval_handoff_invoked": action_approval_handoff_invoked,
                 "action_approval_handoff_status": (
                     "not_invoked" if not action_approval_handoff_invoked
@@ -1228,6 +1234,26 @@ class Agent:
                 return completed_answer(text, "not_invoked")
 
             if not calls:
+                # A text-only "please confirm" is not a pending UI approval.
+                # Reuse one bounded model opportunity to select an advertised
+                # native writer from fresh device details. All real writes still
+                # pass the prewrite checkpoint + same-request UI approval.
+                if should_recover_action_approval_handoff(
+                    question, text, receipts,
+                    available_tools=native_catalog_names,
+                    already_prompted=action_approval_handoff_invoked,
+                    has_native_write_attempt=current_write_attempted(),
+                    remaining_seconds=deadline - time.monotonic(),
+                    ui_approval_available=before_call is not None,
+                    source_review_invoked=source_review_invoked,
+                ):
+                    action_approval_handoff_invoked = True
+                    capture_answer_stage("pre_action_approval_handoff", text)
+                    messages.append({
+                        "role": "user",
+                        "content": ACTION_APPROVAL_HANDOFF_PROMPT,
+                    })
+                    continue
                 # Generic coverage recovery: a filtered inventory alone
                 # cannot establish that no other integration controls the
                 # requested physical effect. Make ONE unfiltered native
@@ -1252,6 +1278,8 @@ class Agent:
                             for rec in receipts
                         )
                     ),
+                    candidate_answer=text,
+                    approval_handoff_already_invoked=action_approval_handoff_invoked,
                 ):
                     inventory_recovery_invoked = True
                     capture_answer_stage("pre_inventory_recovery", text)
@@ -1353,26 +1381,6 @@ class Agent:
                     messages.append({
                         "role": "user",
                         "content": DEVICE_ACTION_FOLLOW_THROUGH_PROMPT,
-                    })
-                    continue
-                # A text-only "please confirm" is not a pending UI approval.
-                # Reuse one bounded model opportunity to select an advertised
-                # native writer from fresh device details. All real writes still
-                # pass the prewrite checkpoint + same-request UI approval.
-                if should_recover_action_approval_handoff(
-                    question, text, receipts,
-                    available_tools=native_catalog_names,
-                    already_prompted=action_approval_handoff_invoked,
-                    has_native_write_attempt=current_write_attempted(),
-                    remaining_seconds=deadline - time.monotonic(),
-                    ui_approval_available=before_call is not None,
-                    source_review_invoked=source_review_invoked,
-                ):
-                    action_approval_handoff_invoked = True
-                    capture_answer_stage("pre_action_approval_handoff", text)
-                    messages.append({
-                        "role": "user",
-                        "content": ACTION_APPROVAL_HANDOFF_PROMPT,
                     })
                     continue
                 # A first completed draft is not proof of evidence sufficiency.

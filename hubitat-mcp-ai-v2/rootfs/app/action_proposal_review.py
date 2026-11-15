@@ -26,8 +26,20 @@ the requested schedule semantics? A similarly named media/monitor/helper
 device might control something else. An 'off' switch command may not mean
 network blocking, heating off, or any other downstream physical effect.
 A filtered device search may omit a differently named control actuator.
-Consider a proportionate broader native inventory or focused command/schema
-read if the source evidence does not distinguish the available choices.
+**Source-sufficiency and time budget:** if current-request ORIGINAL
+hub_get_device details already establish the actual actuator, its advertised
+native command and matching timing semantics, choose the appropriate native
+tool proposal directly and let the existing user approval gate operate.
+Do not re-list the whole inventory, query unrelated rule/configuration
+surfaces or create persistent helpers merely to reconsider an already
+supported direct one-off operation. This is not authorization to assume the
+first similar-looking device is the real controller. If identity, physical
+effect, delay/duration, state reversal or permission is genuinely unclear,
+read proportionate discriminating sources and explain the blocker. An
+ambiguous media integration is not a verified internet-policy actuator.
+When a directly supported command exists, do not substitute an event-rule
+based on elapsed usage for a delay measured from the user's request.
+A proposed command remains unexecuted until the UI explicitly approves it.
 
 For a ONE-OFF action after a relative delay, independently compare the
 advertised device-owned timer/deferred command, a genuine one-time scheduled
