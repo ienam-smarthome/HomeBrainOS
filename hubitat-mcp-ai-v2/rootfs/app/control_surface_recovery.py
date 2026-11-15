@@ -311,15 +311,14 @@ def _current_device_commands(receipts: list[dict]) -> dict[str, set[str]]:
 # Source-matched draft signatures are used ONLY to avoid redundant forced
 # inventory; they are never parsed for dispatch, approval or authorization.
 _DRAFT_NATIVE_COMMAND = re.compile(
-    r"\bhub_call_device_command\s*\\(([^)\\n]{1,400})\\)", re.I
+    r"\bhub_call_device_command\s*\(([^)\n]{1,400})\)", re.I
 )
 _DRAFT_DEVICE_ID = re.compile(
-    r"\bdeviceId\s*=\s*(?:[\\\"']([A-Za-z0-9_.:-]+)[\\\"']|([0-9]+))"
+    r"""\bdeviceId\s*=\s*(?:"([^"]+)"|'([^']+)'|([0-9]+))"""
 )
 _DRAFT_COMMAND_NAME = re.compile(
-    r"\bcommand\s*=\s*[\\\"']([A-Za-z][A-Za-z0-9_]{0,99})[\\\"']"
+    r"""\bcommand\s*=\s*(?:"([A-Za-z][A-Za-z0-9_]{0,99})"|'([A-Za-z][A-Za-z0-9_]{0,99})')"""
 )
-
 
 def draft_has_source_backed_native_command(
     draft: str, receipts: list[dict],
@@ -340,8 +339,8 @@ def draft_has_source_backed_native_command(
         cmd = _DRAFT_COMMAND_NAME.search(args)
         if not dev or not cmd:
             continue
-        device_id = dev.group(1) or dev.group(2)
-        if cmd.group(1) in sources.get(device_id, set()):
+        device_id = dev.group(1) or dev.group(2) or dev.group(3)
+        if (cmd.group(1) or cmd.group(2)) in sources.get(device_id, set()):
             return True
     return False
 
