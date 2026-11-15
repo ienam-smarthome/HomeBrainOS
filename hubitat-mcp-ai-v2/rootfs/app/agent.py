@@ -1436,8 +1436,8 @@ class Agent:
                            if source_review_kind == "action_outcome"
                            else "not_applicable_to_current_state_review"
                            if source_review_kind == "current_state"
-                           else "skipped_no_fresh_read" if fresh_source_recovery_invoked
-                           and not fresh_read_attempts()
+                           else "skipped_no_fresh_read" if enable_final_claim_audit
+                           and fresh_source_recovery_invoked and not fresh_read_attempts()
                            else "skipped_low_time" if source_review_invoked
                            and enable_source_review else "not_invoked"),
                 )

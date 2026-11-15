@@ -1220,15 +1220,15 @@ def should_recheck_causal_evidence(
 # A user may prohibit accessing the hub, but "do not change anything" is a
 # read-only safety boundary, NOT a prohibition on harmless observation.
 _EXPLICIT_NO_FRESH_READ = re.compile(
-    r"\\b(?:do\\s+not|don't|without)\\s+"
-    r"(?:(?:any|new|further|fresh)\\s+)?"
-    r"(?:(?:mcp|hub|tool)\\s+)?"
-    r"(?:read|reads|query|queries|call|calls|access|contact)\\b"
-    r"|\\b(?:do\\s+not|don't)\\s+use\\s+(?:any\\s+|new\\s+)?tools\\b"
-    r"|\\b(?:no\\s+(?:new|further|fresh)\\s+(?:tool\\s+)?(?:calls|reads|queries))\\b"
-    r"|\\b(?:use\\s+only|only\\s+use|rely\\s+only\\s+on)\\s+"
-    r"(?:the\\s+)?(?:prior|previous|earlier|existing)\\s+"
-    r"(?:receipts|evidence|results)\\b",
+    r"\b(?:do\s+not|don't|without)\s+"
+    r"(?:(?:any|new|further|fresh)\s+)?"
+    r"(?:(?:mcp|hub|tool)\s+)?"
+    r"(?:read|reads|query|queries|call|calls|access|contact)\b"
+    r"|\b(?:do\s+not|don't)\s+use\s+(?:any\s+|new\s+)?tools\b"
+    r"|\b(?:no\s+(?:new|further|fresh)\s+(?:tool\s+)?(?:calls|reads|queries))\b"
+    r"|\b(?:use\s+only|only\s+use|rely\s+only\s+on)\s+"
+    r"(?:the\s+)?(?:prior|previous|earlier|existing)\s+"
+    r"(?:receipts|evidence|results)\b",
     re.IGNORECASE,
 )
 
