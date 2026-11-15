@@ -1805,9 +1805,12 @@ class Agent:
                                          ensure_ascii=False)[:6500]
                             + "\nIf the focal before/after pair is not "
                               "inspectable, do not substitute a time from "
-                              "a peer device or a command event. Independently "
-                              "choose a discriminating offered READ-ONLY "
-                              "source if one is proportionate."
+                              "a peer device or a command event. Preserve "
+                              "separately source-verified focal context and "
+                              "peer observations without promoting them "
+                              "to a causal chain. Independently choose a "
+                              "discriminating offered READ-ONLY source "
+                              "if one is proportionate."
                         )
                     messages.append({"role": "user", "content": guidance})
                     continue

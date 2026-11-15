@@ -1,5 +1,9 @@
 # HomeBrainOS development agent instructions
 
+## V2 alpha.120 evidence-preserving temporal publication (15 November 2026)
+
+The installed alpha.119 first answer improved to 6/8 on a single live 12-hour TRV investigation but omitted positive focal setpoint/temperature/valve and separate peer thermostat-mode observations. Keep the alpha.119 **same-device, same-state-attribute before/after** proof and uncertainty boundary. Alpha.120 adds bounded original-native positive context, not a forced historian, extra paid model round, automatic read, deterministic causal guess or write permission. Only a focal matching event query may attest focal requested lookback; peer evidence cannot substitute. Further source sufficiency and token efficiency remain unmeasured; synthetic CI is not installed acceptance. Do not change V1. [Note](docs/HOMEBRAIN-V2-ALPHA120-EVIDENCE-PRESERVING-CONTEXT-20261115.md).
+
 ## V2 alpha.83 System Health source and cost boundaries
 
 HomeBrainOS V2 `System Health` is a local presentation of the same already-fetched `/api/overview` inventory, not a new monitoring subsystem. Do not add model calls, background polling, additional MCP native reads, prompt-text classifiers or deterministic device decisions to populate its status. Show reported names and source coverage for each recognized attribute; unknown must never be re-labelled healthy or zero. Expanding pills and preparing troubleshooting questions must not submit AI or native commands. V1 is unchanged. [Note](docs/HOMEBRAIN-V2-ALPHA83-SYSTEM-HEALTH-SNAPSHOT-20261114.md).

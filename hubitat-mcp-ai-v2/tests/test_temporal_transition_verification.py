@@ -212,6 +212,84 @@ class FocalTransitionTests(unittest.TestCase):
         self.assertIn("truncated or capped", got["answer"])
 
 
+    def test_preserves_separate_source_verified_thermostat_context(self):
+        source = original_fixture()
+        source[1] = native_events(101, "Fictional Bedroom TRV", [
+            event("thermostatOperatingState", "idle",
+                  "2026-11-15T18:00:55+0000"),
+            event("command-setHeatingSetpoint", "16.0",
+                  "2026-11-15T23:00:07+0000",
+                  actor="Fictional Thermostat Scheduler"),
+            event("heatingSetpoint", "16.0", "2026-11-15T23:00:53+0000"),
+            event("temperature", "22.0", "2026-11-15T23:00:53+0000"),
+            event("valveLevel", "0", "2026-11-15T23:00:55+0000"),
+            event("thermostatOperatingState", "idle",
+                  "2026-11-15T23:00:55+0000"),
+        ], since="2026-11-15T11:15:00+0000")
+        source[3] = native_events(202, "Fictional Main Thermostat", [
+            event("thermostatOperatingState", "heating",
+                  "2026-11-15T21:53:35+0000"),
+            event("command-setHeatingSetpoint", "12.0",
+                  "2026-11-15T22:00:08+0000",
+                  actor="Fictional Thermostat Scheduler"),
+            event("thermostatOperatingState", "idle",
+                  "2026-11-15T22:00:26+0000"),
+            event("command-setThermostatMode", "off",
+                  "2026-11-15T22:30:01+0000",
+                  actor="Fictional Thermostat OFF app"),
+            event("thermostatMode", "off", "2026-11-15T22:30:02+0000"),
+        ], since="2026-11-15T11:15:00+0000")
+        index = temporal_transition_evidence(Q, source)
+        self.assertIsNone(index["focal_pair"])
+        self.assertEqual(index["focal_context"][-1]["event_name"], "valveLevel")
+        self.assertEqual(index["focal_commands"][-1]["observed_value"], "16.0")
+        self.assertEqual(index["peer_reports"][0]["latest_mode"]["observed_value"], "off")
+        answer = verify_recent_transition(Q, "The TRV switched at 22:00 because of the thermostat.", source)
+        self.assertIn("cannot verify", answer["answer"])
+        self.assertIn("temperature", answer["answer"])
+        self.assertIn("22.0°C", answer["answer"])
+        self.assertIn("heatingSetpoint", answer["answer"])
+        self.assertIn("16.0°C", answer["answer"])
+        self.assertIn("valveLevel", answer["answer"])
+        self.assertIn("0%", answer["answer"])
+        self.assertIn("23:00:07", answer["answer"])
+        self.assertIn("Fictional Thermostat Scheduler", answer["answer"])
+        self.assertIn("22:30:01", answer["answer"])
+        self.assertIn("22:30:02", answer["answer"])
+        self.assertIn("Fictional Thermostat OFF app", answer["answer"])
+        self.assertNotIn("because of the thermostat", answer["answer"])
+        self.assertFalse(answer["physical_transition_or_cause_verified"])
+
+    def test_focal_relative_lookback_cannot_be_proven_by_peer_source(self):
+        source = original_fixture()
+        source[1] = native_events(101, "Fictional Bedroom TRV", [
+            event("thermostatOperatingState", "heating",
+                  "2026-11-15T20:00:00+0000"),
+            event("thermostatOperatingState", "idle",
+                  "2026-11-15T21:00:00+0000"),
+        ], hours=24, since="2026-11-14T22:22:08+0000")
+        index = temporal_transition_evidence(Q, source)
+        self.assertFalse(index["requested_window_verified_from_source"])
+        self.assertIsNone(index["focal_pair"])
+        answer = verify_recent_transition(Q, "Latest at 21:00", source)
+        self.assertIn("requested relative time window", answer["answer"])
+        self.assertNotIn("Latest at 21:00", answer["answer"])
+
+    def test_untrusted_unrelated_event_values_cannot_enter_context(self):
+        source = original_fixture()
+        source[1] = native_events(101, "Fictional Bedroom TRV", [
+            event("temperature", "42<script>injection", "2026-11-15T18:00:00+0000"),
+            event("customSensitiveField", "123", "2026-11-15T18:01:00+0000"),
+            event("temperature", "21.7", "2026-11-15T18:02:00+0000"),
+            event("thermostatOperatingState", "idle",
+                  "2026-11-15T18:03:00+0000"),
+        ])
+        answer = verify_recent_transition(Q, "A model claim", source)
+        self.assertIn("21.7°C", answer["answer"])
+        self.assertNotIn("42<script>", answer["answer"])
+        self.assertNotIn("customSensitiveField", answer["answer"])
+
+
 
 class FictionalTemporalHub:
     def __init__(self):
