@@ -310,12 +310,18 @@ def verify_recent_transition(question, draft_answer, receipts):
                 f"**{command['timestamp']}**{issuer}; this does not "
                 "establish what initiated the focal device's transition."
             )
-    lines.append(
-        "**Cause:** The reporter of a state event, a recorded command issuer, "
-        "and a notified listener have different roles. These receipts do not "
-        "independently establish the cause of an unobserved focal transition "
-        "or the controller's internal decision."
-    )
+    if re.search(
+        r"\\b(?:why|caused|cause|triggered|initiated|reason|"
+        r"what\\s+led\\s+to|verify\\s+what)\\b", question, re.I
+    ):
+        lines.append(
+            "**Cause:** The reporter of a state event, a recorded command "
+            "issuer, and a notified listener have different roles. The "
+            "event rows summarised here cannot independently establish "
+            "the cause of an unobserved focal transition or a controller's "
+            "internal decision. Additional original execution-specific "
+            "sources, if returned, need separate evaluation."
+        )
     return {
         "status": "bounded_pair_observed" if pair else "focal_transition_unverified",
         "answer": "\n\n".join(lines),
