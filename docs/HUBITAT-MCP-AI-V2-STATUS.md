@@ -1,5 +1,9 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 15 November 2026 — alpha.115 scope-limited approval relief
+
+The owner's alpha.114 source-first light ON reached genuine native acceptance quickly but required a redundant Approve click. With explicit owner direction, alpha.115 changes only the V2 per-request Interaction confirmation gate: one exact current-request, source-verified, model-selected benign light ON/OFF may use the original Ask as authorisation. Single-use proof, exact native call arguments, source integrity, original native permission checks, cancellation and downstream uncertainties remain enforced. Other writes always retain approval; additional safe switches require individual trusted IDs in add-on settings and physical mesh evidence. UI remains straightforward; no blanket no-confirm policy, no V1 changes. [Engineering note](HOMEBRAIN-V2-ALPHA115-ORIGINAL-ASK-ROUTINE-AUTH-20261115.md).
+
 ## 15 November 2026 — alpha.114 source-first native routine target discovery
 
 The alpha.113 post-proposal verification path did not help when model discovery itself went wrong, producing 11 model rounds for one native ON. Alpha.114 introduces a strict source-first read-only preflight for exact uncomplicated ON/OFF, using current MCP label-filtered search, bounded adjacent word join variants and one live detail proof of ID, advertised command, ordinary Light/Outlet capability and reported opposite state. It then provides only the correct native writer tool schema to the model, which must still select the command and pass original source and real approval checks. No direct text-to-write dispatch or approval bypass. Diagnostics include source-bootstrap status and read counts. Timers, policy controls, compound writes and unknown effects remain unchanged; V1 untouched. [Details](HOMEBRAIN-V2-ALPHA114-SOURCE-FIRST-ROUTINE-20261115.md).

@@ -901,6 +901,7 @@ class Agent:
         routine_source_bootstrap_status = "not_invoked"
         routine_source_bootstrap_read_count = 0
         routine_source_bootstrap_active = False
+        routine_bootstrap_verified_at: float | None = None
         prewrite_unsent_proposals: list[dict[str, Any]] = []
         prewrite_no_fresh_evidence_rejections = 0
         one_off_rule_preflight_rejections = 0
@@ -956,6 +957,7 @@ class Agent:
             candidate = preflight.get("candidate")
             if isinstance(candidate, dict):
                 routine_source_bootstrap_active = True
+                routine_bootstrap_verified_at = time.monotonic()
                 # Use only the real, current catalog's device writer. This
                 # focused model task avoids unrelated 50k-token rule/history
                 # instructions but it does NOT bypass a model tool choice.
@@ -981,8 +983,10 @@ class Agent:
                         "and arguments yourself only if they exactly match the "
                         "original user request and source identity. Do not "
                         "browse other devices, guess an alias, create automation, "
-                        "or ask for text-only confirmation; a real native user "
-                        "approval card is enforced separately before dispatch. "
+                        "or ask for text-only confirmation. Ordinary eligible "
+                        "light/safe-switch commands may be authorised by the "
+                        "original Ask; sensitive or unverified commands require "
+                        "a separate native approval card before dispatch. "
                         "If this exact action is unsafe or mismatched, do not "
                         "select any write. Never claim success until a native "
                         "write receipt is returned, and never equate acceptance "
@@ -1139,6 +1143,22 @@ class Agent:
                 ),
                 "action_lifecycle": lifecycle,
                 "action_preparation_requested": bool(prepare_action),
+                "routine_native_authorization": {
+                    "policy": "single_current_ask_source_verified",
+                    "automatic_authorization_used": bool(
+                        interaction_status is not None
+                        and interaction_status.routine_auto_approval_used
+                    ),
+                    "authorized_class": (
+                        interaction_status.routine_auto_approval_class
+                        if interaction_status is not None else None
+                    ),
+                    "separate_ui_approval_required": not bool(
+                        interaction_status is not None
+                        and interaction_status.routine_auto_approval_used
+                    ),
+                    "downstream_physical_effect_unverified": True,
+                },
                 "response_success_scope": (
                     "model_answer_returned; action success requires a native "
                     "write receipt and downstream outcome remains unverified"
@@ -1903,6 +1923,22 @@ class Agent:
                             approval_owner.register_current_native_device_details(
                                 receipts
                             )
+                            # The original Ask is a one-use authorization only
+                            # for a SOURCE-VERIFIED strict single-command
+                            # bootstrap, with exactly ONE model writer round.
+                            # Older/source-recovery, ambiguous and slow/stale
+                            # cases retain a real approval card.
+                            if (routine_source_bootstrap_active
+                                    and routine_for_round is not None
+                                    and rounds == 1 and not prepare_action
+                                    and routine_bootstrap_verified_at is not None
+                                    and time.monotonic()
+                                        - routine_bootstrap_verified_at <= 20.0
+                                    and not source_review_invoked
+                                    and not prewrite_model_review_invoked):
+                                approval_owner.offer_current_ask_routine_authorization(
+                                    routine_for_round, receipts,
+                                )
                         approval_started = time.monotonic()
                         try:
                             await asyncio.wait_for(
