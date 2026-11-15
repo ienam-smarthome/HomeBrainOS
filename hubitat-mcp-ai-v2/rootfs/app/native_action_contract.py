@@ -80,6 +80,11 @@ _RELATIVE_PHRASE = re.compile(
     r"\b(after|in|for)\s+(\d{1,4})\s*(?:min|mins|minute|minutes)\b",
     re.IGNORECASE,
 )
+# Reject multiple "after / in / for N" clauses even if one omits the
+# unit: "for 5 and after 7 minutes" is not one unambiguous timer.
+_BARE_RELATIVE_AMOUNT = re.compile(
+    r"\b(?:after|in|for)\s+\d{1,4}\b", re.IGNORECASE
+)
 _DEADLINE_NAME = re.compile(
     r"(?:timed|scheduled|pending)[A-Za-z0-9_]*(?:At|Until|For)$",
     re.IGNORECASE,
@@ -108,7 +113,7 @@ def timing_kind(command: Any) -> str | None:
 def requested_timing(text: str) -> tuple[str, str] | None:
     """Only unambiguous numeric-minute phrases in the original request."""
     matches = list(_RELATIVE_PHRASE.finditer(text)) if isinstance(text, str) else []
-    if len(matches) != 1:
+    if len(matches) != 1 or len(_BARE_RELATIVE_AMOUNT.findall(text)) != 1:
         return None
     m = matches[0]
     kind = "duration" if m.group(1).lower() == "for" else "delay"
@@ -164,7 +169,10 @@ def source_derived_timing_answer(
         kind = timing_kind(command)
         if not minutes or not kind:
             continue
-        if (kind, str(int(float(minutes)))) != wanted:
+        # Never coerce fractional or negative minutes into a matching
+        # whole-minute user instruction.
+        if (float(minutes) <= 0 or not float(minutes).is_integer()
+                or (kind, str(int(float(minutes)))) != wanted):
             mismatches.append({
                 "device_id": identifier, "command": command,
                 "requested": wanted[0], "selected": kind,
@@ -207,7 +215,7 @@ def source_derived_timing_answer(
         f"**Native command accepted:** **{label}** (device ID {device_id}).",
         f"\u2022 Command: `{command}` with parameter `{minutes}`.",
         f"\u2022 Requested timing: **{requested_text}** "
-        + ("(delayed onset, **not** a action duration)."
+        + ("(delayed onset, **not** an action duration)."
            if kind == "delay"
            else "(duration, **not** a delayed start)."),
         "\u2022 The original native MCP response reported `success: true`.",
