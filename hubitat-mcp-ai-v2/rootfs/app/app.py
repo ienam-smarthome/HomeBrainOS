@@ -265,6 +265,14 @@ async def status():
         "model_routing": (app.state.model.route_status()
                           if hasattr(app.state.model, "route_status") else None),
         "recorder": app.state.recorder.status(),
+        "routine_native_authorization": {
+            "ordinary_lights_enabled": options.get("routine_auto_approve_lights") is True,
+            "explicitly_trusted_switch_count": len(trusted_switch_ids(str(
+                options.get("routine_auto_approve_safe_switch_ids", "")
+            ))),
+            "sensitive_writes_still_require_confirmation": True,
+            "original_ask_only": True,
+        },
         "device_monitor": {
             "enabled": bool(options.get("device_monitor_enabled", False)),
             "configured": getattr(app.state, "device_monitor", None) is not None,
