@@ -132,6 +132,110 @@ class TypedHistoryProjectionTests(unittest.TestCase):
             self.assertNotIn(secret, answer)
         self.assertEqual(json.dumps(source, sort_keys=True), before)
 
+
+    def test_returned_history_listing_implicit_cap_and_mixed_rows(self):
+        # Entirely fictional receipt reproducing source *shape*, not a
+        # private Hubitat incident. An early level row must not become OFF;
+        # an OFF between two ON reports must not disappear.
+        question = (
+            "Investigate Fictional Hall Light's ON/OFF activity over the past "
+            "six hours. List the returned state changes, exact timestamps "
+            "and recorded command issuers. Do not change anything."
+        )
+        switches = [
+            ("09:13:04.865", "off"), ("09:14:24.003", "on"),
+            ("09:14:29.321", "off"), ("09:14:32.865", "on"),
+            ("09:14:58.113", "off"), ("09:14:58.863", "on"),
+            ("09:15:03.365", "off"), ("09:15:04.822", "on"),
+            ("09:15:15.189", "off"), ("09:19:40.244", "on"),
+            ("09:20:11.469", "off"),
+        ]
+        commands = [
+            "08:59:18.964", "09:00:18.244", "09:01:57.272",
+            "09:08:01.647", "09:08:33.248", "09:12:58.427",
+            "09:14:23.026", "09:14:31.894", "09:15:04.130",
+            "09:15:05.137", "09:19:39.313",
+        ]
+        rows = [
+            {"name": "switch", "value": value, "date": stamp(clock),
+             "type": "physical", "isStateChange": True,
+             "producedBy": {"deviceId": "987", "name": "Fictional Bridge"},
+             "triggered": [{"appId": 303, "name": "Fixture Listener"}]}
+            for clock, value in switches
+        ]
+        rows += [
+            {"name": "command-setLevel", "type": "command",
+             "date": stamp(clock),
+             "producedBy": {"appId": 303, "name": "Fictional Controller"}}
+            for clock in commands
+        ]
+        rows += [
+            {"name": "level", "value": value, "date": stamp(clock),
+             "isStateChange": True}
+            for clock, value in [
+                ("05:35:04.298", "10"),
+                ("08:47:52.485", "30"),
+                ("09:15:04.999", "45"),
+            ]
+        ]
+        self.assertEqual(len(rows), 25)
+        src = receipt(list(reversed(rows)))
+        src["arguments"].pop("limit")
+        envelope = json.loads(src["response"])
+        envelope["client_claim_evidence_headline"]["row_limit_reached"] = None
+        envelope["client_claim_evidence_headline"]["requested_row_limit"] = None
+        src["response"] = json.dumps(envelope)
+        before = json.dumps(src, sort_keys=True)
+        bad_draft = (
+            "The light switched OFF at 05:35:04.298 and stayed on from "
+            "09:15:04.822 to 09:19:40.244; app 303 caused each ON."
+        )
+        r = verify_and_project_history(question, bad_draft, [src])
+        self.assertEqual(r["status"], "source_ledger_used")
+        self.assertEqual(r["source_event_rows"], 25)
+        self.assertEqual(r["selected_state_rows"], 11)
+        self.assertEqual(r["source_command_rows"], 11)
+        self.assertIsNone(r["requested_row_limit"])
+        self.assertIsNone(r["source_row_limit_reached"])
+        self.assertEqual(
+            r["source_row_limit_status"], "upstream_implicit_limit_unknown")
+        answer = r["answer"]
+        self.assertIn("**11 returned switch reports**", answer)
+        self.assertIn("**11 returned command rows**", answer)
+        self.assertIn("`2030-04-02T09:15:15.189+0000` | **OFF**", answer)
+        self.assertIn("10.367s", answer)
+        self.assertIn("`level`: 3", answer)
+        self.assertIn("No row limit was explicitly supplied", answer)
+        self.assertIn("upstream default, possible clipping", answer)
+        self.assertIn("Commands logged AFTER", answer)
+        self.assertIn(
+            "`2030-04-02T09:15:05.137+0000` | `command-setLevel`", answer
+        )
+        self.assertNotIn(
+            "`2030-04-02T05:35:04.298+0000` | **OFF**", answer)
+        self.assertNotIn("app 303 caused each ON", answer)
+        self.assertEqual(json.dumps(src, sort_keys=True), before)
+
+    def test_list_the_returned_changes_generalises_to_other_states(self):
+        for field, word, values in (
+            ("switch", "ON/OFF", ("on", "off")),
+            ("motion", "motion", ("active", "inactive")),
+            ("contact", "contact", ("open", "closed")),
+        ):
+            with self.subTest(field=field):
+                rows = [
+                    {"name": field, "value": value,
+                     "date": stamp(f"19:0{i}:00.000"), "isStateChange": True}
+                    for i, value in enumerate(values)
+                ]
+                q = (
+                    f"List the returned {word} state changes over the "
+                    "past six hours. Do not change anything."
+                )
+                r = verify_and_project_history(q, "Missed one", [receipt(rows)])
+                self.assertEqual(r["status"], "source_ledger_used")
+                self.assertEqual(r["selected_state_rows"], 2)
+
     def test_other_domained_events_not_hardcoded_to_lamp(self):
         domains = [
             ("thermostatOperatingState",
@@ -162,6 +266,8 @@ class TypedHistoryProjectionTests(unittest.TestCase):
             "Show the lamp's power history for the last six hours.",
             "Turn on the lamp for six hours.",
             "Identify returned ON/OFF changes, but do not enumerate all.",
+            "Show an example switch transition from last six hours.",
+            "What caused the most recent switch OFF event?",
         ):
             with self.subTest(question=q):
                 r=verify_and_project_history(q, "MODEL ANSWER", [receipt()])

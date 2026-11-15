@@ -1,4 +1,4 @@
-"""Typed, source-derived final answer for explicit exhaustive native event queries.
+"""Typed, source-derived final answer for explicit returned native event listings.
 
 The model chooses the tools and can reason about causes; this *narrow* contract
 prevents a claimed complete timestamp/command listing from contradicting a
@@ -24,6 +24,17 @@ _PRIVATE = re.compile(
 _SCOPE = re.compile(
     r"\b(?:all|every|each)\s+(?:of\s+the\s+|the\s+)?"
     r"(?:returned|recorded|observed|matching)\b", re.I,
+)
+# Explicit returned-event listing is exhaustive *over returned rows*, even
+# without the words "all" or "every". No loose "investigate" expansion:
+# causal/nonenumerative and ordinary conversational asks remain model-led.
+_RETURNED_LIST = re.compile(
+    r"\b(?:list|enumerate|show|report)\s+(?:me\s+)?(?:the\s+)?"
+    r"(?:returned|recorded|observed|matching)\s+"
+    r"(?:(?:switch|motion|contact|heating|"
+    r"on\s*[/&-]\s*off|off\s*[/&-]\s*on)\s+)?"
+    r"(?:state\s+changes?|events?|transitions?|reports?)\b",
+    re.I,
 )
 _EVENT_REQUEST = re.compile(
     r"\b(?:events?|state\s+changes?|transitions?|"
@@ -66,7 +77,7 @@ _SAFE_VALUES = {
 
 def _target_field(question: str) -> str | None:
     if (not isinstance(question, str)
-            or not _SCOPE.search(question)
+            or not (_SCOPE.search(question) or _RETURNED_LIST.search(question))
             or not _EVENT_REQUEST.search(question)
             or _WRITE_LEAD.search(question)):
         return None
@@ -143,11 +154,12 @@ def _unverified(reason: str, field: str) -> dict:
 def verify_and_project_history(
     question: str, draft_answer: str, receipts: list[dict]
 ) -> dict:
-    """Return a verified, scoped ledger or fail closed for exhaustive requests.
+    """Return a verified, scoped ledger or fail closed for event listings.
 
     Other question families, including causal/non-enumerative asks and all
-    writes, remain fully model-led. This deterministic source projection is
-    ONLY for a user's explicit request for ALL RETURNED events.
+    writes, remain fully model-led. This deterministic source projection
+    applies only to an explicit inventory of RETURNED state events, never
+    a claim of complete historical storage or physical continuity.
     """
     field = _target_field(question)
     if field is None:
@@ -219,6 +231,12 @@ def verify_and_project_history(
             return _unverified("envelope_row_count_mismatch",field)
     if isinstance(head,dict) and head.get("row_limit_reached") is True:
         return _unverified("source_response_page_was_capped",field)
+    # An absent requested limit does not mean an uncapped upstream read.
+    # It is safe to enumerate the received rows with the true cap unknown.
+    limit_status = (
+        "upstream_implicit_limit_unknown" if limit_arg is None else
+        "explicit_requested_limit_not_reached"
+    )
     # Validate *every* selected state row and every command, not only those
     # the model mentioned. Do not reveal arbitrary attributes or IP addresses.
     states,commands,other_counts=[],[],{}
@@ -259,6 +277,17 @@ def verify_and_project_history(
         f"Device ID: `{_safe_id(args.get('deviceId')) or 'unverified'}`. "
         f"Native query lookback: `{hours_arg}` hour(s).",
     ]
+    if limit_arg is None:
+        lines.append(
+            "No row limit was explicitly supplied to the native query; the "
+            "upstream default, possible clipping, and number of unreturned "
+            "rows are unknown. This ledger enumerates only the returned slice."
+        )
+    else:
+        lines.append(
+            f"Requested row limit: `{limit_arg}`. The returned slice "
+            "cannot independently establish complete historical retention."
+        )
     if since:
         lines.append(f"Requested source start (as returned): `{since}`.")
         nominal_end = _date(since) + timedelta(hours=hours_arg)
@@ -338,6 +367,12 @@ def verify_and_project_history(
             else "unverified_attribute_filtered_history"
         ),
         "requested_command_inventory": asks_commands,
+        "requested_row_limit": limit_arg,
+        "source_row_limit_status": limit_status,
+        "source_row_limit_reached": (
+            head.get("row_limit_reached") if isinstance(head, dict)
+            and type(head.get("row_limit_reached")) is bool else None
+        ),
         "state_rows_cited_verbatim_in_model_draft":cited,
         "answer":"\n".join(lines),
     }
