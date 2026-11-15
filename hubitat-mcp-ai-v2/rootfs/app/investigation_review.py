@@ -1217,6 +1217,67 @@ def should_recheck_causal_evidence(
     )
 
 
+# A user may prohibit accessing the hub, but "do not change anything" is a
+# read-only safety boundary, NOT a prohibition on harmless observation.
+_EXPLICIT_NO_FRESH_READ = re.compile(
+    r"\\b(?:do\\s+not|don't|without)\\s+"
+    r"(?:(?:any|new|further|fresh)\\s+)?"
+    r"(?:(?:mcp|hub|tool)\\s+)?"
+    r"(?:read|reads|query|queries|call|calls|access|contact)\\b"
+    r"|\\b(?:do\\s+not|don't)\\s+use\\s+(?:any\\s+|new\\s+)?tools\\b"
+    r"|\\b(?:no\\s+(?:new|further|fresh)\\s+(?:tool\\s+)?(?:calls|reads|queries))\\b"
+    r"|\\b(?:use\\s+only|only\\s+use|rely\\s+only\\s+on)\\s+"
+    r"(?:the\\s+)?(?:prior|previous|earlier|existing)\\s+"
+    r"(?:receipts|evidence|results)\\b",
+    re.IGNORECASE,
+)
+
+
+FRESH_SOURCE_RECOVERY_PROMPT = """Missing fresh source — READ-ONLY recovery (internal).
+The previous answer is not source evidence. ZERO current-request native or
+separate-monitor read attempts were made, even though the CURRENT MCP catalog
+offers read-only tools. Earlier conversation receipts may describe a DIFFERENT
+target or window; they are neither exhaustive nor a prohibition on a new read.
+
+The user's "do not change anything" instruction forbids device/rule/settings
+WRITES; it DOES NOT forbid proportionate READ-ONLY device identification,
+event-history or other observational queries. The current question already
+authorizes those observations; do not request additional permission.
+
+Before repeating an unsupported "no receipts" conclusion, independently choose
+appropriate advertised READ-ONLY tool(s) and arguments NOW if useful for this
+request. Do not assume a target ID, invent a source, mandate one tool, or reuse
+another device's receipts. An attribute-filtered history cannot enumerate
+all commands, and a state reporter/listener is not a proven initiator.
+If no suitable authorized read exists or a genuine access restriction applies,
+state precisely which current-request evidence was NOT obtained. Never issue
+a write, change a setting, or treat prior receipts as current-request reads.
+Do not mention this internal checkpoint.
+"""
+
+
+def should_offer_fresh_source_recovery(
+    question: str, *, kind: str | None, has_current_read_attempt: bool,
+    available_read_tools: bool, has_action_receipt: bool,
+) -> bool:
+    """Only re-use the existing review stage for missing fresh read attempts.
+
+    This selects a short model instruction, not a tool or extra model round.
+    Explicit "do not query" requests take precedence; ordinary "do not
+    change anything" must still allow observation. Prior conversation
+    evidence does not count as a new read attempt.
+    """
+    return (
+        kind in ("historical_measurement", "causal", "source_verification")
+        and isinstance(question, str)
+        and not _WRITE_INTENT_AT_START.search(question)
+        and not _EXPLICIT_NO_FRESH_READ.search(question)
+        and not has_current_read_attempt
+        and available_read_tools
+        and not has_action_receipt
+    )
+
+
 def should_review_completion(
     question: str, *, available_tools: bool, already_reviewed: bool,
     remaining_seconds: float, has_action_receipt: bool = False,

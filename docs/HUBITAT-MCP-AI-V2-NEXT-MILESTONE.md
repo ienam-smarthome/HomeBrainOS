@@ -1,5 +1,12 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## Alpha.104 — independently recover first-request historical reads
+
+After installed alpha.103 testing, a fresh historical question carried two unrelated prior receipts and **zero current-request Hubitat read calls**; Nemotron mistakenly treated "do not change anything" as a ban on read-only observations. The normal measurement review and tool-free final audit both completed without new receipts. Alpha.104 reuses the existing review stage to invite model-selected read-only sources only when there have been no current-request observational attempts, then skips a fruitless final audit if the model still does not read. The normal catalog and permissions remain authoritative; no tool is preselected, automatically called or retried.
+
+After upgrading Preview alpha.104 and checking hub stability, try a genuinely new first-answer read-only historical request for a device not previously discussed in the same chat. Capture full PRIVATE Technical JSON. Verify `fresh_source_recovery_invoked`, `fresh_source_recovery_status`, actual current-request receipts, original identity/source/time window, event and command scope, model rounds, token cost, zero writes and no tool errors. In a separate ordinary causal question, ensure the model still selects sources autonomously. If the first round already reads, the recovery should NOT activate. A source-free response should not enter another tool-free audit. Model behaviour cannot be certified by scripted CI alone. [Engineering contract](HOMEBRAIN-V2-ALPHA104-FRESH-READ-RECOVERY-20261115.md).
+
+
 ## Alpha.103 — scoped source-verification acceptance
 
 After alpha.102's two owner-provided PRIVATE live first-answer captures, change the typed final verifier to publish every valid returned state report in a filtered `switch` event source while **independently** marking command enumeration unverified. Neither a nonempty eight-row state result nor an empty zero-row filtered result establishes no commands elsewhere; the previous full-answer refusal lost valid evidence. No automatic MCP reread, extra cloud round, or native write is authorised by the correction.
