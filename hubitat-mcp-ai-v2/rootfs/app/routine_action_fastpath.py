@@ -296,17 +296,15 @@ def routine_candidate(question: str, calls: list[dict], receipts: list[dict],
 
 def accepted_routine_answer(candidate: dict | None,
                             receipts: list[dict]) -> str | None:
-    """One accepted ORIGINAL write receipt; no physical-effect inference.
+    """Receipt-backed completion after genuine approval and native dispatch.
 
-    Must be invoked only *after* the original before_call approval and real
-    native MCP transport have completed. It cannot manufacture a tool call.
+    Native waitFor convergence is in-command state reporting, not a separately
+    observed later physical effect or proof that this command caused it.
     """
     if not isinstance(candidate, dict):
         return None
-    writes = [
-        row for row in receipts
-        if isinstance(row, dict) and row.get("possible_native_action") is True
-    ]
+    writes = [row for row in receipts if isinstance(row, dict)
+              and row.get("possible_native_action") is True]
     if len(writes) != 1:
         return None
     row = writes[0]
@@ -316,6 +314,7 @@ def accepted_routine_answer(candidate: dict | None,
             or str(args.get("deviceId", "")).strip() != candidate["device_id"]
             or args.get("command") != candidate["command"]
             or args.get("parameters") not in (None, [])
+            or args.get("waitFor") != candidate.get("wait_for")
             or original_native_accepted(row) is not True):
         return None
     document = _original(row)
@@ -323,15 +322,36 @@ def accepted_routine_answer(candidate: dict | None,
             or document.get("accepted") is False
             or document.get("command") != candidate["command"]):
         return None
-    if ("deviceId" in document
-            and str(document["deviceId"]).strip() != candidate["device_id"]):
+    if ("deviceId" in document and
+            str(document["deviceId"]).strip() != candidate["device_id"]):
+        return None
+    if ("device" in document and isinstance(document["device"], str)
+            and _normal(document["device"]) != _normal(candidate["label"])):
         return None
     if ("parameters" in document and document["parameters"] not in (None, [])):
         return None
-    # A response may include stale state. It is NOT an independent postwrite
-    # read. Plain text device labels are escaped before Markdown rendering.
-    safe_label = re.sub(r"([\\`*_{}\[\]()#+!|>])", r"\\\1",
+    wait = candidate.get("wait_for")
+    reported_convergence = False
+    if wait is not None:
+        result = document.get("waitFor")
+        if (not isinstance(result, dict)
+                or result.get("attribute") != wait["attribute"]
+                or result.get("expected") != wait["expectedValue"]
+                or result.get("converged") is not True
+                or result.get("finalValue") != wait["expectedValue"]):
+            return None
+        reported_convergence = True
+    elif "waitFor" in document:
+        # Unexpected verification contract: retain full model interpretation.
+        return None
+    # The label is source data, not a template or authorization. Escape it
+    # before including it in Markdown, without altering native arguments.
+    safe_label = re.sub(r"([\\\x60*_{}\[\]()#+!|>])", r"\\\1",
                         candidate["label"])
     direction = candidate["command"].upper()
+    if reported_convergence:
+        return (f"**{safe_label}: {direction} command accepted.** "
+                f"Hubitat's in-command check reported switch {direction}. "
+                "The physical effect was not independently verified.")
     return (f"**{safe_label}: {direction} command accepted by Hubitat.** "
             "The physical state has not been independently verified.")
