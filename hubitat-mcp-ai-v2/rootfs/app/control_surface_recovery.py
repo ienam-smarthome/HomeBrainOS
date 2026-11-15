@@ -12,7 +12,7 @@ import re
 
 _DEVICE_IMPERATIVE = re.compile(
     r"^\s*(?:please\s+)?(?:turn|switch|set|adjust|change|enable|disable|"
-    r"start|stop|pause|play|mute|unmute|block|unblock|allow|deny|"
+    r"start|stop|pause|play|mute|unmute|block|unblock|restrict|allow|deny|"
     r"open|close|lock|unlock|dim|brighten|raise|lower|increase|"
     r"decrease|activate|deactivate|cancel)\b",
     re.IGNORECASE,
