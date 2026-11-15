@@ -5,7 +5,7 @@ reported by ANOTHER device is never the requested device's transition.
 Truncated original native MCP responses never prove missing events absent.
 """
 from __future__ import annotations
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import json
 import re
 from temporal_receipt_fidelity import _native_payload
@@ -29,6 +29,10 @@ _FIELDS = {
 }
 _SAFE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ()._'/&-]{0,90}$")
 _PRIVATE = re.compile(r"passw|secret|token|auth|credential|api.key|pin.code", re.I)
+_RELATIVE_HOURS = re.compile(
+    r"\b(?:in\s+the\s+|for\s+the\s+)?(?:last|past|previous)\s+"
+    r"(\d{1,3})\s*hours?\b", re.I,
+)
 
 
 def _normal(value: str) -> str:
@@ -125,6 +129,9 @@ def temporal_transition_evidence(question, receipts):
         "focal_first": None, "focal_latest": None, "focal_pair": None,
         "focal_truncated_reads": 0, "focal_limit_reached_reads": 0,
         "peer_reports": [],
+        "requested_window_start": None,
+        "requested_window_end": None,
+        "requested_window_verified_from_source": False,
         "scope_note": "Only inspectable original returned event rows; not complete history, physical transitions or causal proof",
     }
     if not isinstance(receipts, list):
@@ -137,6 +144,9 @@ def temporal_transition_evidence(question, receipts):
     result["target_id"] = focal_id
     by_device = {}
     peer_labels = {}
+    relative = _RELATIVE_HOURS.search(question)
+    requested_hours = int(relative.group(1)) if relative else None
+    matched_windows = []
     for n, receipt in enumerate(receipts[:24], 1):
         if not isinstance(receipt, dict) or receipt.get("success") is not True or receipt.get("name") != "hub_list_device_events":
             continue
@@ -153,6 +163,14 @@ def temporal_transition_evidence(question, receipts):
         if not isinstance(original, dict) or str(original.get("deviceId", "")).strip() != device_id:
             continue
         data = original.get("events")
+        source_hours = args.get("hoursBack")
+        source_since = _date(original.get("sinceTimestamp"))
+        if (requested_hours is not None
+                and requested_hours == source_hours
+                and source_since is not None):
+            matched_windows.append((
+                source_since, source_since + timedelta(hours=requested_hours)
+            ))
         if not isinstance(data, list) or len(data) > 400:
             if device_id == focal_id:
                 result["focal_truncated_reads"] += 1
@@ -174,6 +192,15 @@ def temporal_transition_evidence(question, receipts):
             item = _observation(entry, n)
             if item and (start is None or item["time"] >= start):
                 by_device.setdefault(device_id, []).append(item)
+    if matched_windows:
+        start, end = max(matched_windows, key=lambda x: x[0])
+        result["requested_window_start"] = start.isoformat()
+        result["requested_window_end"] = end.isoformat()
+        result["requested_window_verified_from_source"] = True
+        by_device = {
+            did: [row for row in rows if start <= row["time"] <= end]
+            for did, rows in by_device.items()
+        }
     for did, rows in by_device.items():
         distinct = {(x["timestamp"], x["name"], x["value"], x["command"]): x for x in rows}
         by_device[did] = sorted(distinct.values(), key=lambda x: x["time"])
@@ -197,7 +224,7 @@ def temporal_transition_evidence(question, receipts):
         result["focal_latest"] = safe_row(focal[-1])
     pairs = [(a, b) for a, b in zip(focal, focal[1:])
              if a["value"] == req["before"] and b["value"] == req["after"]]
-    if pairs:
+    if pairs and (requested_hours is None or matched_windows):
         a, z = pairs[-1]
         result["focal_pair"] = {"before": safe_row(a), "after": safe_row(z)}
         result["status"] = "bounded_pair_observed"
@@ -251,6 +278,12 @@ def verify_recent_transition(question, draft_answer, receipts):
                 f"**{latest['timestamp']} ({latest['observed_value']})**, "
                 "without a verified before/after pair."
             )
+    if (_RELATIVE_HOURS.search(question)
+            and not evidence["requested_window_verified_from_source"]):
+        lines.append(
+            "The requested relative time window was not independently "
+            "established from an original matching-lookback source."
+        )
     if evidence["focal_truncated_reads"] or evidence["focal_limit_reached_reads"]:
         lines.append(
             "Some focal-device event responses were truncated or capped; "
@@ -290,6 +323,7 @@ def verify_recent_transition(question, draft_answer, receipts):
         "focal_returned_state_rows": evidence["focal_report_count"],
         "focal_truncated_reads": evidence["focal_truncated_reads"],
         "focal_limit_reached_reads": evidence["focal_limit_reached_reads"],
+        "requested_window_verified_from_source": evidence["requested_window_verified_from_source"],
         "typed_projection": True,
         "physical_transition_or_cause_verified": False,
     }
