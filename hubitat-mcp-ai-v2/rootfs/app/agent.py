@@ -750,6 +750,7 @@ class Agent:
         enable_causal_follow_through: bool = True,
         enable_action_proposal_review: bool = True,
         hub_timezone: str | None = None,
+        prepare_action: bool = False,
     ) -> dict[str, Any]:
         started = time.monotonic()
         approval_owner = getattr(before_call, "__self__", None)
@@ -846,8 +847,24 @@ class Agent:
             and row.get("role") in ("user", "assistant")
             and isinstance(row.get("content"), str)
         ]
+        # Preparation guidance is separate from the original user question.
+        # Appending 'read-only evidence' to an imperative incorrectly changes
+        # its classification even if a native tool is actually submitted.
+        preparation_guidance = (
+            "\n\nA new Prepare-action request was explicitly selected. "
+            "The original user instruction below is unchanged. Verify "
+            "the target, its current state and native advertised commands "
+            "from fresh in-request source receipts. If the ordinary action "
+            "is safe and supported, select the real native writer so the "
+            "separate same-request approval card can appear, not another "
+            "prose-only confirmation. Do not create unrelated helpers, "
+            "reuse old evidence, or bypass approval. If the requested "
+            "condition already holds, report it without a needless write. "
+            "Answer the result concisely and do not claim physical outcome."
+        ) if prepare_action and is_explicit_device_imperative(question) else ""
         messages: list[dict] = [
-            {"role": "system", "content": _SKILL + "\n\n" + source_context},
+            {"role": "system", "content": _SKILL + "\n\n" + source_context
+             + preparation_guidance},
             *history,
             *([{"role": "user", "content": prior_evidence}] if prior_evidence else []),
             {"role": "user", "content": question},
@@ -1051,6 +1068,7 @@ class Agent:
                     else "not_established"
                 ),
                 "action_lifecycle": lifecycle,
+                "action_preparation_requested": bool(prepare_action),
                 "response_success_scope": (
                     "model_answer_returned; action success requires a native "
                     "write receipt and downstream outcome remains unverified"
