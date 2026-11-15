@@ -384,6 +384,85 @@ class ApprovalRecoveryLifecycleTests(unittest.IsolatedAsyncioTestCase):
                              "parameters": [10]
                          })])
 
+
+    async def test_json_code_fence_after_handoff_always_gets_prepare_choices(self):
+        """Exact general alpha.108 failure shape without private device data."""
+        hub = FictionalMCP()
+        final_prose = (
+            "I will disconnect Fictional Policy TV for ten minutes.\n\n"
+            "**Proposed native tool call**\n\n"
+            "```json\n"
+            '{"name":"hub_call_device_command","arguments":'
+            '{"deviceId":"101","command":"disconnectInMinutes",'
+            '"parameters":["10"]}}'
+            "\n```\n\n"
+            "(This will be submitted only after you approve it "
+            "via the UI approval gate.)"
+        )
+        model = ScriptedModel([
+            tool("hub_list_devices", {"format": "summary"}),
+            tool("hub_get_device", {"deviceId": "101", "mode": "summary"}),
+            tool("hub_create_variable", {
+                "name": "fictional_helper", "type": "Boolean", "confirm": True,
+            }),
+            {"content": "Please confirm before I proceed."},
+            {"content": final_prose},
+        ])
+        interaction = Interaction(require_native_write_approval=True)
+        try:
+            result = await model.answer(
+                QUESTION, [], hub, 60,
+                before_call=interaction.before_call,
+                enable_source_review=False,
+                enable_final_claim_audit=False,
+            )
+        finally:
+            await model.close()
+        self.assertTrue(result["success"], "Text answer success is distinct")
+        self.assertTrue(result["prewrite_model_review_invoked"])
+        self.assertTrue(result["action_approval_handoff_invoked"])
+        self.assertEqual(result["action_approval_handoff_status"],
+                         "still_no_native_write")
+        self.assertEqual(result["action_lifecycle"]["status"], "not_prepared")
+        self.assertFalse(result["action_lifecycle"]["native_write_submitted"])
+        self.assertFalse(result["action_lifecycle"]["approval_pending"])
+        self.assertEqual(result["action_selection"]["status"],
+                         "unprepared_confirmation")
+        self.assertEqual(result["action_selection"]["reason"],
+                         "no_native_write_selected")
+        self.assertEqual(
+            result["action_selection"]["options"],
+            ["prepare_action", "edit_request", "dismiss"])
+        self.assertIn("No action queued", result["answer"])
+        self.assertNotIn("Proposed native tool call", result["answer"])
+        self.assertEqual(result["rounds"], 5)
+        self.assertIsNone(interaction.pending)
+        self.assertEqual([name for name, _ in hub.calls],
+                         ["hub_list_devices", "hub_get_device"])
+
+    async def test_no_write_no_confirmation_phrase_still_gets_visible_choices(self):
+        hub = FictionalMCP()
+        model = ScriptedModel([
+            tool("hub_get_device", {"deviceId": "101", "mode": "summary"}),
+            {"content": "The current controller may already be in the requested state."},
+        ])
+        interaction = Interaction(require_native_write_approval=True)
+        try:
+            result = await model.answer(
+                QUESTION, [], hub, 60,
+                before_call=interaction.before_call,
+                enable_source_review=False,
+                enable_final_claim_audit=False,
+            )
+        finally:
+            await model.close()
+        self.assertFalse(result["action_approval_handoff_invoked"])
+        self.assertEqual(result["action_lifecycle"]["status"], "not_prepared")
+        self.assertIsNotNone(result["action_selection"])
+        self.assertEqual(len(hub.calls), 1)
+        self.assertEqual(result["rounds"], 2)
+        self.assertIsNone(interaction.pending)
+
     async def test_model_still_refuses_without_queued_action(self):
         hub = FictionalMCP()
         model = ScriptedModel(source_reads() + [

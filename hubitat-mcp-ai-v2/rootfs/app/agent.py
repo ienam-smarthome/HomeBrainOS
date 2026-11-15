@@ -15,6 +15,9 @@ import httpx
 from mcp import MCPError, MCPContractError, MCPClient, redact, is_tool_catalog
 from interaction import Interaction, needs_confirmation
 from native_action_contract import source_derived_timing_answer
+from action_lifecycle import (
+    inspect_action_lifecycle, unprepared_action_choices, unprepared_answer,
+)
 from action_intent_guard import automation_write_requires_confirmation, rule_activation_outcome
 from one_off_rule_policy import (
     rule_pre_dispatch_issue, requested_temporal_scope, scoped_request_text,
@@ -75,7 +78,12 @@ side before declaring a schedule matches. Never infer a timestamp solely
 from an ISO-formatted variable or the current conversation.
 For a clear ordinary device-action imperative, do not stop at a plan or ask
 redundant approval when the target, supported command, timing and safety
-checks are established. Execute through the connected offered native tool,
+checks are established. Prefer a targeted native device search (filter by
+device/label) and focused device-command details over a verbose all-device
+inventory; widen only when target identity or capability truly requires it.
+Read the current source-backed target state first; if the requested effect
+already exists, explain the state without making an unnecessary change.
+Execute through the connected offered native tool,
 and report only what ORIGINAL native command/state receipts actually confirm.
 For an action request, compare the user's intended TARGET, ACTION and TIMING
 with the actual capability of the selected native tool BEFORE the first write.
@@ -918,24 +926,6 @@ class Agent:
                 for row in receipts
             )
 
-        def unqueued_action_selection(answer: str) -> dict | None:
-            if (before_call is not None and not current_write_attempted()
-                    and (
-                        prose_only_action_confirmation(question, answer)
-                        or (is_explicit_device_imperative(question)
-                            and draft_has_source_backed_native_command(
-                                answer, receipts))
-                    )):
-                return {
-                    "status": "unprepared_confirmation",
-                    "options": ["prepare_action", "edit_request", "dismiss"],
-                    "native_write_queued": False,
-                    "note": "No native command has been prepared or executed. "
-                            "A new preparation attempt will still require its own "
-                            "explicit UI approval before any write.",
-                }
-            return None
-
         def completed_answer(answer: str, audit_status: str) -> dict[str, Any]:
             # Exact ALL-RETURNED-event requests get a typed, source-derived
             # chronology rather than an unverified model enumeration. This is
@@ -959,6 +949,19 @@ class Agent:
                 "status": "not_applicable", "answer": verified_answer
             }
             verified_answer = action_contract.get("answer", verified_answer)
+            # The user-facing action state comes only from what actually
+            # entered the original MCP write path (not assistant prose, JSON
+            # code fences, prewrite proposals, or success of a text reply).
+            lifecycle = inspect_action_lifecycle(
+                question, receipts,
+                native_write_submitted=(
+                    first_native_write_submission_elapsed_ms is not None
+                ),
+                native_write_selected=current_write_attempted(),
+                ui_approval_available=before_call is not None,
+            )
+            if before_call is not None:
+                verified_answer = unprepared_answer(lifecycle, verified_answer)
             action_contract_meta = {
                 key: value for key, value in action_contract.items()
                 if key != "answer"
@@ -1043,13 +1046,20 @@ class Agent:
                     if draft_has_source_backed_native_command(answer, receipts)
                     else "not_established"
                 ),
+                "action_lifecycle": lifecycle,
+                "response_success_scope": (
+                    "model_answer_returned; action success requires a native "
+                    "write receipt and downstream outcome remains unverified"
+                ),
                 "action_approval_handoff_invoked": action_approval_handoff_invoked,
                 "action_approval_handoff_status": (
                     "not_invoked" if not action_approval_handoff_invoked
                     else "native_write_selected" if current_write_attempted()
                     else "still_no_native_write"
                 ),
-                "action_selection": unqueued_action_selection(verified_answer),
+                "action_selection": unprepared_action_choices(
+                    lifecycle, ui_approval_available=before_call is not None
+                ),
                 "prewrite_model_review_invoked": prewrite_model_review_invoked,
                 "prewrite_unsent_proposals": prewrite_unsent_proposals,
                 "prewrite_dispatch_changed": prewrite_dispatch_changed,

@@ -683,7 +683,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 </section>
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.108";
+const UI_VERSION="2.0.0-alpha.109";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
@@ -1475,22 +1475,34 @@ function showResult(question,answer,response,clientMs,error=null,requestId=activ
  byId('currentExchange').hidden=false;byId('feedEmpty').hidden=true;
  byId('answer').classList.remove('muted');byId('answer').replaceChildren(renderAnswer(answer));
  byId('rawAnswer').textContent=answer;
- // An unqueued prose-only confirmation has NO native operation to approve.
- // Only a fresh model-selected write may open the existing live approval card.
- const unprepared=response?.action_selection?.status==='unprepared_confirmation';
+ // Terminal action status is derived from actual native write receipts and
+ // submission lifecycle, NOT from matching a model confirmation sentence.
+ // On failure to prepare, always show a real, actionable new-request choice.
+ const unprepared=response?.action_lifecycle?.status==='not_prepared'&&
+  response?.action_selection?.native_write_queued===false;
  lastUnpreparedQuestion=unprepared?question:null;
  byId('unpreparedAction').hidden=!unprepared;
  if(unprepared){
   byId('unpreparedActionNote').textContent=
-   'No native action was queued or executed. Choose Prepare action to ask '+
-   'the model to select a supported native command; the separate Approve / '+
-   'Edit / Dismiss card appears only if a real write is pending. '+
+   'No native command was prepared or submitted and there is NO approval '+
+   'pending for this completed request. Prepare action launches a NEW model-led '+
+   'request with fresh source evidence. The separate Approve / Edit / Dismiss '+
+   'card appears only for a real pending native write. If the requested state '+
+   'already holds, avoid retrying an unnecessary change. '+
    'A chat “proceed” alone never authorises a write.';
  }
  byId('requestQuestion').hidden=false;byId('requestQuestion').textContent=question;
  evidenceRows(response);completedWork(response);
  const calls=response?.tool_calls||[],failed=calls.filter(c=>c.success===false).length;
- byId('requestSummary').textContent=error?'Request could not complete.':response?.success===false?'Request ended without a successful response.':'Response received — review the supporting evidence.';
+ const actionState=response?.action_lifecycle?.status;
+ byId('requestSummary').textContent=error?'Request could not complete.':
+  unprepared?'No action queued — no device command sent; use Prepare action, Edit request or Dismiss.':
+  actionState==='native_write_not_submitted'?'No write submitted — check the approval or error details before trying another request.':
+  actionState==='native_accepted'?'Original native MCP response accepted the command — later outcome unverified.':
+  actionState==='native_rejected'?'Original native MCP response rejected the command — no completion verified.':
+  actionState==='native_result_unverified'?'Native write attempted — original acceptance and later outcome unverified.':
+  response?.success===false?'Request ended without a successful response.':
+  'Response received — review the supporting evidence.';
  if(response)byId('requestSummary').textContent+=' '+calls.length+' tool attempts'+(failed?' · '+failed+' unsuccessful':'')+'.';
  if(response?.current_state_source_status==='no_source_read_receipt')
    byId('requestSummary').textContent+=' Current-state answer unverified: no successful device read receipt.';
