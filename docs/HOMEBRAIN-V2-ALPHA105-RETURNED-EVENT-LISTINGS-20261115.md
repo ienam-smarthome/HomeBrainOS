@@ -1,0 +1,20 @@
+# HomeBrainOS V2 alpha.105 — typed projection for returned-event listings
+
+**15 November 2026.** V2 Preview only. No original private device receipts are committed.
+
+## Grounding and failure mechanism
+The owner supplied a genuine installed alpha.104 first-answer trace. The question requested an investigation of six-hour ON/OFF activity and specifically said "List the returned state changes, exact timestamps and recorded command issuers". Nemotron independently made two successful native read-only calls. One unfiltered device event result held 25 returned rows: 11 switch state reports, 11 command-setLevel issuer reports and three separate level state reports. The model's five-round reviewed final answer wrongly turned an earlier level report into a switch OFF, omitted an OFF in the 09:15 window, omitted requested adjacent intervals and attributed reported state changes to preceding automation commands as though temporal proximity were causal proof.
+
+The existing output-only typed history verifier did not activate because its narrow intent regex required "all/every/each returned". The natural user request used "list the returned state changes"; this is still an explicit enumeration of the returned dataset. The native request omitted `limit` and the client reported `row_limit_reached=null`; neither the row count nor the six-hour `hoursBack` argument certifies complete retention or complete coverage of the requested interval.
+
+## V2-only correction
+- Recognize explicit "list/enumerate/show/report the returned [attribute] state changes/events/transitions/reports" alongside existing all/every scope. Do not intercept causal why, single latest state, partial-example or native write requests.
+- From the one original successful, validated, identity-matched native `hub_list_device_events` receipt, enumerate each returned row of the explicitly requested state attribute; preserve actual offset-aware source stamps and calculate gaps only between adjacent returned reports. Never substitute level for switch or interpolate missing state changes.
+- Enumerate returned `command-*` rows in their **own table**, with recorded issuer IDs when safe. A bridge reporting a physical-tagged state change is not the initiating command issuer; `triggered[]` lists listeners; command-before-state timing is not causal proof. Preserve other event-name counts without disclosing arbitrary free-text values.
+- Keep fail-closed for ambiguous/multiple native source receipts, source device/period mismatch, malformed timestamps, contradictory original counts, explicitly reached row caps and unsafe rows. If the caller omitted `limit`, show that the upstream default cap, clipping and unreturned rows are unknown; success means a verified *returned slice*, never a verified complete native event store.
+- Expose `requested_row_limit`, `source_row_limit_status`, `source_row_limit_reached` only in private structured evidence. No extra model calls, MCP calls, hub polls, auto-selected tools, write paths, provider changes, or V1 modifications.
+
+## Verification
+Fictional synthetic tests reproduce a mixed 25-row return (11 matching switch, 11 recorded commands, three nonmatching level), a switch OFF omitted by the model draft and a command timestamp occurring *after* its neighbouring state report. Tests assert exact 11/11/3 totals, the omitted OFF and its 10.367s report interval, command/event separation, unknown implicit limit and original receipt immutability. Cross-domain motion/contact, existing exhaustive, privacy, fail-closed and ordinary nonenumerative model-led paths are retained. Existing agent lifecycle integration uses the natural "list the returned" wording without adding rounds or native calls.
+
+Require all exact-head CI checks green before merging; post-merge validation, then installed first-answer Gate B on a NEW read-only task with the owner's PRIVATE original MCP receipts. A synthetic test is not independent model-performance acceptance. Roll back for unsafe private source leakage, incorrect event types, false full-retention claims or unexpected write-approval changes.

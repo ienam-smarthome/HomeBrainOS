@@ -1,5 +1,12 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## Alpha.105 — accept explicit returned history lists, then move on
+
+In the installed alpha.104 history acceptance capture, Nemotron selected the correct fresh read-only device and event sources but produced a materially inaccurate 11-entry switch timeline from an unfiltered 25-row native receipt: one row was actually a `level` report, one genuine OFF was missing, command issuers were presented as causes and elapsed intervals were omitted. The source-derived output verifier did not activate only because the wording said **list the returned state changes**, not **all/every returned**. Alpha.105 extends that existing bounded typed contract without creating new model or MCP passes. Native event calls without an explicit `limit` retain an explicit unknown upstream cap, so only the returned slice is enumerated, not complete six-hour retention.
+
+After install, use one NEW uncoached read-only history request for a different period/domain; compare original native receipt event names, counts, exact timestamps, adjacent-report gaps, recorded command issuers and query lookback against the published ledger. Require `structured_history_verification.status=source_ledger_used` when eligible; a normal nonenumerative causal task should remain model-led. Do not repeat this known incident as the sole validation: synthetic regression is not independent installed acceptance. Next roadmap after the gate is the permanent answer-quality and cross-domain investigation plan, with no incident-specific patches. [Release contract](HOMEBRAIN-V2-ALPHA105-RETURNED-EVENT-LISTINGS-20261115.md).
+
+
 ## Alpha.104 — independently recover first-request historical reads
 
 After installed alpha.103 testing, a fresh historical question carried two unrelated prior receipts and **zero current-request Hubitat read calls**; Nemotron mistakenly treated "do not change anything" as a ban on read-only observations. The normal measurement review and tool-free final audit both completed without new receipts. Alpha.104 reuses the existing review stage to invite model-selected read-only sources only when there have been no current-request observational attempts, then skips a fruitless final audit if the model still does not read. The normal catalog and permissions remain authoritative; no tool is preselected, automatically called or retried.
