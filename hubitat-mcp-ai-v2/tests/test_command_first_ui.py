@@ -124,7 +124,7 @@ class UIContracts(unittest.TestCase):
             'duration>400&&activeRecognition',
             '@media(prefers-color-scheme:light)',
             '@media(prefers-reduced-motion:reduce)',
-            '2.0.0-alpha.105',
+            '2.0.0-alpha.106',
         ):
             self.assertIn(needle, HTML, needle)
         # System Health owns the inventory; chat stays a full-width conversation.
@@ -165,7 +165,7 @@ class UIContracts(unittest.TestCase):
             'Array.isArray(response?.answer_stage_trace)',
             'observed_after_ms',
             'Original MCP receipt',
-            'UI_VERSION="2.0.0-alpha.105"',
+            'UI_VERSION="2.0.0-alpha.106"',
             "api/activity/",
             'pendingApproval.effect_class',
             'void submitAsk()',
@@ -174,6 +174,25 @@ class UIContracts(unittest.TestCase):
         self.assertNotIn('Math.random()*500', HTML)
         self.assertNotIn('before_call=interaction.before_call, force_confirm=', HTML)
 
+
+
+
+class UnqueuedActionChoices(unittest.TestCase):
+    def test_finished_text_confirmation_has_safe_selection_not_fake_approval(self):
+        for token in (
+            'id="unpreparedAction"', 'id="prepareUnqueued"',
+            'id="editUnqueued"', 'id="dismissUnqueued"',
+            "function prepareUnqueuedAction()",
+            "function editUnqueuedAction()",
+            "function dismissUnqueuedAction()",
+            "unprepared_confirmation", "lastUnpreparedQuestion",
+            "preparedActionQuestion(original)",
+            "proceed|yes|confirm|go ahead|do it",
+        ):
+            self.assertIn(token, HTML)
+        self.assertIn("A chat “proceed” alone never authorises a write.", HTML)
+        self.assertIn("the separate approval card", HTML)
+        self.assertIn("if(activeRequest||!lastUnpreparedQuestion)return;", HTML)
 
 if __name__ == "__main__":
     unittest.main()
