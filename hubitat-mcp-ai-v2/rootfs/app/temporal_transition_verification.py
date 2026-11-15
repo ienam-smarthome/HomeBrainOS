@@ -29,6 +29,14 @@ _FIELDS = {
 }
 _SAFE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ()._'/&-]{0,90}$")
 _PRIVATE = re.compile(r"passw|secret|token|auth|credential|api.key|pin.code", re.I)
+# Only source-visible scalar telemetry relevant to a device's operation is
+# eligible for supplementary context. Never replay arbitrary event values.
+_CONTEXT_FIELDS = frozenset((
+    "temperature", "heatingSetpoint", "coolingSetpoint", "thermostatMode",
+    "valveLevel", "humidity", "power", "battery",
+))
+_NUMBER = re.compile(r"^-?\d{1,6}(?:\.\d{1,4})?$")
+_MODE_VALUES = frozenset(("heat", "cool", "auto", "off", "emergency heat"))
 _RELATIVE_HOURS = re.compile(
     r"\b(?:in\s+the\s+|for\s+the\s+)?(?:last|past|previous)\s+"
     r"(\d{1,3})\s*hours?\b", re.I,
@@ -107,8 +115,18 @@ def _observation(row, receipt_number):
     value = row.get("value")
     allowed = {"heating", "idle", "cooling", "on", "off", "active",
                "inactive", "open", "closed", "pending heat", "pending cool"}
-    normalized = value.lower() if isinstance(value, str) and value.lower() in allowed else None
+    normalized = value.strip().lower() if isinstance(value, str) and value.strip().lower() in allowed else None
     is_command = name.startswith("command-")
+    # Preserve a few positive, timestamped operational observations without
+    # treating them as a transition or letting arbitrary native text enter the
+    # published answer. Scalar units remain as originally reported.
+    if normalized is None and (name in _CONTEXT_FIELDS or is_command):
+        if isinstance(value, str) and _NUMBER.fullmatch(value.strip()):
+            normalized = value.strip()
+        elif type(value) in (int, float) and str(value) != "nan" and _NUMBER.fullmatch(str(value)):
+            normalized = str(value)
+        elif name == "thermostatMode" and isinstance(value, str) and value.strip().lower() in _MODE_VALUES:
+            normalized = value.strip().lower()
     if normalized is None and not is_command:
         return None
     producer = row.get("producedBy")
@@ -127,6 +145,7 @@ def temporal_transition_evidence(question, receipts):
         "status": "unverified_focal_transition", "requested": req,
         "target_id": None, "focal_report_count": 0,
         "focal_first": None, "focal_latest": None, "focal_pair": None,
+        "focal_context": [], "focal_commands": [],
         "focal_truncated_reads": 0, "focal_limit_reached_reads": 0,
         "peer_reports": [],
         "requested_window_start": None,
@@ -165,7 +184,7 @@ def temporal_transition_evidence(question, receipts):
         data = original.get("events")
         source_hours = args.get("hoursBack")
         source_since = _date(original.get("sinceTimestamp"))
-        if (requested_hours is not None
+        if (device_id == focal_id and requested_hours is not None
                 and requested_hours == source_hours
                 and source_since is not None):
             matched_windows.append((
@@ -228,6 +247,22 @@ def temporal_transition_evidence(question, receipts):
         a, z = pairs[-1]
         result["focal_pair"] = {"before": safe_row(a), "after": safe_row(z)}
         result["status"] = "bounded_pair_observed"
+    # A narrow positive-fact ledger: latest timestamped report for each
+    # allowed operational field and latest issued commands on the SAME device.
+    # This is not a controller-decision trace or exhaustive interval coverage.
+    focal_rows = by_device.get(focal_id, [])
+    last_by_field = {
+        row["name"]: row for row in focal_rows
+        if row["name"] in _CONTEXT_FIELDS and row["value"] is not None
+    }
+    result["focal_context"] = [
+        safe_row(row) for row in sorted(
+            last_by_field.values(), key=lambda row: row["time"]
+        )[-5:]
+    ]
+    result["focal_commands"] = [
+        safe_row(row) for row in focal_rows if row["command"]
+    ][-2:]
     for did, rows in by_device.items():
         if did == focal_id or len(result["peer_reports"]) >= 3:
             continue
@@ -240,6 +275,10 @@ def temporal_transition_evidence(question, receipts):
             "device_id": did, "label": peer_labels.get(did, ""),
             "latest": safe_row(states[-1]), "previous_different": safe_row(prev),
             "latest_command": safe_row(commands[-1]) if commands else None,
+            "latest_mode": safe_row(next((
+                row for row in reversed(rows)
+                if row["name"] == "thermostatMode" and row["value"] is not None
+            ), None)),
             "not_focal_target": True,
         })
     return result
@@ -289,6 +328,33 @@ def verify_recent_transition(question, draft_answer, receipts):
             "Some focal-device event responses were truncated or capped; "
             "their unseen rows cannot be treated as missing events."
         )
+    # The publication contract must retain verified positive context even
+    # when the requested before/after transition or its cause is unverified.
+    # Do not inherit the model draft: it may contain a fabricated cause.
+    if evidence["focal_context"]:
+        def context_text(item):
+            field, value = item["event_name"], item["observed_value"]
+            unit = ("°C" if field in ("temperature", "heatingSetpoint", "coolingSetpoint")
+                    else "%" if field in ("valveLevel", "humidity", "battery")
+                    else " W" if field == "power" else "")
+            return (f"{_md(field)} = **{_md(value)}{unit}** at "
+                    f"**{item['timestamp']}**")
+        lines.append(
+            "**Additional reported focal-device context (not a verified cause):** "
+            + "; ".join(context_text(item) for item in evidence["focal_context"])
+            + "."
+        )
+    if evidence["focal_commands"]:
+        item = evidence["focal_commands"][-1]
+        value = (f" (reported argument/value: {_md(item['observed_value'])})"
+                 if item.get("observed_value") is not None else "")
+        issuer = (f"; recorded issuer: {_md(item['recorded_command_issuer'])}"
+                  if item.get("recorded_command_issuer") else "")
+        lines.append(
+            f"**Focal-device command record:** {_md(item['event_name'])} "
+            f"at **{item['timestamp']}**{value}{issuer}. "
+            "A recorded issuer does not independently prove the trigger or effect."
+        )
     for peer in evidence["peer_reports"][:2]:
         name = _md(peer["label"]) if peer["label"] else "Device " + peer["device_id"]
         last, previous = peer["latest"], peer["previous_different"]
@@ -300,6 +366,13 @@ def verify_recent_transition(question, draft_answer, receipts):
                         f"**{previous['observed_value']} at "
                         f"{previous['timestamp']}**.")
         lines.append(context)
+        mode = peer.get("latest_mode")
+        if mode:
+            lines.append(
+                f"A separate **{name}** thermostatMode report was "
+                f"**{_md(mode['observed_value'])} at {mode['timestamp']}**. "
+                "This is a device report, not evidence of the focal transition."
+            )
         command = peer["latest_command"]
         if command:
             issuer = (f" (recorded issuer: {_md(command['recorded_command_issuer'])})"
@@ -327,6 +400,8 @@ def verify_recent_transition(question, draft_answer, receipts):
         "answer": "\n\n".join(lines),
         "target_id": evidence["target_id"], "event_field": request["field"],
         "focal_returned_state_rows": evidence["focal_report_count"],
+        "focal_context_fields_returned": len(evidence["focal_context"]),
+        "focal_command_rows_preserved": len(evidence["focal_commands"]),
         "focal_truncated_reads": evidence["focal_truncated_reads"],
         "focal_limit_reached_reads": evidence["focal_limit_reached_reads"],
         "requested_window_verified_from_source": evidence["requested_window_verified_from_source"],
