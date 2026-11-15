@@ -504,7 +504,8 @@ async def ask(request: AskRequest, http_request: Request):
                     prior_evidence=prior, prior_receipts=prior_count,
                     prior_reader=read_prior if request.conversation_id and indexed else None,
                     **monitor_kwargs,
-                    **({"enable_routine_bootstrap": True}
+                    **({"enable_routine_bootstrap": True,
+                        "enable_routine_post_write_readback": True}
                        if isinstance(app.state.model, Agent) else {}),
                     **({"prepare_action": True} if request.prepare_action else {}),
                 )
