@@ -212,7 +212,7 @@ class TypedHistoryProjectionTests(unittest.TestCase):
         self.assertIn("27.887s", answer)
         self.assertIn("31.980s", answer)
         self.assertIn("**Command coverage not verified:**", answer)
-        self.assertIn("not establish that no commands", answer)
+        self.assertIn("NOT establish that no commands", answer)
         self.assertNotIn("No commands occurred", answer)
         self.assertNotIn("cannot verify an exhaustive returned-event timeline", answer)
         self.assertIn("Nominal query end", answer)

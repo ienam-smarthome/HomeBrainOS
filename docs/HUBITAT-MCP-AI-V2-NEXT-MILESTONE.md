@@ -1,5 +1,12 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## Alpha.103 — scoped source-verification acceptance
+
+After alpha.102's two owner-provided PRIVATE live first-answer captures, change the typed final verifier to publish every valid returned state report in a filtered `switch` event source while **independently** marking command enumeration unverified. Neither a nonempty eight-row state result nor an empty zero-row filtered result establishes no commands elsewhere; the previous full-answer refusal lost valid evidence. No automatic MCP reread, extra cloud round, or native write is authorised by the correction.
+
+Install V2 Preview alpha.103 after CI and hub health review. Evaluate a genuinely new, read-only exhaustive state-and-command question with original PRIVATE receipts; require correct returned state count, exact offset-aware clocks, elapsed gaps, source sinceTimestamp, explicit command coverage warning for filtered source, reporter/initiator separation, and no claims of unseen-event absence. Check `structured_history_verification.command_verification_status`, `source_event_rows`, model rounds, token totals, elapsed, Monitor usage and writes=0. Repeat with a non-exhaustive causal question to verify the model still independently reasons and chooses sources. A green synthetic test or a previous exposed case is not independent source-real acceptance. [Design and rollback](HOMEBRAIN-V2-ALPHA103-SCOPED-RECEIPT-VERIFICATION-20261115.md).
+
+
 ## Alpha.102 — accept only source-derived exhaustive event answers
 
 After hub stability and V2 Preview alpha.102 installation, ask a NEW uncoached read-only question to enumerate **all returned** state events and recorded command issuers across a stated historical window. Check `structured_history_verification.status`, exactly matching original native event counts, values, command rows/issuer IDs, offset-aware times and inter-observation intervals, original `sinceTimestamp`, returned-window gaps, model rounds/tokens and zero writes. The ledger must be explicitly scoped to RETURNED rows only: no unseen history is proven absent. Verify that a separate causal or current-state question is **not** intercepted by the ledger. The previous alpha.101 result is an exposed exploratory failure, not a blinded before/after quality measure. [Design/rollback](HOMEBRAIN-V2-ALPHA102-TYPED-HISTORY-20261114.md).

@@ -303,7 +303,7 @@ def verify_and_project_history(
     if filtered is not None:
         lines += [
             "",
-            "**Command coverage not verified:** The model selected an "
+            "**Command coverage not verified:** The model selected a "
             f"`{filtered}`-attribute history read. It can establish returned "
             "state rows for that attribute, but cannot enumerate all returned "
             "command events or their issuers from the native event history. "
