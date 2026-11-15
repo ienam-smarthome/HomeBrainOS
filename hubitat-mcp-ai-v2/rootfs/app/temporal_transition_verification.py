@@ -311,8 +311,8 @@ def verify_recent_transition(question, draft_answer, receipts):
                 "establish what initiated the focal device's transition."
             )
     if re.search(
-        r"\\b(?:why|caused|cause|triggered|initiated|reason|"
-        r"what\\s+led\\s+to|verify\\s+what)\\b", question, re.I
+        r"\b(?:why|caused|cause|triggered|initiated|reason|"
+        r"what\s+led\s+to|verify\s+what)\b", question, re.I
     ):
         lines.append(
             "**Cause:** The reporter of a state event, a recorded command "
