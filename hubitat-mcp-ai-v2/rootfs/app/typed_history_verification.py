@@ -7,7 +7,7 @@ write home state or invent any missing events. Unverifiable cases fail closed.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import re
 from typing import Any
@@ -128,7 +128,7 @@ def _unverified(reason: str, field: str) -> dict:
         "status": "unverified",
         "event_field": field,
         "reason": reason,
-        "source_event_rows": 0,
+        "source_event_rows": None,
         "answer": (
             "I cannot verify an exhaustive returned-event timeline from the "
             "successful original native event receipts in this request. "
@@ -191,8 +191,11 @@ def verify_and_project_history(
     if filtered not in (None,field):
         return _unverified("read_filter_excludes_requested_state",field)
     asks_commands=bool(re.search(r"\bcommands?\b|\bissuers?\b",question,re.I))
-    if asks_commands and filtered is not None:
-        return _unverified("filtered_history_cannot_enumerate_commands",field)
+    # An attribute-filtered receipt may still verify every returned state row.
+    # It cannot verify a complete *command inventory*, so publish the valid
+    # state projection with a separate, explicit command-evidence limitation.
+    command_scope = ("unfiltered_returned_receipt" if filtered is None
+                     else "filtered_rows_only")
     hours= _DURATION.search(question)
     requested_hours= _WORD_COUNT.get(hours.group(1).lower()) if hours and not hours.group(1).isdigit() else int(hours.group(1)) if hours else None
     if (requested_hours is not None and
@@ -258,6 +261,11 @@ def verify_and_project_history(
     ]
     if since:
         lines.append(f"Requested source start (as returned): `{since}`.")
+        nominal_end = _date(since) + timedelta(hours=hours_arg)
+        lines.append(
+            "Nominal query end (derived from source start + hoursBack, not "
+            f"an independent hub-clock observation): `{nominal_end.isoformat(timespec='milliseconds')}`."
+        )
     if rows:
         valid_dates=[_date(r.get("date")) for r in rows]
         valid_stamps=[r.get("date") for r in rows]
@@ -271,14 +279,38 @@ def verify_and_project_history(
     for i,(stamp,raw_stamp,value,reporter) in enumerate(states):
         gap="—" if i==0 else _render_interval(states[i-1][0],stamp)
         lines.append(f"| {i+1} | `{raw_stamp}` | **{value.upper() if field=='switch' else value}** | {gap} | {_actor(reporter)} |")
-    lines += ["",f"**{len(commands)} returned command rows** (recorded issuers, not proven causes):",""]
+    if filtered is None:
+        heading = f"**{len(commands)} returned command rows** (recorded issuers, not proven causes):"
+    else:
+        heading = (
+            f"**{len(commands)} command rows visible in this `{filtered}`-filtered "
+            "receipt** (NOT a verified complete command inventory):"
+        )
+    lines += ["", heading, ""]
     if commands:
         lines += ["| Timestamp (as returned) | Command event | Recorded issuer |",
                   "|---|---|---|"]
         for _,raw_stamp,name,issuer in commands:
             lines.append(f"| `{raw_stamp}` | `{name}` | {_actor(issuer)} |")
     else:
-        lines.append("No command rows **in this returned receipt**; this does not exclude commands elsewhere.")
+        if filtered is None:
+            lines.append("No command rows **in this returned receipt**; this does not exclude commands elsewhere.")
+        else:
+            lines.append(
+                f"No command rows were visible in this `{filtered}`-filtered receipt. "
+                "This does NOT establish that no commands were recorded or issued."
+            )
+    if filtered is not None:
+        lines += [
+            "",
+            "**Command coverage not verified:** The model selected a "
+            f"`{filtered}`-attribute history read. It can establish returned "
+            "state rows for that attribute, but cannot enumerate all returned "
+            "command events or their issuers from the native event history. "
+            "An independently selected unfiltered read-only native query "
+            "would be needed to assess the broader returned command inventory. "
+            "No additional hub query was made by this verifier.",
+        ]
     if other_counts:
         # Never include raw values for unrelated history (including IPs).
         totals=", ".join(f"`{k}`: {v}" for k,v in sorted(other_counts.items()))
@@ -300,6 +332,12 @@ def verify_and_project_history(
         "source_event_rows":len(rows),
         "selected_state_rows":len(states),
         "source_command_rows":len(commands),
+        "command_enumeration_scope":command_scope,
+        "command_verification_status": (
+            "unfiltered_returned_rows_enumerated" if filtered is None
+            else "unverified_attribute_filtered_history"
+        ),
+        "requested_command_inventory": asks_commands,
         "state_rows_cited_verbatim_in_model_draft":cited,
         "answer":"\n".join(lines),
     }

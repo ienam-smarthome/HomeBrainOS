@@ -206,7 +206,7 @@ class OllamaTransportTests(unittest.IsolatedAsyncioTestCase):
 class SupervisorSchemaTests(unittest.TestCase):
     def test_ollama_key_is_optional_but_never_in_default_config(self):
         cfg = (Path(__file__).resolve().parents[1] / "config.yaml").read_text()
-        self.assertIn('version: "2.0.0-alpha.102"', cfg)
+        self.assertIn('version: "2.0.0-alpha.103"', cfg)
         defaults = cfg.split("\noptions:\n", 1)[1].split("\nschema:\n", 1)[0]
         schema = cfg.split("\nschema:\n", 1)[1]
         self.assertIn("  cloud_paid_provider: \"openrouter\"", defaults)
