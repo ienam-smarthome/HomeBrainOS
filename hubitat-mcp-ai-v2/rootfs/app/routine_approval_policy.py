@@ -133,7 +133,6 @@ def source_verified_auto_approval_class(
     # Zigbee/Z-Wave/Matter device evidence; never permit virtual policy relays.
     if (identifier in safe_switch_ids
             and "Light" not in classes
-            and any("Switch" in classes for _ in (0,))
             and all(str(item.get("protocol", "")).lower()
                     in _PHYSICAL_PROTOCOLS for item in matched)
             and all("virtual" not in str(item.get("driver", "")).lower()
