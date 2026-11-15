@@ -1,5 +1,9 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 15 November 2026 — alpha.118 failed reads are not positive evidence
+
+The original V2 source review checked whether ANY current read was attempted, even if it failed. For a historical/causal first answer this could prevent the one existing model-selected read-only source recovery and allow a paid final text audit with no successful observation. Alpha.118 checks original current source-success scope, distinguishes failed/native-domain-error receipts, counts unique successful tool-argument requests without inferring period coverage, and allows model-chosen alternative reads in the existing review round after failure. With no new successful observation it skips a redundant final claim audit. No extra automated hub read, device-write permission change or V1 edit. CI-only until a new installed cross-domain read-only source-real case is reviewed. [Details](HOMEBRAIN-V2-ALPHA118-FAILURE-AWARE-SOURCE-RECOVERY-20261115.md).
+
 ## 15 November 2026 — alpha.117 postwrite current-state observation with monotonic timing
 
 The first installed alpha.116 results meet the local routine no-extra-click acceptance: 4.49s OFF, 6.14s ON, one AI round and native accepted writer each, but no independent post-command state read. Alpha.117 adds one read-only source-scoped hub_get_device call AFTER native acceptance (1.35s cap) to report the subsequently observed Hubitat value, or honestly mark mismatch/unavailable. The write snapshot still is not later readback; later reported state still does not prove physical effect or unique initiator. Original source proof, model-selected command, permission/authorisation and complex investigation flows are unchanged. Same-monotonic-clock stage offsets and tagged source receipts support honest latency breakdown. [Details](HOMEBRAIN-V2-ALPHA117-BOUNDED-ROUTINE-READBACK-20261115.md).

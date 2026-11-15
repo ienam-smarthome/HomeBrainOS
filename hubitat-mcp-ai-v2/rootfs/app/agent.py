@@ -47,6 +47,7 @@ from control_surface_recovery import (
 )
 from evidence_scope import model_result_with_scope
 from typed_history_verification import verify_and_project_history
+from source_progress import current_source_progress
 from investigation_review import (
     should_review_completion,
     is_read_only_review_tool, read_only_review_catalog,
@@ -1139,7 +1140,9 @@ class Agent:
                 "fresh_source_recovery_invoked": fresh_source_recovery_invoked,
                 "fresh_source_recovery_status": (
                     "not_invoked" if not fresh_source_recovery_invoked else
-                    "read_succeeded" if any(x.get("success") is True for x in fresh_read_attempts()) else
+                    "read_succeeded" if current_source_progress(
+                        receipts
+                    )["has_successful_current_source"] else
                     "read_attempt_failed" if fresh_read_attempts() else
                     "no_current_read_attempt"
                 ),
@@ -1232,6 +1235,7 @@ class Agent:
                 ),
                 "answer_stage_trace": answer_stage_trace,
                 "available_read_sources": source_catalog,
+                "current_read_source_progress": current_source_progress(receipts),
                 "read_source_usage": {
                     "native_device_event_reads": sum(
                         row.get("name") == "hub_list_device_events"
@@ -1748,6 +1752,9 @@ class Agent:
                     fresh_source_recovery_invoked = should_offer_fresh_source_recovery(
                         question, kind=source_review_kind,
                         has_current_read_attempt=bool(fresh_read_attempts()),
+                        has_successful_current_read=current_source_progress(
+                            receipts
+                        )["has_successful_current_source"],
                         available_read_tools=bool(read_only_review_catalog(tools)),
                         has_action_receipt=native_action_receipts_seen > 0,
                     )
@@ -1806,7 +1813,8 @@ class Agent:
                         # An audit with NO new source after the recovery
                         # opportunity only polishes unsupported prose.
                         and not (fresh_source_recovery_invoked
-                                 and not fresh_read_attempts())
+                                 and not current_source_progress(receipts)[
+                                     "has_successful_current_source"])
                         and should_audit_completion(
                             source_review_invoked=source_review_invoked,
                             already_audited=final_claim_audit_invoked,
@@ -1837,7 +1845,9 @@ class Agent:
                            else "not_applicable_to_current_state_review"
                            if source_review_kind == "current_state"
                            else "skipped_no_fresh_read" if enable_final_claim_audit
-                           and fresh_source_recovery_invoked and not fresh_read_attempts()
+                           and fresh_source_recovery_invoked and not current_source_progress(
+                                receipts
+                            )["has_successful_current_source"]
                            else "skipped_low_time" if source_review_invoked
                            and enable_source_review else "not_invoked"),
                 )
