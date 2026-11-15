@@ -24,11 +24,11 @@ from routine_action_fastpath import _normal, _original
 _COMPONENT_DIMMER = re.compile(
     r"\bcomponent\b.*\b(?:dimmer|light|bulb)\b", re.IGNORECASE,
 )
-_BRIDGE_ROLE = re.compile(r"\\b(?:bridge|lighting gateway)\\b", re.IGNORECASE)
+_BRIDGE_ROLE = re.compile(r"\b(?:bridge|lighting gateway)\b", re.IGNORECASE)
 _PARENT_SENSITIVE_ROLE = re.compile(
-    r"\\b(?:internet|network|router|vpn|block|security|alarm|lock|"
+    r"\b(?:internet|network|router|vpn|block|security|alarm|lock|"
     r"thermostat|heating|boiler|hvac|camera|cctv|garage|door|gate|"
-    r"gas|water|pump|freezer|fridge|oven|power policy|mesh)\\b",
+    r"gas|water|pump|freezer|fridge|oven|power policy|mesh)\b",
     re.IGNORECASE,
 )
 _PHYSICAL_PARENT_PROTOCOLS = frozenset({"matter", "zigbee", "z-wave", "zwave"})
