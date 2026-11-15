@@ -31,6 +31,7 @@ from home_assistant_tts import HomeAssistantTTS, HomeAssistantTTSConfigurationEr
 from mcp import MCPError, MCPClient
 from agent import Agent, InitialCatalogUnavailable
 from interaction import Interaction
+from routine_approval_policy import trusted_switch_ids
 from one_off_cleanup import OneOffCleanup
 from conversation import ConversationEvidence
 from frozen_evaluation import FrozenEvaluationError, freeze_capture, replay_frozen_capture
@@ -50,6 +51,11 @@ DEFAULTS: dict[str, Any] = {
     "model_timeout_seconds": 120,
     "mcp_timeout_seconds": 25,
     "investigation_timeout_seconds": 300,
+    # This personal V2 deployment treats a new explicit Ask as consent ONLY
+    # for source-verified ordinary lights. Generic switches need an explicit
+    # native-ID allowlist; all sensitive actions retain approval.
+    "routine_auto_approve_lights": True,
+    "routine_auto_approve_safe_switch_ids": "",
     "hub_timezone": "Europe/London",
     "external_hub_diagnostics_enabled": False,
     "external_hub_diagnostics_hub_url": "",
@@ -442,9 +448,17 @@ async def ask(request: AskRequest, http_request: Request):
     request_id = str(request.request_id)
     if request_id in app.state.interactions:
         raise HTTPException(409, "This request is already active")
-    # The V2 web UI requires approval for ALL selected native write calls.
-    # Same-session Interaction owns decisions; read-only calls bypass it.
-    interaction = Interaction(require_native_write_approval=True)
+    # Every native write still goes through the per-request gate. The original
+    # Ask may replace a second click ONLY for a single fresh source-verified
+    # benign routine writer, never for broad or sensitive native operations.
+    interaction = Interaction(
+        require_native_write_approval=True,
+        auto_approve_lights=app.state.options.get(
+            "routine_auto_approve_lights") is True,
+        trusted_safe_switch_ids=trusted_switch_ids(
+            str(app.state.options.get("routine_auto_approve_safe_switch_ids", ""))
+        ),
+    )
     app.state.interactions[request_id] = interaction
     request_task = asyncio.current_task()
     # Tests and embedding hosts may create the FastAPI app without its
