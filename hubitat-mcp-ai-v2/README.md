@@ -1,5 +1,8 @@
 # Hubitat MCP AI v2 — native MCP client
 
+**Alpha.106 (15 November 2026) — actual native approval handoff, not text-only "confirm".** An explicit device action that reaches a model-only "please confirm" after current-request verified `hub_get_device` commands can reuse ONE bounded model round to select a supported, currently advertised native write. Only the **existing** native write approval card can authorize dispatch; typed "proceed" after the first Ask cannot approve a completed request. If the model still stops in prose, the answer offers selectable **Prepare action / Edit request / Dismiss** choices; a preparation retry is a fresh Ask, not consent. Numeric native command parameters are visible on the real approval card. No direct execution from prose, prefilled command routing, stale tool replay, approval bypass, new automation/helper, provider change or V1 modification. [Engineering contract](../docs/HOMEBRAIN-V2-ALPHA106-ACTION-APPROVAL-HANDOFF-20261115.md).
+
+
 **Alpha.105 (15 November 2026) — source-derived returned-history lists.** Explicit requests to *list the returned state changes* (without "all/every") now activate the existing bounded typed projection for supported state attributes: exact returned timestamps and report gaps, with issuer-bearing command events in a separate, noncausal table. When the original native event call omitted an explicit limit, the ledger says the upstream default and possible clipping are unknown, rather than claiming the requested window is complete. Model-led tool selection, ordinary causal reasoning, approval boundaries, provider routing and V1 remain unchanged; no extra read or model round. [Details](../docs/HOMEBRAIN-V2-ALPHA105-RETURNED-EVENT-LISTINGS-20261115.md).
 
 

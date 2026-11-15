@@ -36,6 +36,22 @@ class ActionCards(unittest.IsolatedAsyncioTestCase):
         await task
         self.assertIsNone(interaction.pending)
 
+    async def test_numeric_native_parameters_visible_without_write(self):
+        interaction = Interaction(require_native_write_approval=True)
+        args = {"deviceId": "LAB-DEMO-TIMER", "command": "delayPolicy",
+                "parameters": [10]}
+        task = asyncio.create_task(interaction.before_call(
+            "hub_call_device_command", args, "Fictional future action"))
+        await asyncio.sleep(0)
+        self.assertIsNotNone(interaction.pending)
+        self.assertEqual(
+            interaction.pending["preview"]["fields"]["parameters"], "10")
+        self.assertEqual(
+            interaction.pending["preview"]["verb"], "delayPolicy")
+        interaction.decide(interaction.pending["id"], False)
+        with self.assertRaises(MCPError):
+            await task
+
     async def test_reads_have_no_approval_card(self):
         interaction = Interaction(require_native_write_approval=True)
         await interaction.before_call(
@@ -124,7 +140,7 @@ class UIContracts(unittest.TestCase):
             'duration>400&&activeRecognition',
             '@media(prefers-color-scheme:light)',
             '@media(prefers-reduced-motion:reduce)',
-            '2.0.0-alpha.105',
+            '2.0.0-alpha.106',
         ):
             self.assertIn(needle, HTML, needle)
         # System Health owns the inventory; chat stays a full-width conversation.
@@ -165,7 +181,7 @@ class UIContracts(unittest.TestCase):
             'Array.isArray(response?.answer_stage_trace)',
             'observed_after_ms',
             'Original MCP receipt',
-            'UI_VERSION="2.0.0-alpha.105"',
+            'UI_VERSION="2.0.0-alpha.106"',
             "api/activity/",
             'pendingApproval.effect_class',
             'void submitAsk()',
@@ -174,6 +190,25 @@ class UIContracts(unittest.TestCase):
         self.assertNotIn('Math.random()*500', HTML)
         self.assertNotIn('before_call=interaction.before_call, force_confirm=', HTML)
 
+
+
+
+class UnqueuedActionChoices(unittest.TestCase):
+    def test_finished_text_confirmation_has_safe_selection_not_fake_approval(self):
+        for token in (
+            'id="unpreparedAction"', 'id="prepareUnqueued"',
+            'id="editUnqueued"', 'id="dismissUnqueued"',
+            "function prepareUnqueuedAction()",
+            "function editUnqueuedAction()",
+            "function dismissUnqueuedAction()",
+            "unprepared_confirmation", "lastUnpreparedQuestion",
+            "preparedActionQuestion(original)",
+            "proceed|yes|confirm|go ahead|do it",
+        ):
+            self.assertIn(token, HTML)
+        self.assertIn("A chat “proceed” alone never authorises a write.", HTML)
+        self.assertIn("the separate approval card", HTML)
+        self.assertIn("if(activeRequest||!lastUnpreparedQuestion)return;", HTML)
 
 if __name__ == "__main__":
     unittest.main()

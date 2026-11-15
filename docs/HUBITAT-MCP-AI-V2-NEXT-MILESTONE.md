@@ -1,5 +1,12 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## Alpha.106 — close the last action-confirmation dead end before roadmap
+
+Installed alpha.105 test of a direct relative-delay network block correctly found the actual managed network-control actuator and the matching native timer command, but the model emitted a helper-variable draft (NOT sent), then a text-only "please confirm" rather than a native command proposal. The web UI approval endpoint only accepts an active structured proposal, so a later "proceed" had nothing to approve and no timer was scheduled.
+
+Alpha.106 adds one bounded model-led handoff opportunity (only with fresh identity-matched command details and a real UI approval channel), keeping native command choice and authorization separate. A selected command yields the existing live Approve/Edit/Dismiss card showing numeric parameters, and a declined/stalled proposal yields Prepare action/Edit request/Dismiss after completion. An unqueued "proceed" starts fresh preparation, not a write. No automatic execution, stale command replay, bypass of native approval or V1 change. Test with a **fictional/dry-run-equivalent controlled device or willingly approved real low-risk device**, then capture the original PRIVATE native receipt before claiming scheduling or execution. Check that declining results in zero writes. Return to roadmap after a small set of source-real action and read-only cases; do not incident-patch further without a general contract. [Engineering contract](HOMEBRAIN-V2-ALPHA106-ACTION-APPROVAL-HANDOFF-20261115.md).
+
+
 ## Alpha.105 — accept explicit returned history lists, then move on
 
 In the installed alpha.104 history acceptance capture, Nemotron selected the correct fresh read-only device and event sources but produced a materially inaccurate 11-entry switch timeline from an unfiltered 25-row native receipt: one row was actually a `level` report, one genuine OFF was missing, command issuers were presented as causes and elapsed intervals were omitted. The source-derived output verifier did not activate only because the wording said **list the returned state changes**, not **all/every returned**. Alpha.105 extends that existing bounded typed contract without creating new model or MCP passes. Native event calls without an explicit `limit` retain an explicit unknown upstream cap, so only the returned slice is enumerated, not complete six-hour retention.
