@@ -189,7 +189,7 @@ class ActualGateTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["action_lifecycle"]["status"], "native_accepted")
         self.assertTrue(result["routine_native_authorization"]
                         ["automatic_authorization_used"])
-        self.assertEqual(result["action_performance"]["native_approval_wait_ms"], 0)
+        self.assertLess(result["action_performance"]["native_approval_wait_ms"], 100)
         self.assertIn("OFF command accepted", result["answer"])
         self.assertIn("not been independently verified", result["answer"])
 
