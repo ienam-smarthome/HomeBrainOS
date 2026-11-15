@@ -152,6 +152,9 @@ class FocalTransitionTests(unittest.TestCase):
                       "2026-11-14T23:30:00+0000"),
             ], hours=24, since="2026-11-14T22:22:08+0000",
         )
+        # No matching 12-hour source in this fixture: a 24-hour return
+        # cannot silently certify the user's requested relative window.
+        source = source[:3]
         got = verify_recent_transition(Q, "Latest at 23:30", source)
         self.assertEqual(got["status"], "focal_transition_unverified")
         self.assertFalse(got["requested_window_verified_from_source"])
