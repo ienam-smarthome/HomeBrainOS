@@ -14,6 +14,7 @@ import json
 from typing import Any
 
 from investigation_review import is_read_only_review_tool
+from time_evidence import native_document
 
 
 _NON_OBSERVATIONS = frozenset({
@@ -21,6 +22,21 @@ _NON_OBSERVATIONS = frozenset({
     "homebrain_read_clock",
 })
 _READ_RESULT_TYPES = frozenset({"tool_result", "local_monitor_read"})
+
+
+def _domain_source_rejected(item: dict) -> bool:
+    """A successful transport can still contain an original native error."""
+    if item.get("result_kind") != "tool_result":
+        return False
+    try:
+        raw = json.loads(item.get("response", ""))
+        document = native_document(raw)
+    except (TypeError, ValueError):
+        return False
+    return isinstance(document, dict) and (
+        document.get("success") is False
+        or bool(document.get("error"))
+    )
 
 
 def current_source_progress(receipts: list[dict] | None) -> dict[str, Any]:
@@ -50,7 +66,7 @@ def current_source_progress(receipts: list[dict] | None) -> dict[str, Any]:
         ):
             continue
         attempts += 1
-        if item.get("success") is True:
+        if item.get("success") is True and not _domain_source_rejected(item):
             successful += 1
             args = item.get("arguments")
             # Keys are used for scope counting only, never exposed.
