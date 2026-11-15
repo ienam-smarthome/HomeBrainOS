@@ -9,6 +9,7 @@ import uuid
 from mcp import MCPError, redact
 from action_intent_guard import automation_write_requires_confirmation
 from action_proposal_review import is_native_action_proposal
+from native_action_contract import verified_device_details, numeric_minutes, timing_kind
 
 
 def needs_confirmation(value) -> bool:
@@ -50,7 +51,7 @@ def action_effect_class(name: str, arguments: dict, *, write: bool) -> str:
     return "sensitive_write"
 
 
-def action_preview(name: str, arguments: dict, effect: str) -> dict:
+def action_preview(name: str, arguments: dict, effect: str, *, verified_devices: dict | None = None) -> dict:
     """Bounded, redacted UI projection. Never reusable as native call args."""
     safe = redact(copy.deepcopy(arguments))
     fields = {}
@@ -72,15 +73,31 @@ def action_preview(name: str, arguments: dict, effect: str) -> dict:
             elif key in {"args", "settings"} and isinstance(value, dict):
                 visit(value, depth+1)
     visit(safe)
-    # Show numeric native command parameters in the actual approval card:
-    # minutes/level values must not be hidden while approving a write.
-    # This is a *display* of original proposal args, never new tool args.
-    if isinstance(safe, dict):
-        params = safe.get("parameters", safe.get("params"))
-        if (isinstance(params, list) and 0 < len(params) <= 5
-                and all(type(x) in (int, float) and -1e9 < x < 1e9
-                        for x in params)):
-            fields["parameters"] = ", ".join(str(x) for x in params)[:80]
+    # Show safe numeric string or NUMBER parameters verbatim, never
+    # modify the original native proposal or approval decision.
+    params = safe.get("parameters", safe.get("params")) if isinstance(safe, dict) else None
+    numeric = None
+    if (isinstance(params, list) and 0 < len(params) <= 5
+            and all(numeric_minutes(value) is not None for value in params)):
+        fields["parameters"] = ", ".join(numeric_minutes(value) for value in params)[:80]
+        if len(params) == 1:
+            numeric = numeric_minutes(params[0])
+    # Only an ID-matched original native device-detail result supplies
+    # the display name. The label NEVER changes target or native tool args.
+    original_id = fields.get("device")
+    verified = (verified_devices or {}).get(original_id) if original_id else None
+    if isinstance(verified, dict) and verified.get("label"):
+        fields["device_id"] = original_id
+        fields["device"] = verified["label"]
+        proposed = safe.get("command") if isinstance(safe, dict) else None
+        if (isinstance(proposed, str)
+                and proposed in verified.get("commands", set())
+                and numeric is not None):
+            semantics = timing_kind(proposed)
+            if semantics == "delay":
+                fields["timing"] = f"After {numeric} minutes (delay, not duration)"
+            elif semantics == "duration":
+                fields["timing"] = f"For {numeric} minutes (duration, not delay)"
     leaf = safe.get("tool") if isinstance(safe, dict) else None
     verb = (safe.get("command") or safe.get("operation")) if isinstance(safe, dict) else None
     if not verb and isinstance(safe.get("args"), dict):
@@ -98,6 +115,11 @@ class Interaction:
         self.current = None
         self.pending = None
         self._decision = None
+        self._verified_devices: dict[str, dict] = {}
+
+    def register_current_native_device_details(self, receipts: list[dict]) -> None:
+        """Source-only display registry for this particular Ask/approval."""
+        self._verified_devices = verified_device_details(receipts)
 
     def status(self) -> dict:
         return {"current": self.current, "pending": self.pending}
@@ -127,7 +149,10 @@ class Interaction:
             "approval_kind": ("automation_write" if automation_write
                               else "native_confirmation"),
             "effect_class": effect,
-            "preview": action_preview(name, arguments, effect),
+            "preview": action_preview(
+                name, arguments, effect,
+                verified_devices=self._verified_devices
+            ),
             "review_note": (
                 "A native rule can be saved and active even when it is "
                 "scheduled to repeat or has the wrong on/off effect. "

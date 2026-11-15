@@ -207,7 +207,7 @@ def source_derived_timing_answer(
         f"**Native command accepted:** **{label}** (device ID {device_id}).",
         f"\u2022 Command: `{command}` with parameter `{minutes}`.",
         f"\u2022 Requested timing: **{requested_text}** "
-        + ("(delayed onset, **not** a blocking duration)."
+        + ("(delayed onset, **not** a action duration)."
            if kind == "delay"
            else "(duration, **not** a delayed start)."),
         "\u2022 The original native MCP response reported `success: true`.",
@@ -222,7 +222,7 @@ def source_derived_timing_answer(
         "write response, **not an independent post-write readback**. "
         "A future physical or network change has not been observed in this "
         "request. The original source does not establish an automatic "
-        "reversal or a fixed blocking duration.",
+        "reversal or a fixed action duration.",
     ])
     return {
         "status": "source_derived_native_acceptance",
