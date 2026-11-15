@@ -116,21 +116,46 @@ class Interaction:
         self.pending = None
         self._decision = None
         self._verified_devices: dict[str, dict] = {}
+        self._cancelled = False
+        self.native_write_submission_started = False
+        self.phase: dict = {"kind": "queued"}
+
+    def set_phase(self, kind: str, *, detail: str = "") -> None:
+        """Safe bounded progress, not simulated device evidence."""
+        if not self._cancelled:
+            self.phase = {"kind": kind, "detail": detail[:90]}
+
+    def invalidate(self) -> None:
+        """Superseded requests lose all native approval authority immediately."""
+        self._cancelled = True
+        self.phase = {"kind": "cancelled"}
+        if self._decision is not None and not self._decision.done():
+            self._decision.cancel()
+        self.pending = None
+
+    def note_native_write_submission(self) -> None:
+        """Marks an uncertain-write boundary, not acceptance or outcome."""
+        if self._cancelled:
+            raise MCPError("This request was superseded before native dispatch")
+        self.native_write_submission_started = True
 
     def register_current_native_device_details(self, receipts: list[dict]) -> None:
         """Source-only display registry for this particular Ask/approval."""
         self._verified_devices = verified_device_details(receipts)
 
     def status(self) -> dict:
-        return {"current": self.current, "pending": self.pending}
+        return {"current": self.current, "pending": self.pending,
+                "phase": self.phase, "cancelled": self._cancelled}
 
     def decide(self, approval_id: str, approved: bool) -> None:
-        if (not self.pending or self.pending["id"] != approval_id
+        if (self._cancelled or not self.pending or self.pending["id"] != approval_id
                 or self._decision is None or self._decision.done()):
             raise ValueError("This confirmation is no longer pending")
         self._decision.set_result(approved)
 
     async def before_call(self, name: str, arguments: dict, explanation: str) -> None:
+        if self._cancelled:
+            raise MCPError("This request was superseded; no native action authorised")
         self.current = {
             "name": name, "arguments": redact(copy.deepcopy(arguments)),
             "explanation": redact(explanation),
@@ -144,6 +169,7 @@ class Interaction:
         effect = action_effect_class(name, arguments,
                    write=(automation_write or structured_write or explicit_confirmation))
         self._decision = asyncio.get_running_loop().create_future()
+        self.set_phase("awaiting_approval", detail="Real native write pending your decision")
         self.pending = {
             "id": str(uuid.uuid4()), **self.current,
             "approval_kind": ("automation_write" if automation_write
@@ -162,8 +188,11 @@ class Interaction:
         }
         try:
             approved = await self._decision
+            if self._cancelled:
+                raise MCPError("This request was superseded; no native action authorised")
             if not approved:
                 raise MCPError("User declined this operation; do not retry it")
+            self.set_phase("approved", detail="Native action approved; awaiting dispatch")
         finally:
             self.pending = None
             self._decision = None

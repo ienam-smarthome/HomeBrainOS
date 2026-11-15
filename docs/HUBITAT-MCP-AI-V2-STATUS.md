@@ -1,5 +1,12 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 15 November 2026 — alpha.110 new chat supersedes an unanswered request
+
+The latest source-real alpha.109 first-answer review identifies a long approval wait: about 214.9 of 299.4 seconds were inside the live native write approval gate. The model contributed ~75.8 seconds. The request eventually received native command acceptance, but the existing single backend Ask lock and UI which disabled Ask/Speak/New chat kept the user trapped behind an unanswered prompt. A screenshot's "Evidence · 0 calls" reflected lack of completed streamed receipts, not proof that no native/model work had occurred.
+
+Alpha.110 safely restores independent V1-like Ask/Speak use. Every new Ask/Speak uses a fresh conversation UUID and sends empty chat history; no previous private receipts or approvals persist into a new request. When an old Ask is active, the browser first sends its UUID to a same-origin cancel endpoint, which revokes the Interaction approval token and cancels the old task before starting the next Ask. New chat and Cancel work while busy. Explicit native writes already submitted to Hubitat are **not guaranteed undone**; the app reports an unknown outcome rather than claiming no effect or issuing an automatic retry. The UI observes actual phase transitions and guards old in-flight responses/timers against overwriting the next request. Model-led tool decisions and write approvals stay intact. No V1 modifications. [Source-real note](HOMEBRAIN-V2-ALPHA110-SUPERSEDE-20261115.md).
+
+
 ## 15 November 2026 — alpha.109 terminal action-state contract
 
 The installed alpha.108 failed an imperative device task after a 48-second, eight-round cloud investigation: it produced an unexecuted JSON native tool proposal and instructed the owner to approve it in a nonexistent pending card. No native action was submitted; text `success:true` was not action completion. The ordinary unqueued-action fallback returned `null` because it depended on narrow prose/format matching. The source did show the target controller reporting blocked from a prior timestamp, which warrants measured state reporting but is not proof of the earlier triggering initiator.

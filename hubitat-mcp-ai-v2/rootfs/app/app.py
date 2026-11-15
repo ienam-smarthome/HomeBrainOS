@@ -87,6 +87,7 @@ async def lifecycle(app: FastAPI):
     app.state.options = options
     app.state.ask_lock = asyncio.Lock()
     app.state.interactions = {}
+    app.state.ask_tasks = {}
     app.state.conversations = ConversationEvidence()
     app.state.benchmark = BenchmarkWorkspace(Path("/data/homebrain-v2-benchmark"))
     app.state.benchmark_task = None
@@ -203,7 +204,7 @@ async def lifecycle(app: FastAPI):
             await app.state.model.close()
 
 
-app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.109", lifespan=lifecycle)
+app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.110", lifespan=lifecycle)
 app.include_router(benchmark_router)
 app.include_router(autonomous_router)
 app.include_router(reasoning_router)
@@ -405,6 +406,31 @@ async def confirm(request_id: UUID, decision: Confirmation, http_request: Reques
     return {"accepted": True}
 
 
+@app.post("/api/activity/{request_id}/cancel")
+async def cancel_active_ask(request_id: UUID, http_request: Request):
+    """Cancel only this live Ask; never approve or replay an earlier action."""
+    require_ui_request(http_request)
+    key = str(request_id)
+    interaction = app.state.interactions.get(key)
+    task = getattr(app.state, "ask_tasks", {}).get(key)
+    if interaction is None or task is None or task.done():
+        return {"cancelled": False, "reason": "request_not_active",
+                "native_write_outcome_unknown": False}
+    # Invalidate the gate BEFORE cancellation; a late Approve cannot race
+    # into an old chat after a new Speak/Ask has been submitted.
+    interaction.invalidate()
+    possibly_submitted = interaction.native_write_submission_started
+    task.cancel()
+    try:
+        await asyncio.wait_for(asyncio.shield(task), timeout=3.0)
+    except (asyncio.CancelledError, asyncio.TimeoutError):
+        pass
+    # No physical rollback is implied: an already-sent native operation
+    # may still complete at Hubitat even though the browser request ended.
+    return {"cancelled": True,
+            "native_write_outcome_unknown": bool(possibly_submitted)}
+
+
 @app.post("/api/ask")
 async def ask(request: AskRequest, http_request: Request):
     require_ui_request(http_request)
@@ -419,8 +445,16 @@ async def ask(request: AskRequest, http_request: Request):
     # Same-session Interaction owns decisions; read-only calls bypass it.
     interaction = Interaction(require_native_write_approval=True)
     app.state.interactions[request_id] = interaction
+    request_task = asyncio.current_task()
+    # Tests and embedding hosts may create the FastAPI app without its
+    # lifespan; allocate the ephemeral task registry in that case too.
+    if getattr(app.state, "ask_tasks", None) is None:
+        app.state.ask_tasks = {}
+    app.state.ask_tasks[request_id] = request_task
     try:
+        interaction.set_phase("queued", detail="Waiting for the Ask slot")
         async with app.state.ask_lock:
+            interaction.set_phase("catalog", detail="Checking connected native MCP catalog")
             try:
                 prior, prior_count = (
                     app.state.conversations.context(str(request.conversation_id))
@@ -498,6 +532,8 @@ async def ask(request: AskRequest, http_request: Request):
                         "model_error_kind": model_error_kind(exc)}
     finally:
         app.state.interactions.pop(request_id, None)
+        if app.state.ask_tasks.get(request_id) is request_task:
+            app.state.ask_tasks.pop(request_id, None)
 
 
 

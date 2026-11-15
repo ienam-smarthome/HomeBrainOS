@@ -752,6 +752,10 @@ class Agent:
         hub_timezone: str | None = None,
     ) -> dict[str, Any]:
         started = time.monotonic()
+        approval_owner = getattr(before_call, "__self__", None)
+        interaction_status = approval_owner if isinstance(approval_owner, Interaction) else None
+        if interaction_status is not None:
+            interaction_status.set_phase("catalog", detail="Checking native MCP catalog")
         deadline = started + max(30, int(deadline_seconds))
         try:
             catalog = await mcp.list_tools(refresh=True)
@@ -1186,6 +1190,10 @@ class Agent:
                     "rounds": rounds,
                     "elapsed_ms": round((time.monotonic() - started) * 1000),
                 }
+            if interaction_status is not None:
+                interaction_status.set_phase(
+                    "model", detail=f"AI model round {rounds + 1}"
+                )
             try:
                 message = await self.round(messages, tools, remaining)
             except RuntimeError as exc:
@@ -1745,6 +1753,16 @@ class Agent:
                                 )):
                             first_native_write_submission_elapsed_ms = round(
                                 (time.monotonic() - started) * 1000
+                            )
+                        # Record the boundary before entering the native MCP
+                        # transport. Cancellation after this point cannot
+                        # guarantee that a device write did not take effect.
+                        if (interaction_status is not None
+                                and is_native_action_proposal(name, args, catalog)):
+                            interaction_status.note_native_write_submission()
+                        if interaction_status is not None:
+                            interaction_status.set_phase(
+                                "native_call", detail="MCP tool in progress"
                             )
                         result = await asyncio.wait_for(
                             mcp.call(name, args),

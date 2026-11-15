@@ -6,7 +6,7 @@ const html=readFileSync(new URL('../rootfs/app/ui.html',import.meta.url),'utf8')
 const script=html.split('<script>')[1].split('</script>')[0].replace(/loadStatus\(\);\s*$/, '');
 const version=html.match(/const UI_VERSION="([^"]+)"/)[1];
 function harness(){
- const elements=new Map(),timers=new Map(),timeouts=new Map();let clock=1000,seq=0,focused=false,fallback='',copied='',askCalls=0,overviewCalls=0,clearCalls=0,askBodies=[];
+ const elements=new Map(),timers=new Map(),timeouts=new Map();let clock=1000,seq=0,focused=false,fallback='',copied='',askCalls=0,overviewCalls=0,clearCalls=0,cancelCalls=0,askBodies=[];
  const element=(tag='div')=>({tagName:tag.toUpperCase(),children:[],_text:'',get textContent(){return this._text+this.children.map(c=>c.textContent).join('');},set textContent(v){this._text=String(v);this.children=[];},appendChild(c){this.children.push(c);return c;},append(...nodes){nodes.forEach(n=>this.appendChild(n));},replaceChildren(...nodes){this.children=[];this._text='';this.append(...nodes);},setAttribute(k,v){this[k]=v;},getAttribute(k){return this[k]??null;},getBoundingClientRect(){return {width:860,height:360,left:0};},value:'',disabled:false,hidden:false,style:{},classList:(()=>{const classes=new Set();return{add(...names){names.forEach(n=>classes.add(n));},remove(...names){names.forEach(n=>classes.delete(n));},toggle(name,on){if(on===undefined? !classes.has(name):on){classes.add(name);return true;}classes.delete(name);return false;},contains(name){return classes.has(name);}}})(),addEventListener(){},focus(){focused=true;},click(){state.downloadName=this.download;}});
  const el=id=>{if(!elements.has(id))elements.set(id,element());return elements.get(id);};
  const state={status:{version,configured:true,model:'gemma4:31b-cloud',recorder:{status:'online',last:{free_os_mb:800,native_load_pct:20}}},overview:{available:true,read_only:true,returned_devices:5,source_declared_total:6,inventory_full_coverage_verified:false,observed_at_utc:'2026-11-11T12:00:00Z',metrics:{lights_on:{count:1,devices_with_state:1,members:[{name:'Lab Sample Light 2'}],members_omitted:0},motion_active:{count:1,devices_with_state:2,members:[{name:'Lab Motion A'}],members_omitted:0},battery_low:{count:1,devices_with_state:4,members:[{name:'Lab Battery Sensor',battery_pct:9}],members_omitted:0},
@@ -17,19 +17,29 @@ function harness(){
  other_switches_on:{count:1,devices_with_state:2,members:[{name:'Lab Smart Plug'}],members_omitted:0}},unclassified_on_switches:1},result:{answer:'Original **answer**',elapsed_ms:2000,rounds:2,tool_calls:[{result:{source:'unchanged'}}]},httpError:null,copyWorks:true,askBodies};
  const document={getElementById:el,activeElement:element(),body:{appendChild(){}},createTextNode(text){const e=element('#text');e.textContent=text;return e;},createElementNS(_ns,tag){return element(tag);},createElement(tag){const e=element(tag);e.select=()=>{fallback=e.value;};e.setSelectionRange=()=>{};e.remove=()=>{};return e;},execCommand(){return state.copyWorks;}};
  const navigator={clipboard:{writeText:async text=>{copied=text;}}};
- const context=vm.createContext({document,navigator,window:{addEventListener(){}},crypto:webcrypto,Blob,URL:class extends URL{static createObjectURL(blob){state.downloadBlob=blob;return "blob:test";}static revokeObjectURL(){}},setTimeout(fn){const id=++seq;timeouts.set(id,fn);return id;},clearTimeout(id){timeouts.delete(id);},Date,console,performance:{now:()=>clock},setInterval(fn){timers.set(++seq,fn);return seq;},clearInterval(id){timers.delete(id);},fetch:async(url,init)=>{
+ const context=vm.createContext({document,navigator,AbortController,window:{addEventListener(){}},crypto:webcrypto,Blob,URL:class extends URL{static createObjectURL(blob){state.downloadBlob=blob;return "blob:test";}static revokeObjectURL(){}},setTimeout(fn){const id=++seq;timeouts.set(id,fn);return id;},clearTimeout(id){timeouts.delete(id);},Date,console,performance:{now:()=>clock},setInterval(fn){timers.set(++seq,fn);return seq;},clearInterval(id){timers.delete(id);},fetch:async(url,init)=>{
  if(url==='api/status')return{ok:true,json:async()=>state.status};
  if(url==='api/overview'){overviewCalls++;assert.equal(init.headers['X-Homebrain-Request'],'1');return{ok:true,json:async()=>state.overview};}
  if(url==='api/conversation/clear'){clearCalls++;assert.equal(init.headers['X-Homebrain-Request'],'1');assert.equal(typeof JSON.parse(init.body).conversation_id,'string');return{ok:true,json:async()=>({cleared:true})};}
+ if(url.startsWith('api/activity/')&&url.endsWith('/cancel')){
+  cancelCalls++;assert.equal(init.method,'POST');
+  assert.equal(init.headers['X-Homebrain-Request'],'1');
+  return {ok:true,json:async()=>({cancelled:true,native_write_outcome_unknown:false})};
+ }
  assert.equal(url,'api/ask');askCalls++;askBodies.push(JSON.parse(init.body));assert.equal(init.headers['X-Homebrain-Request'],'1');
  assert.equal(el('copyAnswer').disabled,true);assert.equal(el('copyTechnical').disabled,true);
  for(const fn of [...timers.values()]){if(fn.toString().includes('Waiting:')){clock+=1250;fn();assert.match(el('responseTime').textContent,/Waiting: 1.3 s/);}}
- if(state.pending)await state.pending;
+ if(state.pending&&askCalls===1){
+  await Promise.race([state.pending,new Promise((resolve,reject)=>{
+   if(init.signal?.aborted)return reject(Object.assign(new Error('Aborted'),{name:'AbortError'}));
+   init.signal?.addEventListener('abort',()=>reject(Object.assign(new Error('Aborted'),{name:'AbortError'})),{once:true});
+  })]);
+ }
  clock+=1250;
  return{ok:!state.httpError,status:503,json:async()=>state.httpError?{detail:state.httpError}:state.result};
  }});
  vm.runInContext(script,context);
- return{state,el,timers,timeouts,navigator,run:code=>vm.runInContext(code,context),flushTimeouts(){const scheduled=[...timeouts.values()];timeouts.clear();for(const fn of scheduled)fn();},get copied(){return copied;},get fallback(){return fallback;},get focused(){return focused;},get askCalls(){return askCalls;},get overviewCalls(){return overviewCalls;},get clearCalls(){return clearCalls;}};
+ return{state,el,timers,timeouts,navigator,run:code=>vm.runInContext(code,context),flushTimeouts(){const scheduled=[...timeouts.values()];timeouts.clear();for(const fn of scheduled)fn();},get copied(){return copied;},get fallback(){return fallback;},get focused(){return focused;},get askCalls(){return askCalls;},get overviewCalls(){return overviewCalls;},get clearCalls(){return clearCalls;},get cancelCalls(){return cancelCalls;}};
 }
 const h=harness();
 // Overview controls live in System Health, never inside the Ask/Chat surface.
@@ -139,7 +149,11 @@ assert.equal(h.run('technicalDetails.model'),null);assert.equal(h.run('technical
 const d=harness();d.el('question').value='One request';let release;
 d.state.pending=new Promise(resolve=>{release=resolve;});
 const first=d.run('submitAsk()');await new Promise(resolve=>setImmediate(resolve));
-await d.run('submitAsk()');assert.equal(d.askCalls,1);release();await first;
+await d.run('submitAsk()');assert.equal(d.askCalls,2);
+assert.equal(d.cancelCalls,1,'A new Ask must invalidate the old live approval');
+assert.notEqual(d.state.askBodies[0].conversation_id,d.state.askBodies[1].conversation_id);
+assert.deepEqual(d.state.askBodies[1].history,[]);
+release();await first;
 assert.equal(d.timers.size,0);
 // An old asynchronous clipboard completion cannot override newer request UI.
 const race=harness();race.el('question').value='Private input';await race.run('submitAsk()');
@@ -165,16 +179,16 @@ assert(rendered.textContent.includes('<script>alert(1)</script>'));
 assert(rendered.textContent.includes('<img src=x onerror=alert(1)>'));
 rich.el('question').value='First question';await rich.run('submitAsk()');
 rich.el('question').value='Second question';await rich.run('submitAsk()');
-assert.equal(rich.state.askBodies[0].conversation_id,rich.state.askBodies[1].conversation_id);
-assert.equal(rich.el('conversationHistory').hidden,false);
-assert(rich.el('turns').textContent.includes('First question'));
-assert(!rich.el('turns').textContent.includes('Second question'));
+assert.notEqual(rich.state.askBodies[0].conversation_id,rich.state.askBodies[1].conversation_id);
+assert.equal(rich.el('conversationHistory').hidden,true);
+assert(!rich.el('turns').textContent.includes('First question'));
+assert.equal(rich.state.askBodies[1].history.length,0);
 assert.equal(rich.el('rawAnswer').textContent,rich.state.result.answer);
 await rich.run('downloadTechnical()');
 assert.equal(JSON.parse(await rich.state.downloadBlob.text()).question,'Second question');
 assert(rich.state.downloadName.endsWith('.json'));
 const previousId=rich.state.askBodies.at(-1).conversation_id;
-rich.run('newConversation()');assert.equal(rich.clearCalls,1);
+await rich.run('newConversation()');assert.equal(rich.clearCalls,3);
 assert.equal(rich.run('messages.length'),0);
 assert.equal(rich.run('turns.length'),0);
 assert.equal(rich.el('copyAnswer').disabled,true);
@@ -183,7 +197,7 @@ assert.equal(rich.el('conversationHistory').hidden,true);
 rich.el('question').value='After reset';await rich.run('submitAsk()');
 assert.notEqual(rich.state.askBodies.at(-1).conversation_id,previousId);
 assert.equal(rich.state.askBodies.at(-1).history.length,0);
-rich.el('send').disabled=true;rich.el('question').value='Keep draft';rich.run('newConversation()');assert.equal(rich.el('question').value,'Keep draft');
+rich.el('send').disabled=true;rich.el('question').value='Keep draft';await rich.run('newConversation()');assert.equal(rich.el('question').value,'');
 rich.run("draw=()=>{}; fetch=async url=>({ok:true,json:async()=>url.includes('/status')?{status:'disabled',last:{}}:{range_start:'2026-11-07T00:00:00Z',range_end:'2026-11-08T00:00:00Z',metrics:{}}});");
 rich.el('range').value='24';rich.el('metric').value='combined';await rich.run('refreshDiagnostics()');
 assert.equal(rich.el('recorderNotice').hidden,false);assert.match(rich.el('recorderNotice').textContent,/External recorder is disabled/);
