@@ -1234,9 +1234,12 @@ _EXPLICIT_NO_FRESH_READ = re.compile(
 
 
 FRESH_SOURCE_RECOVERY_PROMPT = """Missing fresh source — READ-ONLY recovery (internal).
-The previous answer is not source evidence. ZERO current-request native or
-separate-monitor read attempts were made, even though the CURRENT MCP catalog
-offers read-only tools. Earlier conversation receipts may describe a DIFFERENT
+The previous answer is not source evidence. No successful current-request
+native or separate-monitor observation was established. Some read attempts
+may have FAILED, timed out or been rejected; those attempts are NOT an empty
+history, zero measured values or proof that the target is absent. Inspect
+the actual original receipt errors before considering a different available
+read-only source. Earlier conversation receipts may describe a DIFFERENT
 target or window; they are neither exhaustive nor a prohibition on a new read.
 
 The user's "do not change anything" instruction forbids device/rule/settings
@@ -1259,20 +1262,23 @@ Do not mention this internal checkpoint.
 def should_offer_fresh_source_recovery(
     question: str, *, kind: str | None, has_current_read_attempt: bool,
     available_read_tools: bool, has_action_receipt: bool,
+    has_successful_current_read: bool | None = None,
 ) -> bool:
-    """Only re-use the existing review stage for missing fresh read attempts.
+    """Re-use the EXISTING read-only review when no source read succeeded.
 
-    This selects a short model instruction, not a tool or extra model round.
-    Explicit "do not query" requests take precedence; ordinary "do not
-    change anything" must still allow observation. Prior conversation
-    evidence does not count as a new read attempt.
+    The original has_current_read_attempt input remains for compatibility
+    with the old boolean contract. When supplied, source-derived
+    has_successful_current_read takes precedence: a failed/timed-out
+    read is not evidence that an observation was retrieved. This selects
+    no tool, adds no model round, and retains explicit no-read restrictions.
     """
     return (
         kind in ("historical_measurement", "causal", "source_verification")
         and isinstance(question, str)
         and not _WRITE_INTENT_AT_START.search(question)
         and not _EXPLICIT_NO_FRESH_READ.search(question)
-        and not has_current_read_attempt
+        and not (has_current_read_attempt if has_successful_current_read is None
+                 else has_successful_current_read)
         and available_read_tools
         and not has_action_receipt
     )
