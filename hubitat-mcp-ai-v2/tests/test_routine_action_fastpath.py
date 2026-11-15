@@ -16,7 +16,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "rootfs" / "app"))
 
 from agent import Agent
 from interaction import Interaction
-from routine_action_fastpath import routine_candidate, accepted_routine_answer
+from routine_action_fastpath import (
+    routine_candidate, accepted_routine_answer, verification_target,
+)
 
 
 def mcp_result(document):
@@ -290,6 +292,260 @@ class RoutineLoopTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result["routine_action_fastpath"]["prewrite_model_review_skipped"])
         self.assertFalse(result["routine_action_fastpath"]["terminal_native_acceptance_used"])
         self.assertNotIn("hub_call_device_command", [n for n, _ in hub.calls])
+
+
+
+def context_receipt(*, target_label="Fictional Office Lamp",
+                    identifier="LAB-LAMP-1", reported="on",
+                    label_filter="fictional", has_more=False,
+                    capabilities="Actuator, Light, Switch",
+                    count=2, total=2):
+    summary = (
+        "Mode: Sunset\nDevices: 2 of 2\n"
+        f"- {target_label} ({identifier}, Lab) - {capabilities}; "
+        f"switch={reported}, level=80\n"
+        "- Fictional Office Sensor (LAB-SENSE-2, Lab) - "
+        "MotionSensor, Sensor; motion=inactive"
+    )
+    return previous_receipt(
+        "hub_list_devices",
+        {"format": "context", "labelFilter": label_filter},
+        {"summary": summary, "count": count, "total": total,
+         "hasMore": has_more, "labelFilter": label_filter,
+         "offset": 0, "limit": 50},
+    )
+
+
+def wait_proposal(*, command="off", **kwargs):
+    return proposal(
+        command=command,
+        waitFor={"attribute": "switch", "expectedValue": command,
+                 "timeoutMs": 5000}, **kwargs
+    )
+
+
+class ContextVerificationTests(unittest.TestCase):
+    def test_filtered_native_context_proves_only_verification_read_target(self):
+        receipts = [
+            previous_receipt("hub_list_devices", {"format": "context"},
+                             {"summary": "partial", "count": 50,
+                              "total": 203, "hasMore": True}),
+            context_receipt(),
+        ]
+        chosen = verification_target(
+            "Turn off Fictional Office Lamp", [wait_proposal()], receipts,
+            approval_available=True,
+        )
+        self.assertIsNotNone(chosen)
+        self.assertEqual(chosen["device_id"], "LAB-LAMP-1")
+        self.assertEqual(chosen["command"], "off")
+        self.assertIsNone(routine_candidate(
+            "Turn off Fictional Office Lamp", [wait_proposal()], receipts,
+            approval_available=True,
+        ), "Inventory alone must NOT authorize fast native dispatch")
+        qualified = routine_candidate(
+            "Turn off Fictional Office Lamp", [wait_proposal()],
+            receipts + [previous_receipt(
+                "hub_get_device", {"deviceId": "LAB-LAMP-1"},
+                device(),
+            )],
+            approval_available=True,
+        )
+        self.assertIsNotNone(qualified)
+        self.assertEqual(qualified["wait_for"]["timeoutMs"], 5000)
+
+    def test_unverified_inventory_cannot_trigger_client_targeted_read(self):
+        for source in (
+            context_receipt(has_more=True),
+            context_receipt(count=2, total=3),
+            context_receipt(target_label="Fictional Office Lamp Alternate"),
+            context_receipt(identifier="LAB-LAMP-OTHER"),
+            context_receipt(reported="off"),
+            context_receipt(capabilities="Switch, Sensor"),
+            context_receipt(count=50, total=50),
+            context_receipt(label_filter="nonmatching"),
+            previous_receipt("hub_list_devices", {"format": "context"},
+                             {"summary": "Devices: 2 of 2\n"
+                              "- Fictional Office Lamp (LAB-LAMP-1, Lab) - "
+                              "Actuator, Light, Switch; switch=on",
+                              "count": 2, "total": 2,
+                              "hasMore": False, "labelFilter": "fictional"}),
+        ):
+            with self.subTest(source=source):
+                self.assertIsNone(verification_target(
+                    "Turn off Fictional Office Lamp", [wait_proposal()],
+                    [source], approval_available=True,
+                ))
+        self.assertIsNone(verification_target(
+            "Turn off Fictional Office Lamp", [wait_proposal()],
+            [context_receipt(), previous_receipt(
+                "hub_get_device", {"deviceId": "LAB-LAMP-1"}, device())],
+            approval_available=True,
+        ))
+        self.assertIsNone(verification_target(
+            "Turn off Fictional Office Lamp", [wait_proposal()],
+            [context_receipt()], approval_available=False,
+        ))
+
+    def test_strict_waitfor_semantics_reject_mismatch_and_extra_arguments(self):
+        for extra in (
+            {"waitFor": {"attribute": "contact", "expectedValue": "off",
+                         "timeoutMs": 5000}},
+            {"waitFor": {"attribute": "switch", "expectedValue": "on",
+                         "timeoutMs": 5000}},
+            {"waitFor": {"attribute": "switch", "expectedValue": "off",
+                         "timeoutMs": 12000}},
+            {"waitFor": {"attribute": "switch", "expectedValue": "off",
+                         "timeoutMs": True}},
+            {"waitFor": {"attribute": "switch", "expectedValue": "off",
+                         "timeoutMs": 5000, "extra": True}},
+            {"parameters": [1]},
+            {"confirm": True},
+        ):
+            args = {"deviceId": "LAB-LAMP-1", "command": "off", **extra}
+            with self.subTest(args=args):
+                self.assertIsNone(verification_target(
+                    "Turn off Fictional Office Lamp",
+                    [{"function": {"name": "hub_call_device_command",
+                                   "arguments": args}}],
+                    [context_receipt()], approval_available=True,
+                ))
+
+    def test_waitfor_acceptance_is_in_command_not_independent_physical_proof(self):
+        chosen = routine_candidate(
+            "Turn off Fictional Office Lamp", [wait_proposal()],
+            [previous_receipt("hub_get_device",
+                              {"deviceId": "LAB-LAMP-1"}, device())],
+            approval_available=True,
+        )
+        self.assertIsNotNone(chosen)
+        original_args = {
+            "deviceId": "LAB-LAMP-1", "command": "off",
+            "waitFor": {"attribute": "switch", "expectedValue": "off",
+                        "timeoutMs": 5000},
+        }
+        source = {
+            "success": True, "device": "Fictional Office Lamp",
+            "command": "off", "parameters": None,
+            "waitFor": {"attribute": "switch", "expected": "off",
+                        "converged": True, "finalValue": "off",
+                        "elapsedMs": 384},
+            "state": {"switch": {"value": "off",
+                                "timestamp": "2026-11-15 18:38:56"}},
+        }
+        accepted = {
+            **previous_receipt("hub_call_device_command",
+                               original_args, source),
+            "possible_native_action": True,
+        }
+        output = accepted_routine_answer(chosen, [accepted])
+        self.assertIn("in-command check reported switch OFF", output)
+        self.assertIn("not independently verified", output)
+        self.assertNotIn("has been turned off", output)
+        for bad in (
+            {**source, "waitFor": {**source["waitFor"], "converged": False}},
+            {**source, "waitFor": {**source["waitFor"], "expected": "on"}},
+            {**source, "waitFor": {**source["waitFor"], "finalValue": "on"}},
+            {**source, "device": "Different Fixture"},
+            {**source, "success": False},
+        ):
+            with self.subTest(bad=bad):
+                record = {
+                    **previous_receipt("hub_call_device_command",
+                                       original_args, bad),
+                    "possible_native_action": True,
+                }
+                self.assertIsNone(accepted_routine_answer(chosen, [record]))
+
+
+class ContextHub(FictionalHub):
+    async def call(self, name, arguments):
+        if name == "hub_list_devices":
+            self.calls.append((name, deepcopy(arguments)))
+            if arguments.get("labelFilter"):
+                source = json.loads(context_receipt()["response"])
+                return source
+            return mcp_result({
+                "summary": "Mode: Sunset\nDevices: 50 of 203",
+                "count": 50, "total": 203, "hasMore": True,
+                "offset": 0, "limit": 50,
+            })
+        if name == "hub_get_device":
+            self.calls.append((name, deepcopy(arguments)))
+            source = device()
+            source["currentStates"] = {"switch": "on"}
+            return mcp_result(source)
+        if name == "hub_call_device_command":
+            self.calls.append((name, deepcopy(arguments)))
+            return mcp_result({
+                "success": True, "device": "Fictional Office Lamp",
+                "command": arguments["command"], "parameters": None,
+                "waitFor": {"attribute": "switch", "expected": "off",
+                            "converged": True, "finalValue": "off",
+                            "elapsedMs": 384},
+                "state": {"switch": {"value": "off"}},
+            })
+        return await super().call(name, arguments)
+
+
+class ContextIntegrationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_live_shape_skips_redundant_ai_turns_but_not_real_approval(self):
+        hub = ContextHub()
+        model = ScriptedAgent([
+            tool("hub_list_devices", format="context"),
+            tool("hub_list_devices", format="context",
+                 labelFilter="fictional"),
+            tool("hub_call_device_command", deviceId="LAB-LAMP-1",
+                 command="off",
+                 waitFor={"attribute": "switch",
+                          "expectedValue": "off", "timeoutMs": 5000}),
+        ])
+        gate = Interaction(require_native_write_approval=True)
+        task = asyncio.create_task(model.answer(
+            "Turn off Fictional Office Lamp", [], hub, 60,
+            before_call=gate.before_call,
+        ))
+        try:
+            for _ in range(1500):
+                if gate.pending or task.done():
+                    break
+                await asyncio.sleep(0.002)
+            self.assertIsNotNone(gate.pending)
+            self.assertEqual(
+                [n for n, _ in hub.calls],
+                ["hub_list_devices", "hub_list_devices", "hub_get_device"],
+            )
+            self.assertEqual(
+                gate.pending["preview"]["fields"]["device"],
+                "Fictional Office Lamp",
+            )
+            gate.decide(gate.pending["id"], True)
+            result = await asyncio.wait_for(task, 5)
+        finally:
+            if not task.done():
+                gate.invalidate()
+                task.cancel()
+            await model.close()
+        self.assertEqual(
+            [n for n, _ in hub.calls],
+            ["hub_list_devices", "hub_list_devices", "hub_get_device",
+             "hub_call_device_command"],
+        )
+        self.assertEqual(model.rounds_seen, 3)
+        self.assertEqual(result["rounds"], 3)
+        self.assertEqual(result["action_lifecycle"]["status"], "native_accepted")
+        self.assertTrue(result["routine_action_fastpath"]
+                        ["prewrite_model_review_skipped"])
+        self.assertTrue(result["routine_action_fastpath"]
+                        ["terminal_native_acceptance_used"])
+        self.assertEqual(result["routine_action_fastpath"]
+                         ["detail_verification_status"], "read_succeeded")
+        self.assertEqual(result["tool_calls"][2]["name"], "hub_get_device")
+        self.assertTrue(result["tool_calls"][2]
+                        ["client_routine_verification_read"])
+        self.assertIn("in-command check reported switch OFF", result["answer"])
+        self.assertIn("not independently verified", result["answer"])
+
 
 
 if __name__ == "__main__":
