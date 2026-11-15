@@ -1,5 +1,9 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## Alpha.111 acceptance — ordinary device controls should not require a second artificial request
+
+The user's alpha.110 simple native device action finished first as **No action queued**, then only succeeded on a Prepare-action retry. That UI action previously concatenated lengthy technical instructions with `read-only device evidence` to the user's actual command, breaking the direct-action lifecycle classification. Alpha.111 adds a separate explicit `prepare_action` signal while keeping original question text/intent unchanged; no change to real native approvals, command selection, source checks, prewrite reviewer or V1. Shorten long no-action warnings. After green CI, inspect one new installed low-risk action with the original successful native tool receipts: real pending approval, accepted versus physical outcome, direct-action lifecycle, model/tool/approval elapsed and any extra AI rounds. Do not equate this bug fix to a measured 5-second improvement. [Details](HOMEBRAIN-V2-ALPHA111-CLEAN-ACTION-INTENT-20261115.md).
+
 ## Alpha.110 acceptance — no second-question blocking
 
 Owner-supplied alpha.109 measured approximately **215 seconds waiting for user approval** during a ~299-second action request. The existing global Ask lock correctly serialized native dispatch but also blocked a new question while the old one waited; V2 compounded this by disabling Ask, Speak and New chat entirely. Alpha.110 restores a **fresh, independently scoped request for every Ask and Speak** while keeping native command safety. New requests invalidate any previous pending approval on the server before aborting its browser HTTP request; the old server task is cancelled so the shared lock becomes available. If cancellation cannot be confirmed, a second Ask is not silently started. An already submitted native write is not rolled back: its outcome is reported uncertain.
