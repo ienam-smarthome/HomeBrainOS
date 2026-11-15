@@ -28,7 +28,7 @@ from control_surface_recovery import (
     DEVICE_ACTION_FOLLOW_THROUGH_PROMPT, should_follow_through_device_action,
     ACTION_APPROVAL_HANDOFF_PROMPT, prose_only_action_confirmation,
     should_recover_action_approval_handoff,
-    draft_has_source_backed_native_command,
+    draft_has_source_backed_native_command, is_explicit_device_imperative,
 )
 from evidence_scope import model_result_with_scope
 from typed_history_verification import verify_and_project_history
@@ -915,7 +915,12 @@ class Agent:
 
         def unqueued_action_selection(answer: str) -> dict | None:
             if (before_call is not None and not current_write_attempted()
-                    and prose_only_action_confirmation(question, answer)):
+                    and (
+                        prose_only_action_confirmation(question, answer)
+                        or (is_explicit_device_imperative(question)
+                            and draft_has_source_backed_native_command(
+                                answer, receipts))
+                    )):
                 return {
                     "status": "unprepared_confirmation",
                     "options": ["prepare_action", "edit_request", "dismiss"],

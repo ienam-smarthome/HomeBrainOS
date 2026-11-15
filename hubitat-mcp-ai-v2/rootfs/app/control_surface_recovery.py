@@ -366,7 +366,15 @@ def should_recover_action_approval_handoff(
         and not has_native_write_attempt and not source_review_invoked
         and remaining_seconds > 12
         and "hub_call_device_command" in available_tools
-        and prose_only_action_confirmation(question, draft_answer)
+        and (
+            prose_only_action_confirmation(question, draft_answer)
+            or (
+                is_explicit_device_imperative(question)
+                and draft_has_source_backed_native_command(
+                    draft_answer, receipts
+                )
+            )
+        )
         and _has_fresh_device_command_details(receipts)
     )
 
