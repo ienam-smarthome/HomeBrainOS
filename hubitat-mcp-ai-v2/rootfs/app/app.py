@@ -412,7 +412,7 @@ async def cancel_active_ask(request_id: UUID, http_request: Request):
     require_ui_request(http_request)
     key = str(request_id)
     interaction = app.state.interactions.get(key)
-    task = app.state.ask_tasks.get(key)
+    task = getattr(app.state, "ask_tasks", {}).get(key)
     if interaction is None or task is None or task.done():
         return {"cancelled": False, "reason": "request_not_active",
                 "native_write_outcome_unknown": False}
@@ -446,6 +446,10 @@ async def ask(request: AskRequest, http_request: Request):
     interaction = Interaction(require_native_write_approval=True)
     app.state.interactions[request_id] = interaction
     request_task = asyncio.current_task()
+    # Tests and embedding hosts may create the FastAPI app without its
+    # lifespan; allocate the ephemeral task registry in that case too.
+    if getattr(app.state, "ask_tasks", None) is None:
+        app.state.ask_tasks = {}
     app.state.ask_tasks[request_id] = request_task
     try:
         interaction.set_phase("queued", detail="Waiting for the Ask slot")

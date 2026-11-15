@@ -138,6 +138,10 @@ class SupersessionHttpTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_inflight_write_cancellation_reports_unknown_and_no_retry(self):
         rid, old = await self.start_old("OLD in-flight write")
+        gate = runtime.app.state.interactions[rid]
+        self.assertIsNotNone(gate.pending)
+        gate.decide(gate.pending["id"], True)
+        await asyncio.wait_for(self.model.writes_started.wait(), timeout=2)
         self.assertTrue(self.model.writes_started.is_set())
         outcome = await self.client.post(
             f"/api/activity/{rid}/cancel", headers=UI_HEADERS)
