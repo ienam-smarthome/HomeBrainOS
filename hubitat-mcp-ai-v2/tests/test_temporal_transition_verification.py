@@ -209,5 +209,99 @@ class FocalTransitionTests(unittest.TestCase):
         self.assertIn("truncated or capped", got["answer"])
 
 
+
+class FictionalTemporalHub:
+    def __init__(self):
+        self.sources = original_fixture()
+        self.calls = []
+
+    async def list_tools(self, refresh=False):
+        return [
+            {"name": "hub_list_devices", "inputSchema": {"type": "object"}},
+            {"name": "hub_list_device_events", "inputSchema": {"type": "object"}},
+        ]
+
+    async def call(self, name, args):
+        self.calls.append((name, dict(args)))
+        if name == "hub_list_devices":
+            return json.loads(self.sources[0]["response"])
+        if name == "hub_list_device_events":
+            if args.get("deviceId") == 101:
+                return json.loads(self.sources[1]["response"])
+            if args.get("deviceId") == 202:
+                return json.loads(self.sources[3]["response"])
+        raise AssertionError("No unadvertised tool or native write allowed")
+
+
+class ScriptedTemporalAgent:
+    def __init__(self, script):
+        from agent import Agent
+        class Internal(Agent):
+            def __init__(self, script):
+                super().__init__("http://127.0.0.1:11434", "fiction", "", 12)
+                self.script = list(script)
+                self.rounds_seen = 0
+                self.prompts = []
+
+            async def round(self, messages, tools, remaining):
+                self.rounds_seen += 1
+                self.prompts.append(messages[-1].get("content", ""))
+                if not self.script:
+                    raise AssertionError("Unexpected extra paid-model round")
+                return self.script.pop(0)
+        self.model = Internal(script)
+
+
+def selected_tool(name, **args):
+    return {"tool_calls": [{"function": {
+        "name": name, "arguments": args,
+    }}]}
+
+
+class IntegratedTemporalPublicationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_wrong_last_and_cause_cannot_survive_existing_review(self):
+        hub = FictionalTemporalHub()
+        draft = (
+            "The Fictional Bedroom TRV last changed from heating to idle "
+            "at 16:05:08, definitively caused by the main Thermostat's "
+            "command. The main Thermostat last heated at 15:58."
+        )
+        model = ScriptedTemporalAgent([
+            selected_tool("hub_list_devices", labelFilter="Fictional Bedroom TRV",
+                          format="summary"),
+            selected_tool("hub_list_device_events", deviceId=101,
+                          attribute="thermostatOperatingState",
+                          hoursBack=12, limit=100),
+            selected_tool("hub_list_device_events", deviceId=202,
+                          hoursBack=12, limit=100),
+            {"content": draft},
+            {"content": draft},
+        ]).model
+        try:
+            result = await model.answer(
+                Q, [], hub, 100, enable_causal_follow_through=False,
+                enable_final_claim_audit=True,
+            )
+        finally:
+            await model.close()
+        self.assertTrue(result["source_review_invoked"])
+        self.assertEqual(model.rounds_seen, 5)
+        self.assertFalse(result["final_claim_audit_invoked"])
+        self.assertIn("Source-derived focal transition audit", model.prompts[-1])
+        self.assertEqual(
+            result["temporal_transition_verification"]["status"],
+            "focal_transition_unverified",
+        )
+        self.assertIn("cannot verify", result["answer"])
+        self.assertIn("22:00:26.949", result["answer"])
+        self.assertIn("21:53:35.570", result["answer"])
+        self.assertNotIn("definitively caused", result["answer"])
+        self.assertEqual([x[0] for x in hub.calls], [
+            "hub_list_devices", "hub_list_device_events",
+            "hub_list_device_events",
+        ])
+        self.assertEqual(result["read_source_usage"]["native_device_event_reads"], 2)
+
+
 if __name__ == "__main__":
     unittest.main()
