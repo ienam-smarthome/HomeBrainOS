@@ -169,7 +169,7 @@ class UIContracts(unittest.TestCase):
             'duration>400&&activeRecognition',
             '@media(prefers-color-scheme:light)',
             '@media(prefers-reduced-motion:reduce)',
-            '2.0.0-alpha.108',
+            '2.0.0-alpha.109',
         ):
             self.assertIn(needle, HTML, needle)
         # System Health owns the inventory; chat stays a full-width conversation.
@@ -210,7 +210,7 @@ class UIContracts(unittest.TestCase):
             'Array.isArray(response?.answer_stage_trace)',
             'observed_after_ms',
             'Original MCP receipt',
-            'UI_VERSION="2.0.0-alpha.108"',
+            'UI_VERSION="2.0.0-alpha.109"',
             "api/activity/",
             'pendingApproval.effect_class',
             'void submitAsk()',
@@ -236,7 +236,12 @@ class UnqueuedActionChoices(unittest.TestCase):
         ):
             self.assertIn(token, HTML)
         self.assertIn("A chat “proceed” alone never authorises a write.", HTML)
-        self.assertIn("the separate approval card", HTML)
+        self.assertIn("The separate Approve / Edit / Dismiss", HTML)
+        self.assertIn("response?.action_lifecycle?.status==='not_prepared'", HTML)
+        self.assertIn("response?.action_selection?.native_write_queued===false", HTML)
+        self.assertIn("actionState==='native_write_not_submitted'", HTML)
+        self.assertIn("No action queued — no device command sent", HTML)
+        self.assertNotIn("const unprepared=response?.action_selection?.status", HTML)
         self.assertIn("if(activeRequest||!lastUnpreparedQuestion)return;", HTML)
 
 if __name__ == "__main__":
