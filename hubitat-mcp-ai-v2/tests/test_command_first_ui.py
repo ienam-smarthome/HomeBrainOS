@@ -230,7 +230,7 @@ class UnqueuedActionChoices(unittest.TestCase):
             "function prepareUnqueuedAction()",
             "function editUnqueuedAction()",
             "function dismissUnqueuedAction()",
-            "unprepared_confirmation", "lastUnpreparedQuestion",
+            "response?.action_lifecycle?.status===\'not_prepared\'", "lastUnpreparedQuestion",
             "preparedActionQuestion(original)",
             "proceed|yes|confirm|go ahead|do it",
         ):
