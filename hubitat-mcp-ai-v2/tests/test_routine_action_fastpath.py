@@ -716,7 +716,7 @@ class RoutineSourceBootstrapTests(unittest.IsolatedAsyncioTestCase):
                          ["hub_list_devices", "hub_get_device"])
         self.assertIsNone(gate.pending)
         self.assertFalse(result["action_lifecycle"]["native_write_submitted"])
-        self.assertIn("nothing was sent", result["answer"].lower())
+        self.assertIn("no device command was sent", result["answer"].lower())
 
     async def test_source_not_verified_falls_back_to_normal_model(self):
         # The generic fast path never guesses missing device capabilities.
