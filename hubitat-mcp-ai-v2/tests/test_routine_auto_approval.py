@@ -331,5 +331,281 @@ class ActualGateTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(gate.routine_auto_approval_used)
 
 
+
+# Source-real SHAPE only: a physical lighting bridge's native child can
+# legitimately report protocol=virtual and a Generic Component Dimmer driver.
+# Fictional identifiers and labels deliberately avoid a household-specific
+# control shortcut.
+from routine_component_light import (
+    component_parent_id, verified_physical_bridge_parent,
+)
+from test_routine_action_fastpath import mcp_result
+
+
+PARENT_ID = "900"
+PARENT_LABEL = "Matter Lighting Bridge"
+
+
+def _set_original_receipt_document(row, update):
+    import json
+    envelope = json.loads(row["response"])
+    doc = json.loads(envelope["content"][0]["text"])
+    update(doc)
+    envelope["content"][0]["text"] = json.dumps(doc)
+    row["response"] = json.dumps(envelope)
+
+
+def fictional_component_sources(
+    *, child_driver="Generic Component Dimmer",
+    parent_protocol="matter",
+    parent_label=PARENT_LABEL,
+    parent_driver="Matter Generic Bridge",
+    parent_id=PARENT_ID,
+    parent_enabled=True,
+):
+    candidate, rows = candidate_for(
+        label="Fictional Study Light",
+        capabilities=["Actuator", "ChangeLevel", "Light", "Switch",
+                      "SwitchLevel"],
+    )
+    assert candidate is not None
+    _set_original_receipt_document(rows[0], lambda doc: doc["devices"][0].update({
+        "protocol": "virtual",
+        "driver": child_driver,
+        "parentDeviceId": parent_id,
+    }))
+    parent_detail = previous_receipt(
+        "hub_get_device", {"deviceId": parent_id},
+        {"id": parent_id, "name": parent_label,
+         "label": parent_label, "capabilities": ["Bridge"],
+         "attributes": [], "commands": []},
+    )
+    parent_list = previous_receipt(
+        "hub_list_devices",
+        {"format": "summary", "labelFilter": parent_label},
+        {"devices": [{
+            "id": parent_id, "name": parent_label,
+            "label": parent_label, "protocol": parent_protocol,
+            "driver": parent_driver, "disabled": not parent_enabled,
+        }],
+         "count": 1, "total": 1, "labelFilter": parent_label},
+    )
+    return candidate, rows, [parent_detail, parent_list]
+
+
+class NativeComponentLightApprovalTests(unittest.TestCase):
+    def test_verified_virtual_child_requires_original_physical_bridge_proof(self):
+        candidate, child, parent = fictional_component_sources()
+        self.assertEqual(component_parent_id(candidate, child), PARENT_ID)
+        self.assertFalse(verified_physical_bridge_parent(candidate, child))
+        self.assertIsNone(source_verified_auto_approval_class(
+            candidate, child, auto_lights=True,
+            safe_switch_ids=frozenset(),
+        ))
+        self.assertTrue(verified_physical_bridge_parent(
+            candidate, child + parent))
+        self.assertEqual(source_verified_auto_approval_class(
+            candidate, child + parent, auto_lights=True,
+            safe_switch_ids=frozenset(),
+        ), "verified_physical_bridge_component_light")
+
+    def test_no_auto_approval_for_fake_virtual_and_sensitive_bridge_roles(self):
+        cases = [
+            {"child_driver": "Virtual Switch"},
+            {"child_driver": "Generic Component Switch"},
+            {"parent_protocol": "virtual"},
+            {"parent_protocol": "lan"},
+            {"parent_label": "Network Bridge"},
+            {"parent_label": "Security Bridge"},
+            {"parent_driver": "Virtual Generic Bridge"},
+            {"parent_enabled": False},
+        ]
+        for modified in cases:
+            with self.subTest(modified=modified):
+                candidate, child, parent = fictional_component_sources(
+                    **modified)
+                self.assertIsNone(source_verified_auto_approval_class(
+                    candidate, child + parent,
+                    auto_lights=True, safe_switch_ids=frozenset(),
+                ))
+        candidate, child, parent = fictional_component_sources()
+        self.assertIsNone(source_verified_auto_approval_class(
+            candidate, child + parent,
+            auto_lights=False, safe_switch_ids=frozenset(),
+        ))
+
+    def test_original_parent_id_and_inventory_identity_must_agree(self):
+        candidate, child, parent = fictional_component_sources()
+        modified = deepcopy(parent)
+        _set_original_receipt_document(modified[0],
+            lambda doc: doc.update({"id": "901"}))
+        self.assertFalse(verified_physical_bridge_parent(
+            candidate, child + modified))
+        modified = deepcopy(parent)
+        _set_original_receipt_document(modified[1],
+            lambda doc: doc["devices"][0].update({"id": "901"}))
+        self.assertFalse(verified_physical_bridge_parent(
+            candidate, child + modified))
+        modified = deepcopy(parent)
+        _set_original_receipt_document(modified[1],
+            lambda doc: doc.update({"total": 2}))
+        self.assertFalse(verified_physical_bridge_parent(
+            candidate, child + modified))
+        modified = deepcopy(child)
+        _set_original_receipt_document(modified[0],
+            lambda doc: doc["devices"][0].update(
+                {"parentDeviceId": "901"}))
+        self.assertFalse(verified_physical_bridge_parent(
+            candidate, modified + parent))
+        modified = deepcopy(child)
+        _set_original_receipt_document(modified[1],
+            lambda doc: doc["capabilities"].remove("SwitchLevel"))
+        self.assertIsNone(component_parent_id(candidate, modified))
+        modified = deepcopy(child)
+        _set_original_receipt_document(modified[0],
+            lambda doc: doc["devices"][0].update({"parentDeviceId": None}))
+        self.assertIsNone(component_parent_id(candidate, modified))
+
+
+class FictionalNativeBridgeHub(BootstrappedHub):
+    """All data are synthetic. No real Hubitat/light connections."""
+
+    def __init__(self, *, parent_protocol="matter", parent_label=PARENT_LABEL,
+                 parent_ok=True):
+        super().__init__(label="Fictional Study Light", initial="on")
+        self.parent_protocol = parent_protocol
+        self.parent_label = parent_label
+        self.parent_ok = parent_ok
+
+    async def call(self, name, args):
+        self.calls.append((name, deepcopy(args)))
+        if name == "hub_list_devices":
+            term = args.get("labelFilter", "")
+            if term == "Fictional Study Light":
+                return mcp_result({
+                    "devices": [{
+                        "id": IDENTITY, "label": "Fictional Study Light",
+                        "name": "Generic Dimmable Light", "disabled": False,
+                        "driver": "Generic Component Dimmer",
+                        "protocol": "virtual", "parentDeviceId": PARENT_ID,
+                        "currentStates": {"switch": "on", "level": 70},
+                    }],
+                    "count": 1, "total": 1,
+                    "labelFilter": term,
+                })
+            if term == self.parent_label:
+                return mcp_result({
+                    "devices": [{
+                        "id": PARENT_ID, "label": self.parent_label,
+                        "name": self.parent_label, "disabled": False,
+                        "protocol": self.parent_protocol,
+                        "driver": "Matter Generic Bridge",
+                    }],
+                    "count": 1, "total": 1, "labelFilter": term,
+                })
+            return mcp_result({"devices": [], "count": 0,
+                               "total": 0, "labelFilter": term})
+        if name == "hub_get_device":
+            if str(args["deviceId"]) == PARENT_ID:
+                if not self.parent_ok:
+                    return {"isError": True, "content": [{
+                        "type": "text", "text": "Parent metadata unavailable"
+                    }]}
+                return mcp_result({
+                    "id": PARENT_ID, "label": self.parent_label,
+                    "name": self.parent_label, "capabilities": ["Bridge"],
+                    "commands": [], "attributes": [],
+                })
+            child = device(label="Fictional Study Light", switch="on")
+            child["capabilities"] = [
+                "Actuator", "Light", "Switch", "SwitchLevel"
+            ]
+            child["name"] = "Generic Dimmable Light"
+            return mcp_result(child)
+        if name == "hub_call_device_command":
+            return mcp_result({
+                "success": True,
+                "device": "Fictional Study Light",
+                "command": args["command"], "parameters": None,
+                "state": {"switch": {"value": "on"}},
+            })
+        raise AssertionError("Unexpected native tool")
+
+
+class ComponentBridgeLiveShapeTests(unittest.IsolatedAsyncioTestCase):
+    async def _attempt(self, *, protocol="matter", parent_ok=True,
+                       auto_lights=True):
+        hub = FictionalNativeBridgeHub(
+            parent_protocol=protocol, parent_ok=parent_ok)
+        model = BootstrapModel([
+            tool("hub_call_device_command", deviceId=IDENTITY, command="off")
+        ])
+        gate = Interaction(
+            require_native_write_approval=True,
+            auto_approve_lights=auto_lights,
+        )
+        task = asyncio.create_task(model.answer(
+            "Turn off Fictional Study Light", [], hub, 60,
+            before_call=gate.before_call, enable_routine_bootstrap=True,
+        ))
+        try:
+            for _ in range(1600):
+                if gate.pending or task.done():
+                    break
+                await asyncio.sleep(0.002)
+            pending = gate.pending is not None
+            if pending:
+                self.assertNotIn(
+                    "hub_call_device_command",
+                    [name for name, _ in hub.calls])
+                gate.decide(gate.pending["id"], True)
+            result = await asyncio.wait_for(task, 5)
+        finally:
+            if not task.done():
+                gate.invalidate()
+                task.cancel()
+            await model.close()
+        return hub, model, gate, pending, result
+
+    async def test_real_gate_bypassed_only_for_verified_bridge_component_light(self):
+        hub, model, gate, pending, result = await self._attempt()
+        self.assertFalse(pending, "A safe bridge light needs no second click")
+        self.assertTrue(gate.routine_auto_approval_used)
+        self.assertEqual(
+            gate.routine_auto_approval_class,
+            "verified_physical_bridge_component_light",
+        )
+        self.assertEqual([name for name, _ in hub.calls], [
+            "hub_list_devices", "hub_get_device",
+            "hub_get_device", "hub_list_devices",
+            "hub_call_device_command",
+        ])
+        self.assertEqual(model.rounds_seen, 1)
+        self.assertEqual(result["action_lifecycle"]["status"],
+                         "native_accepted")
+        self.assertEqual(result["routine_native_authorization"]
+                         ["component_parent_source_status"],
+                         "physical_bridge_verified")
+        self.assertTrue(result["routine_native_authorization"]
+                        ["automatic_authorization_used"])
+        self.assertIn("OFF command accepted", result["answer"])
+        self.assertIn("not independently verified", result["answer"])
+
+    async def test_unverified_virtual_parent_keeps_actual_approval_card(self):
+        for kwargs in (
+            {"protocol": "virtual"}, {"parent_ok": False},
+            {"auto_lights": False},
+        ):
+            with self.subTest(kwargs=kwargs):
+                hub, model, gate, pending, result = await self._attempt(**kwargs)
+                self.assertTrue(pending)
+                self.assertFalse(gate.routine_auto_approval_used)
+                self.assertFalse(result["routine_native_authorization"]
+                                 ["automatic_authorization_used"])
+                self.assertEqual(result["action_lifecycle"]["status"],
+                                 "native_accepted")
+
+
+
 if __name__ == "__main__":
     unittest.main()
