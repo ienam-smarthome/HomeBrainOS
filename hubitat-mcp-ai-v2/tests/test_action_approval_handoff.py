@@ -18,6 +18,7 @@ from interaction import Interaction
 from control_surface_recovery import (
     ACTION_APPROVAL_HANDOFF_PROMPT, prose_only_action_confirmation,
     should_recover_action_approval_handoff,
+    draft_has_source_backed_native_command,
 )
 
 QUESTION = "Restrict Fictional TV internet access after ten minutes"
@@ -147,6 +148,102 @@ class ApprovalRecoveryDecisionTests(unittest.TestCase):
 
 
 class ApprovalRecoveryLifecycleTests(unittest.IsolatedAsyncioTestCase):
+
+    async def test_fresh_source_backed_prose_skips_broad_and_queues_real_approval(self):
+        """A model's source-grounded first plan needs no 200-device restart."""
+        hub = FictionalMCP()
+        model = ScriptedModel([
+            tool("hub_list_devices", {"labelFilter": "Fictional TV"}),
+            tool("hub_get_device", {"deviceId": "101", "mode": "summary"}),
+            # First model proposal is a bad helper: prewrite must hold it.
+            tool("hub_create_variable", {
+                "name": "fictional_helper", "type": "Boolean",
+                "value": "false", "confirm": True,
+            }),
+            {"content": (
+                "Proposed native command: hub_call_device_command("
+                "deviceId='101', command='disconnectInMinutes', "
+                "parameters=[10]). Please confirm before I proceed."
+            )},
+            tool("hub_call_device_command", {
+                "deviceId": "101", "command": "disconnectInMinutes",
+                "parameters": [10],
+            }),
+            {"content": (
+                "Native MCP accepted the delayed request. "
+                "No future disconnection has been observed."
+            )},
+        ])
+        gate = Interaction(require_native_write_approval=True)
+        task = asyncio.create_task(model.answer(
+            QUESTION, [], hub, 60, before_call=gate.before_call,
+            enable_source_review=False, enable_final_claim_audit=False,
+        ))
+        try:
+            for _ in range(200):
+                if gate.pending is not None or task.done():
+                    break
+                await asyncio.sleep(0.01)
+            self.assertIsNotNone(gate.pending)
+            self.assertFalse(task.done())
+            self.assertEqual(
+                gate.pending["preview"]["verb"], "disconnectInMinutes")
+            self.assertEqual(
+                gate.pending["preview"]["fields"]["parameters"], "10")
+            self.assertNotIn("hub_call_device_command",
+                             [n for n, _ in hub.calls])
+            gate.decide(gate.pending["id"], True)
+            result = await asyncio.wait_for(task, 4)
+        finally:
+            if not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+            await model.close()
+        self.assertTrue(result["success"])
+        self.assertTrue(result["prewrite_model_review_invoked"])
+        self.assertTrue(result["action_approval_handoff_invoked"])
+        self.assertFalse(result["inventory_recovery_invoked"])
+        self.assertFalse(result["action_follow_through_invoked"])
+        self.assertEqual(result["rounds"], 6)
+        self.assertEqual(len(hub.calls), 3)
+        self.assertEqual([n for n, _ in hub.calls], [
+            "hub_list_devices", "hub_get_device", "hub_call_device_command"
+        ])
+        self.assertTrue(result["prewrite_dispatch_changed"])
+        self.assertEqual(
+            result["action_source_sufficiency"], "not_established"
+        )  # Final answer doesn't need to quote command syntax.
+
+    async def test_source_backed_draft_refusal_gets_choices_without_broad_read(self):
+        hub = FictionalMCP()
+        draft = (
+            "I plan hub_call_device_command("
+            "deviceId=101, command=\"disconnectInMinutes\", parameters=[10])."
+        )
+        model = ScriptedModel([
+            tool("hub_list_devices", {"labelFilter": "Fictional TV"}),
+            tool("hub_get_device", {"deviceId": "101", "mode": "summary"}),
+            {"content": draft},
+            {"content": draft},
+        ])
+        gate = Interaction(require_native_write_approval=True)
+        try:
+            result = await model.answer(
+                QUESTION, [], hub, 60, before_call=gate.before_call,
+                enable_source_review=False, enable_final_claim_audit=False,
+            )
+        finally:
+            await model.close()
+        self.assertFalse(result["inventory_recovery_invoked"])
+        self.assertTrue(result["action_approval_handoff_invoked"])
+        self.assertEqual(result["rounds"], 4)
+        self.assertEqual(result["action_selection"]["status"],
+                         "unprepared_confirmation")
+        self.assertEqual(result["action_source_sufficiency"],
+                         "model_draft_matched_fresh_native_command")
+        self.assertEqual(len(hub.calls), 2)
+        self.assertIsNone(gate.pending)
+
     async def test_native_action_handoff_waits_for_ui_approval(self):
         hub = FictionalMCP()
         model = ScriptedModel(source_reads() + [

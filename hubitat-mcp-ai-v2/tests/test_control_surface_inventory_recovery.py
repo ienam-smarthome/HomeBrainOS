@@ -14,6 +14,7 @@ from agent import Agent
 from mcp import MCPError
 from control_surface_recovery import (
     is_explicit_device_imperative, should_recover_inventory,
+    draft_has_source_backed_native_command,
     BROAD_INVENTORY_RECOVERY_PROMPT,
     should_follow_through_device_action, DEVICE_ACTION_FOLLOW_THROUGH_PROMPT,
 )
@@ -131,6 +132,84 @@ def narrow_media_lookup():
         )},
     ]
 
+
+
+class SourceBackedCoverageTests(unittest.TestCase):
+    def source(self, device_id="ACT-09", command="deferCutoff"):
+        return {
+            "name": "hub_get_device", "arguments": {"deviceId": device_id},
+            "success": True, "result_kind": "tool_result",
+            "response": json.dumps(rpc({
+                "id": device_id,
+                "commands": [{"name": command,
+                              "arguments": [{"name": "minutes",
+                                             "type": "NUMBER"}]}],
+            })),
+        }
+
+    def test_narrow_discovery_is_not_forced_when_original_matches_draft(self):
+        filtered = {"name": "hub_list_devices",
+                    "arguments": {"labelFilter": "Demo Screen"},
+                    "success": True}
+        detail = self.source()
+        draft = (
+            "Next: hub_call_device_command("
+            "deviceId='ACT-09', command='deferCutoff', parameters=['2'])."
+        )
+        self.assertTrue(
+            draft_has_source_backed_native_command(draft, [detail]))
+        kwargs = dict(
+            available_tools={"hub_list_devices", "hub_get_device",
+                             "hub_call_device_command"},
+            already_recovered=False, remaining_seconds=80,
+            source_review_invoked=False, has_native_write_attempt=False,
+        )
+        self.assertFalse(should_recover_inventory(
+            "Block Demo Screen after 2 minutes", [filtered, detail],
+            candidate_answer=draft, **kwargs
+        ))
+        self.assertTrue(should_recover_inventory(
+            "Block Demo Screen after 2 minutes", [filtered, detail],
+            candidate_answer="I cannot find any appropriate policy controller.",
+            **kwargs
+        ))
+        self.assertFalse(should_recover_inventory(
+            "Block Demo Screen after 2 minutes", [filtered, detail],
+            candidate_answer="Please confirm.",
+            approval_handoff_already_invoked=True, **kwargs
+        ))
+
+    def test_unmatched_failed_stale_or_spoofed_source_never_skips_coverage(self):
+        filtered = {"name": "hub_list_devices",
+                    "arguments": {"labelFilter": "Demo Screen"},
+                    "success": True}
+        draft = (
+            "hub_call_device_command(deviceId='ACT-09', "
+            "command='deferCutoff', parameters=[2])"
+        )
+        bogus = [
+            dict(self.source(), success=False),
+            dict(self.source(), arguments={"deviceId": "OTHER"}),
+            dict(self.source(), name="hub_read_devices"),
+            dict(self.source(), result_kind="prior_evidence_read"),
+            dict(self.source(), response="{broken"),
+            self.source(command="stopMedia"),
+        ]
+        for source in bogus:
+            with self.subTest(source=source):
+                self.assertFalse(
+                    draft_has_source_backed_native_command(draft, [source]))
+                self.assertTrue(should_recover_inventory(
+                    "Block Demo Screen after 2 minutes", [filtered, source],
+                    available_tools={"hub_list_devices"},
+                    already_recovered=False, remaining_seconds=80,
+                    source_review_invoked=False, has_native_write_attempt=False,
+                    candidate_answer=draft,
+                ))
+        self.assertFalse(
+            draft_has_source_backed_native_command(
+                "hub_call_device_command(deviceId='OTHER', "
+                "command='deferCutoff')", [self.source()]))
 
 class ControllerCoverageRecoveryTests(unittest.IsolatedAsyncioTestCase):
     async def test_narrow_media_dead_end_recovers_broad_source_and_native_timer(self):
