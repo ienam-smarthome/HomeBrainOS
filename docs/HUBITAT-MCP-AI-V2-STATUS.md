@@ -1,5 +1,12 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 15 November 2026 — alpha.109 terminal action-state contract
+
+The installed alpha.108 failed an imperative device task after a 48-second, eight-round cloud investigation: it produced an unexecuted JSON native tool proposal and instructed the owner to approve it in a nonexistent pending card. No native action was submitted; text `success:true` was not action completion. The ordinary unqueued-action fallback returned `null` because it depended on narrow prose/format matching. The source did show the target controller reporting blocked from a prior timestamp, which warrants measured state reporting but is not proof of the earlier triggering initiator.
+
+Alpha.109 makes completed action state a plain original-call/receipt classifier independent of model prose. When no native write is selected, the user sees a prominent no-action result and actionable **Prepare action / Edit request / Dismiss** (new fresh request, never permission to write). Selected-but-unsubmitted commands (declined or uncertain) cannot silently retry; submitted native writes are reported by original native acceptance, with future physical effects still unverified. The existing active same-request Approve/Edit/Dismiss card and exact target identity are unchanged. Focused device discovery and already-satisfied target behaviour are added as general model guidance, not a fixed router or preselected tool. No new read, model round, native write or V1 change. [Release contract](HOMEBRAIN-V2-ALPHA109-ACTION-LIFECYCLE-20261115.md).
+
+
 ## 15 November 2026 — alpha.108 verified device label and action temporal contract
 
 The latest installed alpha.107 test improved end-to-end performance to about 24.7 seconds and seven cloud-model rounds but still published a material factual error: treated a correctly accepted native `*InMinutes` deferred-onset command as a block lasting `N` minutes, then guaranteed future restoration. Its native write response contained the scheduled deadline, not separate post-write readback, and the later outcome remained unknown. The existing approval card showed only numeric device ID because it relied solely on the model's structured write arguments and omitted string `"5"` timer parameters.
