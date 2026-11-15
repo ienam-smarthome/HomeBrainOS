@@ -1,0 +1,25 @@
+# HomeBrainOS V2 alpha.114 — source-first model-led routine ON/OFF
+
+**15 November 2026. V2 Preview only.** This note deliberately excludes private household device names, IDs, addresses and source receipts.
+
+## Source-real regression motivating this change
+
+An installed alpha.113 ordinary ON command took 44.9 seconds server elapsed, eleven cloud model rounds, approximately 577,336 prompt tokens and 25.7 seconds provider-reported model time. The original accepted native write used a normal switch command; a separate immediate attribute read reported the target on, whereas the embedded write snapshot still reported its older off value. The 5.5 seconds in the native approval gate were human waiting rather than inference time. The first three model turns incorrectly searched a whitespace-divergent name, did not find the native label and began a broad inventory recovery. Alpha.113's fast path never activated because there was no complete source-qualified focused discovery before the model finally found the actual native target.
+
+The problem is source-discovery order, not a Hubitat device command failure, and cannot be solved merely by loosening post-proposal checks. User reports a previous approx. 5-second experience; this is a target, **not an established live alpha.114 performance result**.
+
+## V2-only architectural correction
+
+For a **strictly simple, single immediate** literal ON/OFF imperative, the *interactive* request may run a bounded read-only native source preflight **before the first model round**. The preflight uses the actual current connected MCP catalog, first queries the exact requested label via the native label filter and, if necessary, tries at most three generic adjacent-token joins to accommodate spacing differences. This is lexical normalization only, never a hardcoded room/device alias, synonym, command or household ID.
+
+Only a complete original filtered inventory with one canonical exact target ID may justify one detailed native hub_get_device read. That full original native read must establish matching requested/returned identity, Switch plus Light/Outlet capability, advertised no-parameter ON/OFF command and the opposite current reported switch state. Any failure, missing catalog, conflicting row or non-simple/compound/timed/network request is returned to the ordinary model-led workflow without write.
+
+When that proof succeeds, the model receives a compact read-only source summary and the **live advertised native writer schema**, rather than a long historical/rules/causal-investigation prompt and dozens of unrelated functions. The model independently decides whether to emit its single native command. **No write is routed directly from user text or preflight.** A wrong target, wrong command, additional arguments, no tool selection or a stale/ambiguous source fails closed and cannot reach the native transport. A valid model-selected action retains the existing actual per-request **Approve/Edit/Dismiss** card. After approval, only the real native MCP receipt may establish command acceptance; no independent physical result or causal attribution is implied by an embedded write-state snapshot. An unknown response cannot trigger an automatic retry.
+
+## Safety, testing, follow-up
+
+The implementation is opt-in in interactive V2 only; legacy direct scripted Agent.answer callers remain unchanged unless they explicitly enable the source preflight. V1 remains unchanged. Read-only preflight attempts remain identifiable in PRIVATE Technical JSON with a status and source count, plus original receipts. The synthetic test uses a fictional real pending Interaction approval, asserts **no native writer before approval**, one model tool-selection round following current native verification, and a concise receipt-backed completion. Other synthetic cases cover whitespace variants, mismatched proposed device ID and normal fallback. CI cannot prove that the installed cloud model follows the one-round path, that an actual device detail source has the expected fields, or that the result is under 5 seconds.
+
+**Confirmation policy:** Real native writes continue to require a second explicit UI approval. A future trusted-low-risk-actions preference could be considered only with clear user opt-in and an explicit risk review; alpha.114 does not change that policy.
+
+**Next acceptance:** Install V2 Preview alpha.114 after required exact-head CI green. Ask a single ordinary low-risk direct ON/OFF in a new chat, observe a genuine approval card, and capture the original PRIVATE Technical JSON. Confirm native search + detailed source evidence, model selection, one-round fast path only when qualified, matching native acceptance and independently checked current status where necessary. Measure provider rounds, model time, source read time, native approval waiting and true post-write physical-state uncertainty separately. Roll back if native approval can be bypassed, wrong device receives write, or inaccurate physical-state certainty appears.
