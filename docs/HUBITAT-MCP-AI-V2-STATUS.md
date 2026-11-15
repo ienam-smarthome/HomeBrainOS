@@ -1,5 +1,9 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 15 November 2026 — alpha.116 parent-source-qualified native component lights
+
+Real alpha.115 approval friction was traced to a legitimate native Light+Switch+SwitchLevel device reported as a virtual component behind a parent. Alpha.115's virtual-block blanket was overly broad. Alpha.116 recognises only strict native component dimmer/light/bulb children and verifies a separately reported native physical Matter/Zigbee/Z-Wave lighting bridge parent ID, label, role and provenance with bounded read-only original MCP calls before waiving the extra approval. Ordinary standalone lights remain handled as before. No virtual generic switches or sensitive operations gain the exemption, no upfront write is generated from text, and native permissions and request cancellation remain intact. Synthetic regression tests cannot guarantee a real parent source will qualify. [Detail](HOMEBRAIN-V2-ALPHA116-BRIDGED-COMPONENT-LIGHTS-20261115.md).
+
 ## 15 November 2026 — alpha.115 scope-limited approval relief
 
 The owner's alpha.114 source-first light ON reached genuine native acceptance quickly but required a redundant Approve click. With explicit owner direction, alpha.115 changes only the V2 per-request Interaction confirmation gate: one exact current-request, source-verified, model-selected benign light ON/OFF may use the original Ask as authorisation. Single-use proof, exact native call arguments, source integrity, original native permission checks, cancellation and downstream uncertainties remain enforced. Other writes always retain approval; additional safe switches require individual trusted IDs in add-on settings and physical mesh evidence. UI remains straightforward; no blanket no-confirm policy, no V1 changes. [Engineering note](HOMEBRAIN-V2-ALPHA115-ORIGINAL-ASK-ROUTINE-AUTH-20261115.md).

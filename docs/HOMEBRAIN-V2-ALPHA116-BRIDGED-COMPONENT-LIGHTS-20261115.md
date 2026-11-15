@@ -1,0 +1,23 @@
+# HomeBrainOS V2 alpha.116 — original-Ask consent for native component lighting
+
+**15 November 2026; V2 Preview only.** This public engineering note excludes private household device names, IDs, IP addresses and original MCP receipts.
+
+## Evidence from installed alpha.115
+
+The user submitted a single immediate light ON instruction. Original successful MCP receipts showed one complete native filtered inventory, then native device details advertising `Light`, `Switch` and `SwitchLevel`, matching identity, a supported `on` command and reported OFF state. A single cloud AI round selected the same native `on` command. The original native MCP response then reported success; its embedded OFF state was a WRITE snapshot, not independent post-write or physical verification.
+
+Nonetheless, a separate Approve card appeared because the inventory identified the lighting endpoint as `protocol=virtual` and `driver=Generic Component Dimmer`, with a native `parentDeviceId`. The alpha.115 policy rejected every virtual record even though Hubitat represents some *physical bridge child lights* as virtual component endpoints. `automatic_authorization_used=false` and roughly 14 seconds of approval waiting were genuine policy fallback, NOT a slow AI selection. This is a device-class evidence interpretation issue, not a demonstrated native command failure.
+
+## General source-only correction
+
+Keep the alpha.115 one-use original-Ask consent, exact model-selected writer, verified child capabilities/command/opposite reported state, 20-second freshness window, no replay, cancellation, upstream native permission and mandatory confirmation for high-impact changes.
+
+For a child with native `Light+Switch+SwitchLevel`, **no Outlet/sensitive capability**, `protocol=virtual`, `parentDeviceId` and a native **component dimmer/light/bulb** driver, do NOT auto-approve on that child source alone. Perform up to two additional *read-only native MCP* calls for the **source-declared parent ID**: `hub_get_device` to obtain exact current parent identity, followed by `hub_list_devices` filtered to that parent label. Auto-approve one already-model-selected ON/OFF only when the original parent source returns the same ID/label, enabled device, non-virtual driver, no nested parent, a physical Matter/Zigbee/Z-Wave protocol and a native lighting bridge role. Contradictory, inaccessible, virtual, sensitive, mismatched or unsupported parent evidence requires the ordinary distinct approval card. No arbitrary virtual switch, generic policy relay, network blocking, heating, lock, alarm or automation gains an exemption.
+
+The extra parent check is limited to the existing verified *simple light* candidate and never selects or executes a writer. It is added after the Agent verifies the single model-selected native command but before `Interaction.before_call` consumes the single-use current-Ask proof. Native write parameters never change. The parent reads are preserved as original source receipts in PRIVATE Technical JSON with `client_component_parent_verification_read=true`, and the terminal result reports `component_parent_source_status` and count. Original accepted writes are not asserted to cause or physically verify any light transition.
+
+## Validation and rollback
+
+Synthetic tests use fictional native child and Matter bridge sources. They require native parent ID/label/protocol verification, one AI writer round, no second card for verified component lighting, and preserve the real native write boundary. Negative tests reject missing parent evidence, mismatching IDs, fake/virtual/disabled/sensitive parent, arbitrary virtual switch drivers, missing SwitchLevel and disabled light auto consent. No test interacts with a real Hubitat installation or guarantees that a real parent returns a physical native protocol; if absent the correct safe fallback remains an approval card.
+
+**Installed acceptance:** Update Preview to alpha.116 after green CI. Try an uncomplicated ON/OFF where the previously reported state is opposite. In PRIVATE Technical JSON, check `routine_native_authorization.component_parent_source_status`, `automatic_authorization_used`, the original parent read receipts and actual write result. Expected when all source conditions are met: one model round, two initial child reads and two read-only parent checks, **no extra approval**, then a concise native acceptance answer. If the parent is not source-verified, do not claim the exemption worked; investigate the generic source contract, not an incident-specific ID patch. Physical outcome and post-write state remain separate. Roll back if high-risk or virtual non-light operations gain silent execution.

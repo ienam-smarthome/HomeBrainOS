@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 
 from routine_action_fastpath import _normal, _original
+from routine_component_light import verified_physical_bridge_parent
 
 # These are device-capability declarations, not inferred side-effect proofs.
 # Never assume generic "Switch" alone establishes a benign operation.
@@ -72,9 +73,14 @@ def source_verified_auto_approval_class(
     if (not isinstance(identifier, str) or not identifier
             or not isinstance(label, str) or not label):
         return None
+    # A current component-light parent check may add one independent parent
+    # detail. The write target itself must still have exactly ONE matching
+    # original detailed read; unrelated details never grant authority.
     device_rows = [
         row for row in receipts
         if isinstance(row, dict) and row.get("name") == "hub_get_device"
+        and isinstance(row.get("arguments"), dict)
+        and str(row["arguments"].get("deviceId", "")).strip() == identifier
     ]
     if len(device_rows) != 1:
         return None
@@ -119,12 +125,27 @@ def source_verified_auto_approval_class(
     ):
         return None
     if "Light" in classes and auto_lights:
-        # Unknown mixed-purpose Light + Outlet or software/network controllers
-        # remain approval-required, even if the name looks like a light.
-        if "Outlet" in classes or any(
-            str(item.get("protocol", "")).lower() == "virtual"
-            or "virtual" in str(item.get("driver", "")).lower()
+        # Generic virtual/software switches stay gated. A Hubitat component
+        # LIGHT may report virtual protocol even when backed by a physical
+        # Matter/Zigbee/Z-Wave bridge. Require fresh ORIGINAL native source
+        # proof of that bridge's physical identity, plus a child dimmer
+        # capability and unambiguous parent-child relationship.
+        if "Outlet" in classes:
+            return None
+        child_is_virtual = any(
+            str(item.get("protocol", "")).casefold() == "virtual"
+            or "virtual" in str(item.get("driver", "")).casefold()
             for item in matched
+        )
+        if child_is_virtual:
+            if verified_physical_bridge_parent(candidate, receipts):
+                return "verified_physical_bridge_component_light"
+            return None
+        # Additional unrelated details are not needed for direct lights and
+        # must never add confidence to an otherwise unverified native light.
+        if any(
+            isinstance(row, dict) and row.get("name") == "hub_get_device"
+            and row is not detail_row for row in receipts
         ):
             return None
         return "verified_light"
