@@ -397,19 +397,21 @@ with sync_playwright() as p:
    page.locator("#downloadTechnical").click()
   exported=json.loads(Path(download.value.path()).read_text())
   assert exported["response"]["answer"]==answer
+  # Every Ask is now a fresh conversation, not an implicit follow-up.
   page.locator("#question").fill("Follow-up fixture")
   page.locator("#send").click()
-  page.wait_for_function("turns.length===2")
-  assert len(requests[-1]["history"])==2
-  assert requests[0]["conversation_id"]==requests[1]["conversation_id"]
-  assert page.locator("#olderExchanges").inner_text().count("Read-only fixture question")==1
+  page.wait_for_function("!activeRequest && technicalDetails?.question==='Follow-up fixture'")
+  assert requests[-1]["history"]==[]
+  assert requests[0]["conversation_id"]!=requests[1]["conversation_id"]
+  assert page.locator("#olderExchanges").inner_text().count("Read-only fixture question")==0
+  assert page.locator("#conversationHistory").is_hidden()
   page.locator("#newConversation").click()
   page.locator("#question").fill("Fresh question")
   page.locator("#send").click()
-  page.wait_for_function("turns.length===1")
+  page.wait_for_function("!activeRequest && technicalDetails?.question==='Fresh question'")
   assert requests[-1]["history"]==[]
   assert requests[-1]["conversation_id"]!=requests[-2]["conversation_id"]
-  assert resets==[requests[-2]["conversation_id"]]
+  assert requests[-2]["conversation_id"] in resets
   # Browser microphone recognizer: first tap starts, second tap sends.
   # No hardware microphone, speech service or new native hub call is used.
   page.evaluate("""() => {
@@ -430,8 +432,10 @@ with sync_playwright() as p:
     recognizer.onresult({results:[row]});
   }""")
   page.locator("#speak").click()
-  page.wait_for_function("turns.length===2")
+  page.wait_for_function("!activeRequest && technicalDetails?.question==='How is the hallway temperature?'")
   assert len(requests)==before_voice+1
+  assert requests[-1]["history"]==[]
+  assert requests[-1]["conversation_id"]!=requests[-2]["conversation_id"]
   assert requests[-1]["question"]=="How is the hallway temperature?"
   assert page.locator("#question").input_value()==requests[-1]["question"]
   assert page.locator("#speak").get_attribute("aria-pressed")=="false"
