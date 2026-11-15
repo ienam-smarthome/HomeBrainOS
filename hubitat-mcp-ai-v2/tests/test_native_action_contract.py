@@ -93,7 +93,7 @@ class SourceOnlyActionTests(unittest.TestCase):
         self.assertIn("**not** an action duration", result["answer"])
         self.assertIn("pendingActionAt = 2026-11-15 16:05:00", result["answer"])
         self.assertIn("not an independent post-write readback", result["answer"])
-        self.assertIn("has not been observed", result["answer"])
+        self.assertIn("have not been independently verified", result["answer"])
         self.assertNotIn("automatically restore", result["answer"])
         self.assertEqual(result["verified_device_id"], "301")
         self.assertEqual(json.dumps(before, sort_keys=True), original,
