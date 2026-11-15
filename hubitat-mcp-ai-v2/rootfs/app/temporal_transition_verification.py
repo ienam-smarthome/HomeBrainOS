@@ -494,9 +494,11 @@ def verify_recent_transition(question, draft_answer, receipts, *, timezone_name=
         "focal_context_fields_returned": len(evidence["focal_context"]),
         "focal_command_rows_preserved": len(evidence["focal_commands"]),
         "focal_later_report_preserved": evidence["focal_later_report"] is not None,
+        "focal_pair_original_timestamps": (
+            {"before": pair["before"]["timestamp"], "after": pair["after"]["timestamp"]}
+            if pair else None
+        ),
         "focal_inventory_snapshot_used": inventory is not None,
-        "display_timezone": timezone_name if isinstance(timezone_name, str)
-                            and timezone_name else "UTC",
         "display_times_are_minute_precision": True,
         "focal_truncated_reads": evidence["focal_truncated_reads"],
         "focal_limit_reached_reads": evidence["focal_limit_reached_reads"],
