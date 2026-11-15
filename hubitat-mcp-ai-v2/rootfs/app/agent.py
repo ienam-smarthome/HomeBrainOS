@@ -22,6 +22,9 @@ from routine_action_fastpath import (
     routine_candidate, accepted_routine_answer, verification_target,
 )
 from routine_action_bootstrap import prepare_routine_source
+from routine_post_write_readback import (
+    inspect_routine_post_write_state, routine_readback_answer,
+)
 from routine_component_light import (
     component_parent_id, read_component_parent_evidence,
     verified_physical_bridge_parent,
@@ -760,6 +763,7 @@ class Agent:
         hub_timezone: str | None = None,
         prepare_action: bool = False,
         enable_routine_bootstrap: bool = False,
+        enable_routine_post_write_readback: bool = False,
     ) -> dict[str, Any]:
         started = time.monotonic()
         approval_owner = getattr(before_call, "__self__", None)
@@ -893,6 +897,13 @@ class Agent:
         # human approval time are different; no clocks/polls/readback added.
         native_approval_wait_ms = 0.0
         first_native_write_submission_elapsed_ms = None
+        first_native_write_response_received_elapsed_ms = None
+        routine_post_write_readback_started_elapsed_ms = None
+        routine_post_write_readback_finished_elapsed_ms = None
+        routine_post_write_readback = {
+            "status": "not_invoked", "reported_switch": None,
+            "elapsed_ms": 0, "physical_state_verified": False,
+        }
         inventory_recovery_invoked = False
         inventory_recovery_status = "not_invoked"
         action_follow_through_invoked = False
@@ -1094,6 +1105,14 @@ class Agent:
                     ),
                     "first_native_write_submission_elapsed_ms":
                         first_native_write_submission_elapsed_ms,
+                    "first_native_write_response_received_elapsed_ms":
+                        first_native_write_response_received_elapsed_ms,
+                    "routine_readback_started_elapsed_ms":
+                        routine_post_write_readback_started_elapsed_ms,
+                    "routine_readback_finished_elapsed_ms":
+                        routine_post_write_readback_finished_elapsed_ms,
+                    "routine_readback_elapsed_ms":
+                        routine_post_write_readback["elapsed_ms"],
                     "model_input_tokens_reported": sum(
                         m["prompt_eval_count"] for m in model_round_metrics
                         if type(m.get("prompt_eval_count")) is int
@@ -1108,7 +1127,10 @@ class Agent:
                         "Provider-reported model durations and local tool-attempt "
                         "durations are not an exact additive wall-clock partition. "
                         "Tool-attempt time includes UI approval waiting. A write "
-                        "submission is not a physical future outcome."
+                        "submission is not a physical future outcome. All "
+                        "write/readback offsets use this request's monotonic "
+                        "clock; hub state timestamps are separate wall-clock "
+                        "values, not proof of initiator or physical effect."
                     ),
                 },
                 "leaf_schema_discoveries": leaf_schema_discoveries,
@@ -1191,6 +1213,7 @@ class Agent:
                     "detail_verification_elapsed_ms": routine_detail_verification_elapsed_ms,
                     "eligibility": "strict_original_device_and_intent",
                     "no_independent_physical_readback": True,
+                    "post_write_readback": routine_post_write_readback,
                 },
                 "prewrite_unsent_proposals": prewrite_unsent_proposals,
                 "prewrite_dispatch_changed": prewrite_dispatch_changed,
@@ -2051,6 +2074,14 @@ class Agent:
                             mcp.call(name, args),
                             timeout=max(0.1, deadline - time.monotonic())
                         )
+                        if (first_native_write_response_received_elapsed_ms is None
+                                and first_native_write_submission_elapsed_ms is not None
+                                and is_native_action_proposal(name, args, catalog)):
+                            # Same monotonic origin as native submission and
+                            # subsequent separate read, NOT hub event timestamps.
+                            first_native_write_response_received_elapsed_ms = round(
+                                (time.monotonic() - started) * 1000
+                            )
                     tool_error = bool(result.get("isError"))
                     record = {
                         "name": name, "arguments": redact(args),
@@ -2296,15 +2327,45 @@ class Agent:
                 messages.append({
                     "role": "tool", "tool_name": name, "content": content,
                 })
-            # Only after the existing approval gate and original native MCP
-            # transport returned true acceptance, publish an evidence-limited
-            # terminal response. No post-write model round, tool replay, extra
-            # read, or assertion about the downstream physical switch state.
+            # The original write must be ACCEPTED first. When explicitly
+            # enabled by the interactive V2 app, a single bounded READ may
+            # observe Hubitat's subsequent reported state. It never retries a
+            # writer, consumes an additional model round, equates a write
+            # snapshot with a read, or claims physical/causal verification.
             if routine_for_round is not None:
                 routine_answer = accepted_routine_answer(
                     routine_for_round, receipts
                 )
                 if routine_answer is not None:
+                    if (enable_routine_post_write_readback
+                            and routine_source_bootstrap_active
+                            and "hub_get_device" in native_catalog_names):
+                        available = deadline - time.monotonic()
+                        if available >= 1.5:
+                            routine_post_write_readback_started_elapsed_ms = round(
+                                (time.monotonic() - started) * 1000
+                            )
+                            observation, original_read = (
+                                await inspect_routine_post_write_state(
+                                    mcp, routine_for_round,
+                                    max_seconds=min(1.35, available - 0.1),
+                                )
+                            )
+                            routine_post_write_readback_finished_elapsed_ms = round(
+                                (time.monotonic() - started) * 1000
+                            )
+                            routine_post_write_readback = observation
+                            if original_read is not None:
+                                receipts.append(original_read)
+                            routine_answer = routine_readback_answer(
+                                routine_answer, routine_for_round, observation
+                            )
+                        else:
+                            routine_post_write_readback = {
+                                "status": "deadline_insufficient",
+                                "reported_switch": None, "elapsed_ms": 0,
+                                "physical_state_verified": False,
+                            }
                     routine_terminal_fastpath_used = True
                     return completed_answer(
                         routine_answer, "not_applicable_to_routine_action"
