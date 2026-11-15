@@ -28,6 +28,7 @@ from control_surface_recovery import (
     DEVICE_ACTION_FOLLOW_THROUGH_PROMPT, should_follow_through_device_action,
     ACTION_APPROVAL_HANDOFF_PROMPT, prose_only_action_confirmation,
     should_recover_action_approval_handoff,
+    draft_has_source_backed_native_command, is_explicit_device_imperative,
 )
 from evidence_scope import model_result_with_scope
 from typed_history_verification import verify_and_project_history
@@ -849,6 +850,10 @@ class Agent:
         causal_follow_through_candidate = ""
         causal_review_receipt_count = -1
         native_action_receipts_seen = 0
+        # Private numeric-only latency breakdown. Native device I/O and
+        # human approval time are different; no clocks/polls/readback added.
+        native_approval_wait_ms = 0.0
+        first_native_write_submission_elapsed_ms = None
         inventory_recovery_invoked = False
         inventory_recovery_status = "not_invoked"
         action_follow_through_invoked = False
@@ -914,7 +919,12 @@ class Agent:
 
         def unqueued_action_selection(answer: str) -> dict | None:
             if (before_call is not None and not current_write_attempted()
-                    and prose_only_action_confirmation(question, answer)):
+                    and (
+                        prose_only_action_confirmation(question, answer)
+                        or (is_explicit_device_imperative(question)
+                            and draft_has_source_backed_native_command(
+                                answer, receipts))
+                    )):
                 return {
                     "status": "unprepared_confirmation",
                     "options": ["prepare_action", "edit_request", "dismiss"],
@@ -946,6 +956,41 @@ class Agent:
                 "success": bool(verified_answer), "prior_receipts_used": prior_receipts,
                 "answer": verified_answer or "The model returned an empty answer.",
                 "structured_history_verification": verification_meta,
+                "action_performance": {
+                    "model_reported_ms": round(sum(
+                        m["total_ms"] for m in model_round_metrics
+                        if type(m.get("total_ms")) in (int, float)
+                        and math.isfinite(m["total_ms"])
+                        and m["total_ms"] >= 0
+                    ), 2),
+                    "tool_attempt_elapsed_ms_including_approval": round(sum(
+                        item["elapsed_ms"] for item in receipts
+                        if type(item.get("elapsed_ms")) in (int, float)
+                        and math.isfinite(item["elapsed_ms"])
+                        and item["elapsed_ms"] >= 0
+                    ), 2),
+                    "native_approval_wait_ms": round(
+                        native_approval_wait_ms, 2
+                    ),
+                    "first_native_write_submission_elapsed_ms":
+                        first_native_write_submission_elapsed_ms,
+                    "model_input_tokens_reported": sum(
+                        m["prompt_eval_count"] for m in model_round_metrics
+                        if type(m.get("prompt_eval_count")) is int
+                        and m["prompt_eval_count"] >= 0
+                    ),
+                    "model_output_tokens_reported": sum(
+                        m["eval_count"] for m in model_round_metrics
+                        if type(m.get("eval_count")) is int
+                        and m["eval_count"] >= 0
+                    ),
+                    "measurement_note": (
+                        "Provider-reported model durations and local tool-attempt "
+                        "durations are not an exact additive wall-clock partition. "
+                        "Tool-attempt time includes UI approval waiting. A write "
+                        "submission is not a physical future outcome."
+                    ),
+                },
                 "leaf_schema_discoveries": leaf_schema_discoveries,
                 "source_review_invoked": source_review_invoked,
                 "source_review_kind": source_review_kind,
@@ -977,6 +1022,11 @@ class Agent:
                 "inventory_recovery_invoked": inventory_recovery_invoked,
                 "inventory_recovery_status": inventory_recovery_status,
                 "action_follow_through_invoked": action_follow_through_invoked,
+                "action_source_sufficiency": (
+                    "model_draft_matched_fresh_native_command"
+                    if draft_has_source_backed_native_command(answer, receipts)
+                    else "not_established"
+                ),
                 "action_approval_handoff_invoked": action_approval_handoff_invoked,
                 "action_approval_handoff_status": (
                     "not_invoked" if not action_approval_handoff_invoked
@@ -1228,6 +1278,26 @@ class Agent:
                 return completed_answer(text, "not_invoked")
 
             if not calls:
+                # A text-only "please confirm" is not a pending UI approval.
+                # Reuse one bounded model opportunity to select an advertised
+                # native writer from fresh device details. All real writes still
+                # pass the prewrite checkpoint + same-request UI approval.
+                if should_recover_action_approval_handoff(
+                    question, text, receipts,
+                    available_tools=native_catalog_names,
+                    already_prompted=action_approval_handoff_invoked,
+                    has_native_write_attempt=current_write_attempted(),
+                    remaining_seconds=deadline - time.monotonic(),
+                    ui_approval_available=before_call is not None,
+                    source_review_invoked=source_review_invoked,
+                ):
+                    action_approval_handoff_invoked = True
+                    capture_answer_stage("pre_action_approval_handoff", text)
+                    messages.append({
+                        "role": "user",
+                        "content": ACTION_APPROVAL_HANDOFF_PROMPT,
+                    })
+                    continue
                 # Generic coverage recovery: a filtered inventory alone
                 # cannot establish that no other integration controls the
                 # requested physical effect. Make ONE unfiltered native
@@ -1252,6 +1322,8 @@ class Agent:
                             for rec in receipts
                         )
                     ),
+                    candidate_answer=text,
+                    approval_handoff_already_invoked=action_approval_handoff_invoked,
                 ):
                     inventory_recovery_invoked = True
                     capture_answer_stage("pre_inventory_recovery", text)
@@ -1353,26 +1425,6 @@ class Agent:
                     messages.append({
                         "role": "user",
                         "content": DEVICE_ACTION_FOLLOW_THROUGH_PROMPT,
-                    })
-                    continue
-                # A text-only "please confirm" is not a pending UI approval.
-                # Reuse one bounded model opportunity to select an advertised
-                # native writer from fresh device details. All real writes still
-                # pass the prewrite checkpoint + same-request UI approval.
-                if should_recover_action_approval_handoff(
-                    question, text, receipts,
-                    available_tools=native_catalog_names,
-                    already_prompted=action_approval_handoff_invoked,
-                    has_native_write_attempt=current_write_attempted(),
-                    remaining_seconds=deadline - time.monotonic(),
-                    ui_approval_available=before_call is not None,
-                    source_review_invoked=source_review_invoked,
-                ):
-                    action_approval_handoff_invoked = True
-                    capture_answer_stage("pre_action_approval_handoff", text)
-                    messages.append({
-                        "role": "user",
-                        "content": ACTION_APPROVAL_HANDOFF_PROMPT,
                     })
                     continue
                 # A first completed draft is not proof of evidence sufficiency.
@@ -1598,10 +1650,17 @@ class Agent:
                     if automation_approval_required:
                         automation_confirmation_requests += 1
                     if before_call is not None:
-                        await asyncio.wait_for(
-                            before_call(name, args, text),
-                            timeout=max(0.1, deadline - time.monotonic()),
-                        )
+                        approval_started = time.monotonic()
+                        try:
+                            await asyncio.wait_for(
+                                before_call(name, args, text),
+                                timeout=max(0.1, deadline - time.monotonic()),
+                            )
+                        finally:
+                            if is_native_action_proposal(name, args, catalog):
+                                native_approval_wait_ms += (
+                                    time.monotonic() - approval_started
+                                ) * 1000
                     elif needs_confirmation(args) or automation_approval_required:
                         raise MCPError(
                             "Explicit user confirmation is required; "
@@ -1645,6 +1704,13 @@ class Agent:
                             )
                         }
                     else:
+                        if (first_native_write_submission_elapsed_ms is None
+                                and is_native_action_proposal(
+                                    name, args, catalog
+                                )):
+                            first_native_write_submission_elapsed_ms = round(
+                                (time.monotonic() - started) * 1000
+                            )
                         result = await asyncio.wait_for(
                             mcp.call(name, args),
                             timeout=max(0.1, deadline - time.monotonic())

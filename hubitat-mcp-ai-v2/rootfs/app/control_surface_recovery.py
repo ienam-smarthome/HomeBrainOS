@@ -7,6 +7,7 @@ responsible for source-grounded identity and native command selection.
 """
 from __future__ import annotations
 
+import json
 import re
 
 
@@ -73,7 +74,8 @@ def should_recover_inventory(
     question: str, receipts: list[dict], *,
     available_tools: set[str], already_recovered: bool,
     remaining_seconds: float, source_review_invoked: bool,
-    has_native_write_attempt: bool,
+    has_native_write_attempt: bool, candidate_answer: str = "",
+    approval_handoff_already_invoked: bool = False,
 ) -> bool:
     """Give the model broad source evidence only after a narrow action dead end.
 
@@ -84,6 +86,15 @@ def should_recover_inventory(
         not already_recovered
         and not source_review_invoked
         and not has_native_write_attempt
+        # A model selected and source-backed native command is not a failed
+        # narrow inventory search. Re-reading 200 devices is not necessary
+        # just because the model stopped in prose. No command is dispatched
+        # by this read-only source coverage decision.
+        and not draft_has_source_backed_native_command(candidate_answer, receipts)
+        and not (
+            approval_handoff_already_invoked
+            and _has_fresh_device_command_details(receipts)
+        )
         and remaining_seconds > 10
         and "hub_list_devices" in available_tools
         and is_explicit_device_imperative(question)
@@ -251,13 +262,14 @@ def prose_only_action_confirmation(question: str, answer: str) -> bool:
     )
 
 
-def _has_fresh_device_command_details(receipts: list[dict]) -> bool:
-    """Current-request real device-detail receipt; never a source of routing.
+def _current_device_commands(receipts: list[dict]) -> dict[str, set[str]]:
+    """Source-validated in-request command inventories, keyed by source ID.
 
-    The model still chooses any command/target. This gate merely avoids
-    prompting a model to write from a broad inventory, old context, or prose.
+    Only accepts original successful native device-details whose returned
+    device ID agrees with the exact requested ID; guides, previous chats,
+    schema/catalogs and free text are not native proof.
     """
-    import json
+    eligible: dict[str, set[str]] = {}
     for row in receipts:
         if (not isinstance(row, dict)
                 or row.get("name") != "hub_get_device"
@@ -269,10 +281,14 @@ def _has_fresh_device_command_details(receipts: list[dict]) -> bool:
             continue
         try:
             envelope = json.loads(row["response"])
+            if not isinstance(envelope, dict) or envelope.get("isError"):
+                continue
             content = envelope.get("content")
+            if not isinstance(content, list):
+                continue
             original = json.loads(next(
                 x["text"] for x in content if isinstance(x, dict)
-                and x.get("type") == "text"
+                and x.get("type") == "text" and isinstance(x.get("text"), str)
             ))
         except (KeyError, ValueError, TypeError, StopIteration):
             continue
@@ -280,12 +296,58 @@ def _has_fresh_device_command_details(receipts: list[dict]) -> bool:
                 or str(original.get("id", "")) != str(args["deviceId"])):
             continue
         commands = original.get("commands")
-        if (isinstance(commands, list)
-                and any(isinstance(item, dict)
-                        and isinstance(item.get("name"), str)
-                        and item.get("name") for item in commands)):
+        if not isinstance(commands, list):
+            continue
+        names = {
+            item["name"] for item in commands
+            if isinstance(item, dict)
+            and isinstance(item.get("name"), str) and item["name"]
+        }
+        if names:
+            eligible.setdefault(str(args["deviceId"]), set()).update(names)
+    return eligible
+
+
+# Source-matched draft signatures are used ONLY to avoid redundant forced
+# inventory; they are never parsed for dispatch, approval or authorization.
+_DRAFT_NATIVE_COMMAND = re.compile(
+    r"\bhub_call_device_command\s*\(([^)\n]{1,400})\)", re.I
+)
+_DRAFT_DEVICE_ID = re.compile(
+    r"""\bdeviceId\s*=\s*(?:"([^"]+)"|'([^']+)'|([0-9]+))"""
+)
+_DRAFT_COMMAND_NAME = re.compile(
+    r"""\bcommand\s*=\s*(?:"([A-Za-z][A-Za-z0-9_]{0,99})"|'([A-Za-z][A-Za-z0-9_]{0,99})')"""
+)
+
+def draft_has_source_backed_native_command(
+    draft: str, receipts: list[dict],
+) -> bool:
+    """Only indicates that broad discovery is unnecessary for THIS draft.
+
+    The model still owns target/effect/timing suitability and the normal
+    prewrite and explicit UI confirmation remain independent.
+    """
+    if not isinstance(draft, str):
+        return False
+    sources = _current_device_commands(receipts)
+    if not sources:
+        return False
+    for match in _DRAFT_NATIVE_COMMAND.finditer(draft):
+        args = match.group(1)
+        dev = _DRAFT_DEVICE_ID.search(args)
+        cmd = _DRAFT_COMMAND_NAME.search(args)
+        if not dev or not cmd:
+            continue
+        device_id = dev.group(1) or dev.group(2) or dev.group(3)
+        if (cmd.group(1) or cmd.group(2)) in sources.get(device_id, set()):
             return True
     return False
+
+
+def _has_fresh_device_command_details(receipts: list[dict]) -> bool:
+    """Genuine in-request identity-matched native device command list."""
+    return bool(_current_device_commands(receipts))
 
 
 def should_recover_action_approval_handoff(
@@ -304,7 +366,15 @@ def should_recover_action_approval_handoff(
         and not has_native_write_attempt and not source_review_invoked
         and remaining_seconds > 12
         and "hub_call_device_command" in available_tools
-        and prose_only_action_confirmation(question, draft_answer)
+        and (
+            prose_only_action_confirmation(question, draft_answer)
+            or (
+                is_explicit_device_imperative(question)
+                and draft_has_source_backed_native_command(
+                    draft_answer, receipts
+                )
+            )
+        )
         and _has_fresh_device_command_details(receipts)
     )
 

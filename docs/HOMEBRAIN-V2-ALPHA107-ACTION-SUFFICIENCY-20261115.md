@@ -1,0 +1,26 @@
+# HomeBrainOS V2 alpha.107 — source-sufficient action processing
+
+**15 November 2026. V2 Preview only.** Keep all original PRIVATE source receipts, identifiers and connected-system data out of version control.
+
+## Owner-supplied first-answer diagnosis
+
+Installed alpha.106 completed a native delayed device-control request correctly *at the native acceptance level*: the MCP write returned `success: true`, the requested six-minute parameter and a future scheduled time in its embedded state. This is not independent readback or proof that a future physical/network change executed. Yet the request ran about 92.8 seconds: ten paid cloud-model rounds and six successful MCP operations. An unnecessary persistent custom-rule proposal was intercepted by the existing unsent prewrite review. Although a focused current-request device-detail receipt already showed the appropriate device-owned delayed command, model completion stopped for textual confirmation and the old sequence ran a broad 50-row inventory and action follow-through before the correct native write. The native relative timer started at actual command submission, so long reasoning delayed its onset from the user's original request.
+
+## General cross-domain implementation
+
+1. **Model-led handoff before forced broad discovery.** On a direct imperative whose model completed at a prose-only approval/planned command, offer the alpha.106 model-led recovery while fresh in-request identity-matched `hub_get_device` original evidence and native approval path are available. Do not select, construct, approve or dispatch a command from any model text. The existing model must choose its native tool; the original `Interaction` approval still precedes the MCP call.
+2. **Evidence-bounded inventory suppression.** A model's explicit native command proposal in text suppresses redundant automatic *unfiltered source discovery only if* an independently successful same-request `hub_get_device` receipt proves that exact device ID and that exact command name were actually advertised. This is a source sufficiency signal for whether to call `hub_list_devices(format=context)`, **not** evidence that the command matches the desired real-world effect. Only actual model-selected tools and user approval can act. Unmatched, failed, prior-chat, wrong-ID, different-command or media-only dead ends remain eligible for the prior broader recovery. After the one bounded native approval-handoff attempt with fresh command details, do not fall into a second automatic broad loop solely because the model again writes "confirm"; a fresh user-chosen preparation attempt remains possible.
+3. **Cost-aware prewrite source prompts.** Still reconsider the first unsent mutating proposal, particularly unsupported persistent rules. If ORIGINAL current-request details already identify a supported native command and timing semantics, avoid redundant whole-inventory/configuration/custom-rule queries and helpers; select the appropriate writer and let its original same-request approval gate decide. Preserve genuine identity/meaning/risk concerns and source investigation.
+4. **Private numeric performance scope.** Add `action_performance` with provider-reported model milliseconds and input/output tokens, summed local tool-attempt spans (including UI approval), separate time awaiting native write approval and elapsed time from Ask start to first native write submission. No new source read, model round, web request or router action. Model-reported and local timings need not sum exactly; approval timing is a subset of tool-attempt time, not additional additive work.
+
+## Fictional regression
+
+- A known but source-incomplete media-control integration still broadens one inventory and allows the model to inspect a genuinely separate actuator. No generic action command is inferred by the application.
+- A successful source detail with an ID-matched advertised command and corresponding text-only plan enters the existing model-led approval handoff **before** broad inventory. The model must select a real native tool; the test confirms zero writes until explicit UI approval, then one and only one native write.
+- Wrong device ID, command, failed query, old/context receipt, malformed source or non-native result cannot suppress broad recovery.
+- If the model still refuses tool selection, report no write and selectable Prepare/Edit/Dismiss choices rather than silently scheduling anything.
+- Action-review source boundaries, prewrite safety, one-shot rule constraints, source-review and V1 remain unchanged.
+
+## Installed acceptance
+
+Run a fresh low-risk native action in V2 after release and compare private original receipts and model metrics to alpha.106. Target lower round count, lower time-to-native-submit and fewer unnecessary unrelated reads, but do not claim a speedup from synthetic CI. Require correct controller, precise effect and relative timing, UI approval before any write, original MCP acceptance, independent readback where proportionate, and no claims of future physical success until a later observation. For ambiguous devices, verify source-broadening remains available and no guessed write occurs. Escalate if fewer rounds hurt attribution or cause overconfidence. No incident-specific patches.

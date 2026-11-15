@@ -1,5 +1,12 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 15 November 2026 — alpha.107 source-sufficient action fast path
+
+The installed alpha.106 native one-off device action eventually returned an accepted six-minute delayed command but took roughly 92.8 seconds and ten cloud model rounds. It initially proposed an unrelated persistent automation and then re-ran broad inventory plus extra reasoning despite a current-request native device detail listing the correct dedicated timer. The initial proposal was never executed, and the later native write receipt confirms only command acceptance and embedded returned timer state—not independent post-write readback or subsequent physical enforcement.
+
+Alpha.107 moves the existing model-led plain-prose approval handoff before generic inventory recovery and suppresses automatic broadening only when the candidate's device ID and exact native command can be matched against an original successful in-request device-detail receipt. A source-incomplete media-only or failed/mismatched query still triggers the established broad-discovery path. Prewrite guidance prioritises supported native operations over gratuitous rule/helper construction without forcing domain routes. Numeric private action-performance telemetry reports model-reported time/tokens, tool spans (including approval), approval waiting and first native submission delay. No UI approval bypass, tool replay, new source pollution, provider switch or V1 edit. [Release and regression](HOMEBRAIN-V2-ALPHA107-ACTION-SUFFICIENCY-20261115.md).
+
+
 ## 15 November 2026 — alpha.106 model text versus native UI approval
 
 The installed alpha.105 capture of an explicit delayed network-control request demonstrated a complete current-request native inventory + detail read and a correctly advertised timed native command, but no action attempt: the model proposed an unnecessary native variable creation, which was held by the prewrite review, then described the correct device command in prose and asked the user to "confirm". No `hub_call_device_command` receipt or `Interaction.pending` existed. The prior chat "proceed" could not approve this expired, unstructured text, even though the UI already had a proper approval card for *actual* native tool calls. This is distinct from the earlier corrected timing/source/approval safety defects.

@@ -1,5 +1,12 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## Alpha.107 — reduce action-model latency, then resume cross-domain acceptance
+
+An installed alpha.106 first-answer case eventually executed an accepted native relative-delay command, but took roughly 92.8 seconds with 10 model rounds, an unnecessary persistent-rule draft and additional broad inventory despite earlier successful direct device-command evidence. No independent later network effect was observed. Alpha.107 reprioritizes source-backed native action approval over redundant broad searches, retains general discovery when device/effect remains uncertain, and includes private numeric latency breakdown and first-write-submission delay. The application does **not** choose commands from prose or shorten required approval gates.
+
+After update, run an uncoached low-risk direct-action question and review original PRIVATE MCP receipts. Require substantially fewer model rounds and lower time-to-native-write, no unnecessary broad discovery, matching native action and argument, a genuine explicit approval UI, and correct acceptance-vs-future-outcome qualification. Validate an ambiguous control target separately: broad source recovery must still be available and a guessed actuator must never run. Include refusal/decline with zero writes. Synthetic CI is not a proof of the next paid model's latency or physical outcome. If gates pass, return to permanent HomeBrainOS V2 general reasoning and cross-domain QA rather than incident-specific patches. [Engineering note](HOMEBRAIN-V2-ALPHA107-ACTION-SUFFICIENCY-20261115.md).
+
+
 ## Alpha.106 — close the last action-confirmation dead end before roadmap
 
 Installed alpha.105 test of a direct relative-delay network block correctly found the actual managed network-control actuator and the matching native timer command, but the model emitted a helper-variable draft (NOT sent), then a text-only "please confirm" rather than a native command proposal. The web UI approval endpoint only accepts an active structured proposal, so a later "proceed" had nothing to approve and no timer was scheduled.
