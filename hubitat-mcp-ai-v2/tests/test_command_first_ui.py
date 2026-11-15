@@ -36,6 +36,35 @@ class ActionCards(unittest.IsolatedAsyncioTestCase):
         await task
         self.assertIsNone(interaction.pending)
 
+    async def test_verified_name_and_string_timing_visible_during_live_approval(self):
+        from native_action_contract import verified_device_details
+        import json
+        source = {"name": "hub_get_device", "arguments": {"deviceId": "TEST-42"},
+                  "success": True, "result_kind": "tool_result", "response": json.dumps({
+                      "content": [{"type": "text", "text": json.dumps({
+                          "id": "TEST-42", "label": "Fictional Policy Controller",
+                          "commands": [{"name": "disconnectInMinutes"}]
+                      })}]
+                  })}
+        interaction = Interaction(require_native_write_approval=True)
+        interaction.register_current_native_device_details([source])
+        args = {"deviceId": "TEST-42", "command": "disconnectInMinutes",
+                "parameters": ["5"]}
+        task = asyncio.create_task(interaction.before_call(
+            "hub_call_device_command", args, "Fictional delayed internet action"))
+        await asyncio.sleep(0)
+        preview = interaction.pending["preview"]
+        self.assertEqual(preview["fields"]["device"],
+                         "Fictional Policy Controller")
+        self.assertEqual(preview["fields"]["device_id"], "TEST-42")
+        self.assertEqual(preview["fields"]["parameters"], "5")
+        self.assertIn("After 5 minutes", preview["fields"]["timing"])
+        self.assertIn("device_id", HTML)
+        self.assertIn("approvalSummary", HTML)
+        interaction.decide(interaction.pending["id"], False)
+        with self.assertRaises(MCPError):
+            await task
+
     async def test_numeric_native_parameters_visible_without_write(self):
         interaction = Interaction(require_native_write_approval=True)
         args = {"deviceId": "LAB-DEMO-TIMER", "command": "delayPolicy",
@@ -140,7 +169,7 @@ class UIContracts(unittest.TestCase):
             'duration>400&&activeRecognition',
             '@media(prefers-color-scheme:light)',
             '@media(prefers-reduced-motion:reduce)',
-            '2.0.0-alpha.107',
+            '2.0.0-alpha.108',
         ):
             self.assertIn(needle, HTML, needle)
         # System Health owns the inventory; chat stays a full-width conversation.
@@ -181,7 +210,7 @@ class UIContracts(unittest.TestCase):
             'Array.isArray(response?.answer_stage_trace)',
             'observed_after_ms',
             'Original MCP receipt',
-            'UI_VERSION="2.0.0-alpha.107"',
+            'UI_VERSION="2.0.0-alpha.108"',
             "api/activity/",
             'pendingApproval.effect_class',
             'void submitAsk()',

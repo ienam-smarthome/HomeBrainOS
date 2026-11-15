@@ -683,7 +683,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 </section>
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.107";
+const UI_VERSION="2.0.0-alpha.108";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
@@ -1364,9 +1364,15 @@ function previewPendingAction(pending){
  byId('approvalSummary').textContent=preview?
    String(preview.tool||pending.name)+' · '+String(preview.verb||'native operation')+' · proposed, not executed':
    'Structured native action pending. Verify the exact source arguments before approval.';
+ // Source-verified name and exact ID are display-only, never routing keys.
+ if(typeof preview?.fields?.device==='string'&&typeof preview?.fields?.device_id==='string'){
+  byId('approvalSummary').textContent=
+   preview.fields.device+' (device ID '+preview.fields.device_id+') · '+
+   String(preview.verb||'native operation')+' · proposed, not executed';
+ }
  const host=byId('approvalChips');host.replaceChildren();
  for(const [field,value] of Object.entries(preview?.fields||{})){
-  if(!['device','time','days','parameters'].includes(field)||typeof value!=='string')continue;
+  if(!['device','device_id','timing','time','days','parameters'].includes(field)||typeof value!=='string')continue;
   const chip=document.createElement('label');chip.className='action-chip';chip.append(field+' ');
   const input=document.createElement('input');input.value=value;input.maxLength=90;
   input.setAttribute('data-field',field);input.setAttribute('aria-label','Proposed '+field);

@@ -244,6 +244,92 @@ class ApprovalRecoveryLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(hub.calls), 2)
         self.assertIsNone(gate.pending)
 
+
+    async def test_delay_output_is_source_grounded_after_real_ui_approval(self):
+        """Model's final 'for N' must not erase actual delayed-onset command."""
+        class AcceptedTimedHub(FictionalMCP):
+            async def call(self, name, args):
+                if name == "hub_call_device_command":
+                    self.calls.append((name, dict(args)))
+                    return response({
+                        "success": True,
+                        "device": "Fictional Policy TV",
+                        "command": args["command"],
+                        "parameters": [5],
+                        "state": {
+                            "pendingActionAt": {
+                                "value": "2026-11-15 12:05:00",
+                                "timestamp": "2026-11-15 12:00:00",
+                            },
+                        },
+                    })
+                return await super().call(name, args)
+
+        hub = AcceptedTimedHub()
+        model = ScriptedModel([
+            tool("hub_list_devices", {}),
+            tool("hub_get_device", {"deviceId": "101", "mode": "summary"}),
+            tool("hub_call_device_command", {
+                "deviceId": "101", "command": "disconnectInMinutes",
+                "parameters": ["5"],
+            }),  # Unsent prewrite draft: still requires reconsideration.
+            {"content": "Please confirm before I proceed."},
+            tool("hub_call_device_command", {
+                "deviceId": "101", "command": "disconnectInMinutes",
+                "parameters": ["5"],
+            }),
+            {"content": (
+                "Fictional TV is blocked for 5 minutes; it will "
+                "automatically reconnect at the end of that window."
+            )},
+            {"content": (
+                "The device will definitely restore after five minutes."
+            )},
+        ])
+        gate = Interaction(require_native_write_approval=True)
+        task = asyncio.create_task(model.answer(
+            "Disconnect Fictional TV after 5 minutes", [], hub, 60,
+            before_call=gate.before_call, enable_source_review=True,
+            enable_final_claim_audit=False,
+        ))
+        try:
+            for _ in range(250):
+                if gate.pending is not None or task.done():
+                    break
+                await asyncio.sleep(0.01)
+            self.assertIsNotNone(gate.pending)
+            preview = gate.pending["preview"]
+            self.assertEqual(preview["fields"]["device"], "Fictional Policy TV")
+            self.assertEqual(preview["fields"]["device_id"], "101")
+            self.assertEqual(preview["fields"]["parameters"], "5")
+            self.assertIn("After 5 minutes", preview["fields"]["timing"])
+            self.assertFalse(task.done())
+            self.assertNotIn("hub_call_device_command",
+                             [name for name, _ in hub.calls])
+            gate.decide(gate.pending["id"], True)
+            result = await asyncio.wait_for(task, 4)
+        finally:
+            if not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+            await model.close()
+        self.assertTrue(result["success"])
+        self.assertEqual(result["rounds"], 7)
+        self.assertEqual(result["prewrite_unsent_proposals"][0]["name"],
+                         "hub_call_device_command")
+        self.assertTrue(result["source_review_invoked"])
+        self.assertTrue(result["action_approval_handoff_invoked"])
+        self.assertEqual(
+            result["action_semantics_verification"]["status"],
+            "source_derived_native_acceptance")
+        self.assertIn("after 5 minutes", result["answer"])
+        self.assertIn("pendingActionAt = 2026-11-15 12:05:00",
+                      result["answer"])
+        self.assertNotIn("will definitely restore", result["answer"])
+        self.assertEqual(
+            [name for name, _ in hub.calls].count("hub_call_device_command"), 1)
+        self.assertFalse(result["action_semantics_verification"]["independent_readback"])
+
     async def test_native_action_handoff_waits_for_ui_approval(self):
         hub = FictionalMCP()
         model = ScriptedModel(source_reads() + [
