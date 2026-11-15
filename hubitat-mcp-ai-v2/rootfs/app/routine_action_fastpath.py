@@ -93,7 +93,7 @@ _CONTEXT_ENTRY = re.compile(
 def _normal(text: str) -> str:
     # Normalize conventional word separators for device labels without
     # guessing a synonym, device class, alias or target identifier.
-    return re.sub(r"[\\s_-]+", "", text).casefold()
+    return re.sub(r"[\s_-]+", "", text).casefold()
 
 
 def _selected(question: str, calls: list[dict], *, approval_available: bool):
