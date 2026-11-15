@@ -119,14 +119,7 @@ def unprepared_answer(lifecycle: dict[str, Any], original: str) -> str:
     if lifecycle.get("status") != "not_prepared":
         return original
     return (
-        "**No action queued.** HomeBrainOS did not prepare or submit a "
-        "native device command, so there is nothing to approve for this "
-        "completed request.\n\n"
-        "Choose **Prepare action** for a new model-led request using fresh "
-        "device evidence, **Edit request** to clarify, or **Dismiss**. "
-        "If the requested state already exists, no additional command "
-        "is needed. A real write can occur only after an actual native "
-        "tool is selected and its separate approval card is confirmed.\n\n"
-        "The model finished with text rather than an executable action. "
-        "This message does not claim that the requested change occurred."
+        "**No action queued.** No device command was sent. "
+        "Choose **Prepare action**, **Edit request**, or **Dismiss** below. "
+        "Any new write still requires its own explicit approval."
     )
