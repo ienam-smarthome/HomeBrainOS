@@ -18,7 +18,9 @@ from native_action_contract import source_derived_timing_answer
 from action_lifecycle import (
     inspect_action_lifecycle, unprepared_action_choices, unprepared_answer,
 )
-from routine_action_fastpath import routine_candidate, accepted_routine_answer
+from routine_action_fastpath import (
+    routine_candidate, accepted_routine_answer, verification_target,
+)
 from action_intent_guard import automation_write_requires_confirmation, rule_activation_outcome
 from one_off_rule_policy import (
     rule_pre_dispatch_issue, requested_temporal_scope, scoped_request_text,
@@ -892,6 +894,8 @@ class Agent:
         prewrite_model_review_invoked = False
         routine_prewrite_review_skipped = False
         routine_terminal_fastpath_used = False
+        routine_detail_verification_status = "not_invoked"
+        routine_detail_verification_elapsed_ms = 0
         prewrite_unsent_proposals: list[dict[str, Any]] = []
         prewrite_no_fresh_evidence_rejections = 0
         one_off_rule_preflight_rejections = 0
@@ -1089,6 +1093,8 @@ class Agent:
                 "routine_action_fastpath": {
                     "terminal_native_acceptance_used": routine_terminal_fastpath_used,
                     "prewrite_model_review_skipped": routine_prewrite_review_skipped,
+                    "detail_verification_status": routine_detail_verification_status,
+                    "detail_verification_elapsed_ms": routine_detail_verification_elapsed_ms,
                     "eligibility": "strict_original_device_and_intent",
                     "no_independent_physical_readback": True,
                 },
@@ -1260,6 +1266,72 @@ class Agent:
             text = str(message.get("content") or "").strip()
             if not isinstance(calls, list):
                 calls = []
+            # The model has already selected a native writer and exact ID.
+            # For an otherwise simple command backed by a COMPLETE filtered
+            # native inventory, one native READ can verify that selected ID's
+            # exact label, capability, advertised command and current state.
+            # It NEVER chooses or dispatches a writer, reuses old evidence,
+            # skips approval, or trusts the inventory alone as write authority.
+            # A failed/unavailable read falls back to full model review.
+            verify_target = verification_target(
+                question, calls, receipts,
+                approval_available=before_call is not None,
+            ) if (enable_action_proposal_review and not source_review_invoked
+                  and not prewrite_model_review_invoked) else None
+            if (verify_target is not None
+                    and "hub_get_device" in native_catalog_names
+                    and deadline - time.monotonic() > 8):
+                read_args = {"deviceId": verify_target["native_device_id"]}
+                read_start = time.monotonic()
+                if interaction_status is not None:
+                    interaction_status.set_phase(
+                        "native_call",
+                        detail="Verifying model-selected device (read only)"
+                    )
+                try:
+                    raw_detail = await asyncio.wait_for(
+                        mcp.call("hub_get_device", read_args),
+                        timeout=min(5.0, max(0.1, deadline - time.monotonic())),
+                    )
+                    read_error = bool(raw_detail.get("isError"))
+                    source_text = compact_tool_result(
+                        self.present_native_result(raw_detail, read_args)
+                    )
+                    record = {
+                        "name": "hub_get_device",
+                        "arguments": read_args,
+                        "success": not read_error,
+                        "result_kind": "tool_result",
+                        "read_only": True,
+                        "operation_executed": True,
+                        "client_routine_verification_read": True,
+                        "response": source_text,
+                        "response_characters": len(source_text),
+                    }
+                    if read_error:
+                        record["error"] = "Native MCP device read reported isError"
+                    routine_detail_verification_status = (
+                        "read_succeeded" if not read_error else "source_error"
+                    )
+                except (MCPError, ValueError, asyncio.TimeoutError) as exc:
+                    routine_detail_verification_status = "source_error"
+                    record = {
+                        "name": "hub_get_device",
+                        "arguments": read_args,
+                        "success": False,
+                        "result_kind": "tool_result",
+                        "read_only": True,
+                        "operation_executed": False,
+                        "client_routine_verification_read": True,
+                        "error": str(redact(str(exc)))[:240],
+                    }
+                routine_detail_verification_elapsed_ms = round(
+                    (time.monotonic() - read_start) * 1000
+                )
+                record["elapsed_ms"] = routine_detail_verification_elapsed_ms
+                receipts.append(record)
+                # No fabricated assistant tool_call pair. If the model must
+                # review, its next prewrite turn sees this original source.
             # The model selected this operation itself; no command is routed
             # from user prose. Strict exact-target ORIGINAL hub_get_device
             # evidence allows *only* routine on/off to skip a duplicate
@@ -1316,6 +1388,16 @@ class Agent:
                                 and (is_read_only_review_tool(row.get("name", ""))
                                      or row.get("name") == CLOCK_TOOL)
                             ], ensure_ascii=False)[:2500]
+                            + "\n\nOptional client native device-verification read "
+                              "(source, not an assistant-selected call): "
+                            + json.dumps([
+                                {"name": row.get("name"),
+                                 "arguments": row.get("arguments"),
+                                 "success": row.get("success"),
+                                 "response": row.get("response", "")[:3500]}
+                                for row in receipts
+                                if row.get("client_routine_verification_read")
+                            ], ensure_ascii=False)[:4000]
                         ),
                     })
                     continue
