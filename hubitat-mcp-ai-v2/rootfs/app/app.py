@@ -482,6 +482,7 @@ async def ask(request: AskRequest, http_request: Request):
                     prior_evidence=prior, prior_receipts=prior_count,
                     prior_reader=read_prior if request.conversation_id and indexed else None,
                     **monitor_kwargs,
+                    enable_routine_bootstrap=True,
                     **({"prepare_action": True} if request.prepare_action else {}),
                 )
                 result["prior_sources_indexed"] = indexed
