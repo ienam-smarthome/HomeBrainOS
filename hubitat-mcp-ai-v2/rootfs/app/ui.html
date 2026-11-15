@@ -1704,7 +1704,7 @@ async function submitAsk(){
   if(!await loadStatus()){
    if(activeRequest===requestId)
     showResult(q,'Unable to start: check the interface status above.',null,0,
-     {type:'preflight',message:byId('state').textContent},requestId);
+     {type:'preflight',message:byId('state').textContent},null);
    return;
   }
   if(activeRequest!==requestId||token!==askGeneration)return;
