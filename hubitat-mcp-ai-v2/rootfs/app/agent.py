@@ -22,6 +22,10 @@ from routine_action_fastpath import (
     routine_candidate, accepted_routine_answer, verification_target,
 )
 from routine_action_bootstrap import prepare_routine_source
+from routine_component_light import (
+    component_parent_id, read_component_parent_evidence,
+    verified_physical_bridge_parent,
+)
 from action_intent_guard import automation_write_requires_confirmation, rule_activation_outcome
 from one_off_rule_policy import (
     rule_pre_dispatch_issue, requested_temporal_scope, scoped_request_text,
@@ -901,6 +905,8 @@ class Agent:
         routine_source_bootstrap_status = "not_invoked"
         routine_source_bootstrap_read_count = 0
         routine_source_bootstrap_active = False
+        routine_component_parent_read_status = "not_required"
+        routine_component_parent_read_count = 0
         routine_bootstrap_verified_at: float | None = None
         prewrite_unsent_proposals: list[dict[str, Any]] = []
         prewrite_no_fresh_evidence_rejections = 0
@@ -1157,6 +1163,8 @@ class Agent:
                         interaction_status is not None
                         and interaction_status.routine_auto_approval_used
                     ),
+                    "component_parent_source_status": routine_component_parent_read_status,
+                    "component_parent_source_read_count": routine_component_parent_read_count,
                     "downstream_physical_effect_unverified": True,
                 },
                 "response_success_scope": (
@@ -1936,6 +1944,35 @@ class Agent:
                                         - routine_bootstrap_verified_at <= 20.0
                                     and not source_review_invoked
                                     and not prewrite_model_review_invoked):
+                                # Hubitat can present a genuine bridge-backed
+                                # LIGHT endpoint as protocol=virtual. Only for
+                                # an already source-qualified model-selected
+                                # direct writer, verify its ORIGINAL parent
+                                # relationship with bounded native READS.
+                                # This never selects/dispatches a write and
+                                # failure falls back to the existing approval.
+                                parent_id = component_parent_id(
+                                    routine_for_round, receipts
+                                ) if approval_owner.auto_approve_lights else None
+                                if parent_id is not None:
+                                    if ({"hub_get_device", "hub_list_devices"}
+                                            <= native_catalog_names
+                                            and deadline - time.monotonic() > 5):
+                                        parent_reads = await read_component_parent_evidence(
+                                            mcp, parent_id, budget_seconds=4.0
+                                        )
+                                        receipts.extend(parent_reads)
+                                        routine_component_parent_read_count = len(parent_reads)
+                                        routine_component_parent_read_status = (
+                                            "physical_bridge_verified"
+                                            if verified_physical_bridge_parent(
+                                                routine_for_round, receipts
+                                            ) else "not_verified"
+                                        )
+                                    else:
+                                        routine_component_parent_read_status = (
+                                            "native_source_unavailable"
+                                        )
                                 approval_owner.offer_current_ask_routine_authorization(
                                     routine_for_round, receipts,
                                 )
