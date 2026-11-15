@@ -548,5 +548,192 @@ class ContextIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
 
 
+
+# New general-first request path: read-only discovery before ONE model writer
+# selection, instead of 11 repeated discovery/reflection turns.
+from routine_action_bootstrap import search_variants, prepare_routine_source
+
+
+class BootstrappedHub(FictionalHub):
+    def __init__(self, label="Fictional Office Lamp", initial="on"):
+        super().__init__()
+        self.label = label
+        self.initial = initial
+
+    async def call(self, name, args):
+        self.calls.append((name, deepcopy(args)))
+        if name == "hub_list_devices":
+            value = args.get("labelFilter", "")
+            matches = self.label.casefold().find(value.casefold()) >= 0
+            devices = ([{"id": "LAB-LAMP-1", "label": self.label,
+                         "disabled": False,
+                         "currentStates": {"switch": self.initial}}]
+                       if matches else [])
+            return mcp_result({
+                "devices": devices, "count": len(devices),
+                "total": len(devices), "unfilteredTotal": 203,
+                "labelFilter": value,
+            })
+        if name == "hub_get_device":
+            source = device(label=self.label, switch=self.initial)
+            return mcp_result(source)
+        if name == "hub_call_device_command":
+            return mcp_result({
+                "success": True, "device": self.label,
+                "command": args["command"], "parameters": None,
+                # Embedded write snapshot is not an independent readback.
+                "state": {"switch": {"value": self.initial}},
+            })
+        raise AssertionError("Unexpected native tool: " + name)
+
+
+class BootstrapModel(ScriptedAgent):
+    def __init__(self, script):
+        super().__init__(script)
+        self.tool_names = []
+        self.prompts = []
+
+    async def round(self, messages, tools, remaining):
+        self.tool_names.append([
+            x.get("function", {}).get("name") for x in tools
+        ])
+        self.prompts.append(messages)
+        return await super().round(messages, tools, remaining)
+
+
+class RoutineSourceBootstrapTests(unittest.IsolatedAsyncioTestCase):
+    def test_general_spacing_variants_no_device_specific_aliases(self):
+        variants = search_variants("Turn on Living Room Light 2")
+        self.assertIn("Living Room Light 2", variants)
+        self.assertIn("LivingRoom Light 2", variants)
+        self.assertEqual(search_variants(
+            "Block a device after 5 minutes"), [])
+        self.assertEqual(search_variants(
+            "Turn off Fictional Lamp and Heater"), [])
+
+    async def test_source_first_single_round_with_real_approval(self):
+        hub = BootstrappedHub()
+        model = BootstrapModel([
+            tool("hub_call_device_command", deviceId="LAB-LAMP-1",
+                 command="off")
+        ])
+        gate = Interaction(require_native_write_approval=True)
+        task = asyncio.create_task(model.answer(
+            "Turn off Fictional Office Lamp", [], hub, 60,
+            before_call=gate.before_call,
+            enable_routine_bootstrap=True,
+        ))
+        try:
+            for _ in range(1200):
+                if gate.pending or task.done():
+                    break
+                await asyncio.sleep(0.002)
+            self.assertIsNotNone(gate.pending, "Native approval must be real")
+            self.assertEqual([name for name, _ in hub.calls],
+                             ["hub_list_devices", "hub_get_device"])
+            self.assertEqual(model.rounds_seen, 1)
+            self.assertEqual(model.tool_names[0], ["hub_call_device_command"])
+            self.assertIn(
+                "Turn off Fictional Office Lamp",
+                [m["content"] for m in model.prompts[0] if m["role"] == "user"])
+            gate.decide(gate.pending["id"], True)
+            result = await asyncio.wait_for(task, 5)
+        finally:
+            if not task.done():
+                gate.invalidate()
+                task.cancel()
+            await model.close()
+        self.assertEqual([name for name, _ in hub.calls], [
+            "hub_list_devices", "hub_get_device", "hub_call_device_command"
+        ])
+        self.assertEqual(result["rounds"], 1)
+        self.assertEqual(result["action_lifecycle"]["status"], "native_accepted")
+        self.assertTrue(result["routine_action_fastpath"]
+                        ["model_led_single_command_mode"])
+        self.assertEqual(result["routine_action_fastpath"]
+                         ["source_bootstrap_status"], "verified")
+        self.assertTrue(result["routine_action_fastpath"]
+                        ["prewrite_model_review_skipped"])
+        self.assertTrue(result["routine_action_fastpath"]
+                        ["terminal_native_acceptance_used"])
+        self.assertIn("OFF command accepted", result["answer"])
+        self.assertIn("not been independently verified", result["answer"])
+
+    async def test_whitespace_variant_is_resolved_by_original_native_source(self):
+        hub = BootstrappedHub(label="Livingroom Light 2", initial="off")
+        model = BootstrapModel([
+            tool("hub_call_device_command", deviceId="LAB-LAMP-1",
+                 command="on")
+        ])
+        gate = Interaction(require_native_write_approval=True)
+        task = asyncio.create_task(model.answer(
+            "Turn on Living Room Light 2", [], hub, 60,
+            before_call=gate.before_call,
+            enable_routine_bootstrap=True,
+        ))
+        try:
+            for _ in range(1200):
+                if gate.pending or task.done():
+                    break
+                await asyncio.sleep(0.002)
+            self.assertIsNotNone(gate.pending)
+            self.assertEqual([n for n, _ in hub.calls], [
+                "hub_list_devices", "hub_list_devices", "hub_get_device"
+            ])
+            self.assertEqual(hub.calls[0][1]["labelFilter"],
+                             "Living Room Light 2")
+            self.assertEqual(hub.calls[1][1]["labelFilter"],
+                             "LivingRoom Light 2")
+            self.assertEqual(model.rounds_seen, 1)
+            gate.decide(gate.pending["id"], True)
+            result = await asyncio.wait_for(task, 5)
+        finally:
+            if not task.done():
+                gate.invalidate()
+                task.cancel()
+            await model.close()
+        self.assertEqual(result["action_lifecycle"]["status"], "native_accepted")
+        self.assertTrue(result["routine_action_fastpath"]
+                        ["terminal_native_acceptance_used"])
+
+    async def test_model_wrong_target_is_blocked_before_native_dispatch(self):
+        hub = BootstrappedHub()
+        model = BootstrapModel([
+            tool("hub_call_device_command", deviceId="LAB-OTHER",
+                 command="off")
+        ])
+        gate = Interaction(require_native_write_approval=True)
+        try:
+            result = await model.answer(
+                "Turn off Fictional Office Lamp", [], hub, 60,
+                before_call=gate.before_call,
+                enable_routine_bootstrap=True,
+            )
+        finally:
+            await model.close()
+        self.assertEqual(model.rounds_seen, 1)
+        self.assertEqual([name for name, _ in hub.calls],
+                         ["hub_list_devices", "hub_get_device"])
+        self.assertIsNone(gate.pending)
+        self.assertFalse(result["action_lifecycle"]["native_write_submitted"])
+        self.assertIn("no device command was sent", result["answer"].lower())
+
+    async def test_source_not_verified_falls_back_to_normal_model(self):
+        # The generic fast path never guesses missing device capabilities.
+        hub = BootstrappedHub(label="Fictional Another Lamp")
+        model = BootstrapModel([{"content": "No matching native label was verified."}])
+        try:
+            result = await model.answer(
+                "Turn off Fictional Office Lamp", [], hub, 60,
+                before_call=None, enable_routine_bootstrap=True,
+                enable_source_review=False,
+            )
+        finally:
+            await model.close()
+        self.assertEqual(model.rounds_seen, 1)
+        self.assertFalse(result["routine_action_fastpath"]
+                         ["model_led_single_command_mode"])
+
+
 if __name__ == "__main__":
     unittest.main()

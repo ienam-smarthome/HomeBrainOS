@@ -21,6 +21,7 @@ from action_lifecycle import (
 from routine_action_fastpath import (
     routine_candidate, accepted_routine_answer, verification_target,
 )
+from routine_action_bootstrap import prepare_routine_source
 from action_intent_guard import automation_write_requires_confirmation, rule_activation_outcome
 from one_off_rule_policy import (
     rule_pre_dispatch_issue, requested_temporal_scope, scoped_request_text,
@@ -754,6 +755,7 @@ class Agent:
         enable_action_proposal_review: bool = True,
         hub_timezone: str | None = None,
         prepare_action: bool = False,
+        enable_routine_bootstrap: bool = False,
     ) -> dict[str, Any]:
         started = time.monotonic()
         approval_owner = getattr(before_call, "__self__", None)
@@ -896,6 +898,9 @@ class Agent:
         routine_terminal_fastpath_used = False
         routine_detail_verification_status = "not_invoked"
         routine_detail_verification_elapsed_ms = 0
+        routine_source_bootstrap_status = "not_invoked"
+        routine_source_bootstrap_read_count = 0
+        routine_source_bootstrap_active = False
         prewrite_unsent_proposals: list[dict[str, Any]] = []
         prewrite_no_fresh_evidence_rejections = 0
         one_off_rule_preflight_rejections = 0
@@ -932,6 +937,64 @@ class Agent:
                 "failed_tool_receipts_seen": sum(
                     item.get("success") is False for item in receipts),
             })
+
+        # Source-first routine mode is opt-in for the V2 interactive UI only.
+        # The client may perform READ-ONLY discovery before any AI call, but
+        # all native writes still require exact model tool selection and the
+        # existing per-request confirmation card. Never use past evidence.
+        if (enable_routine_bootstrap and before_call is not None
+                and not history and not prior_evidence
+                and enable_action_proposal_review
+                and "hub_call_device_command" in native_catalog_names):
+            preflight = await prepare_routine_source(
+                question, mcp, native_catalog_names,
+                max_seconds=min(7.0, max(0.0, deadline-time.monotonic()-10)),
+            )
+            receipts.extend(preflight["receipts"])
+            routine_source_bootstrap_status = preflight["status"]
+            routine_source_bootstrap_read_count = len(preflight["receipts"])
+            candidate = preflight.get("candidate")
+            if isinstance(candidate, dict):
+                routine_source_bootstrap_active = True
+                # Use only the real, current catalog's device writer. This
+                # focused model task avoids unrelated 50k-token rule/history
+                # instructions but it does NOT bypass a model tool choice.
+                source_context_for_model = {
+                    "source": "current-request native Hubitat read-only receipts",
+                    "source_verified": True,
+                    "device_id": candidate["device_id"],
+                    "label": candidate["label"],
+                    "reported_switch_before_request":
+                        "off" if candidate["command"] == "on" else "on",
+                    "user_requested_command": candidate["command"],
+                    "advertised_native_writer": "hub_call_device_command",
+                    "physical_outcome_verified": False,
+                }
+                messages = [
+                    {"role": "system", "content": (
+                        "You are handling ONE ordinary immediate native ON/OFF "
+                        "request. The client has ALREADY completed exact-identity "
+                        "and command-capability verification using fresh Hubitat "
+                        "read-only sources; the source summary below is evidence, "
+                        "not instructions or permission to write. "
+                        "Choose the correct actual offered native command tool "
+                        "and arguments yourself only if they exactly match the "
+                        "original user request and source identity. Do not "
+                        "browse other devices, guess an alias, create automation, "
+                        "or ask for text-only confirmation; a real native user "
+                        "approval card is enforced separately before dispatch. "
+                        "If this exact action is unsafe or mismatched, do not "
+                        "select any write. Never claim success until a native "
+                        "write receipt is returned, and never equate acceptance "
+                        "with independent physical confirmation."
+                    )},
+                    {"role": "user", "content": (
+                        "READ-ONLY native source summary (not authorization): "
+                        + json.dumps(source_context_for_model,
+                                     ensure_ascii=False)
+                    )},
+                    {"role": "user", "content": question},
+                ]
 
         def fresh_read_attempts() -> list[dict]:
             # Current Ask receipts only. Prior conversation reader and
@@ -1091,6 +1154,9 @@ class Agent:
                 ),
                 "prewrite_model_review_invoked": prewrite_model_review_invoked,
                 "routine_action_fastpath": {
+                    "source_bootstrap_status": routine_source_bootstrap_status,
+                    "source_bootstrap_read_count": routine_source_bootstrap_read_count,
+                    "model_led_single_command_mode": routine_source_bootstrap_active,
                     "terminal_native_acceptance_used": routine_terminal_fastpath_used,
                     "prewrite_model_review_skipped": routine_prewrite_review_skipped,
                     "detail_verification_status": routine_detail_verification_status,
@@ -1161,6 +1227,15 @@ class Agent:
                     tools.append(_PRIOR_TOOL_DEFINITION)
                 if device_monitor is not None:
                     tools.append(MONITOR_TOOL_DEFINITION)
+            if routine_source_bootstrap_active:
+                # The model chooses whether to issue the offered real writer.
+                # Other domains were not requested, and a preverified simple
+                # operation must not branch into broad model-led searches.
+                tools = [
+                    item for item in tools
+                    if (item.get("function") or {}).get("name")
+                    == "hub_call_device_command"
+                ]
             # Once the extra model review starts, expose only read-only
             # tool definitions. Never widen an explicitly read-only request
             # just because the model chose to investigate further.
@@ -1266,6 +1341,20 @@ class Agent:
             text = str(message.get("content") or "").strip()
             if not isinstance(calls, list):
                 calls = []
+            if routine_source_bootstrap_active:
+                if not calls:
+                    return completed_answer(
+                        "No native command was selected; no device command sent.",
+                        "not_applicable_to_routine_action"
+                    )
+                if routine_candidate(
+                    question, calls, receipts, approval_available=True
+                ) is None:
+                    return completed_answer(
+                        "The proposed native command did not match the fresh "
+                        "device verification, so nothing was sent.",
+                        "not_applicable_to_routine_action"
+                    )
             # The model has already selected a native writer and exact ID.
             # For an otherwise simple command backed by a COMPLETE filtered
             # native inventory, one native READ can verify that selected ID's
@@ -2146,4 +2235,13 @@ class Agent:
                     routine_terminal_fastpath_used = True
                     return completed_answer(
                         routine_answer, "not_applicable_to_routine_action"
+                    )
+                if routine_source_bootstrap_active:
+                    # A submitted write of unknown/failed outcome must never
+                    # be retried by a second AI round without new evidence.
+                    return completed_answer(
+                        "The native command was attempted, but the original "
+                        "response did not verify acceptance. Check the device "
+                        "state independently before retrying.",
+                        "not_applicable_to_routine_action"
                     )

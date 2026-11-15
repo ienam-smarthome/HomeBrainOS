@@ -1,5 +1,9 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 15 November 2026 — alpha.114 source-first native routine target discovery
+
+The alpha.113 post-proposal verification path did not help when model discovery itself went wrong, producing 11 model rounds for one native ON. Alpha.114 introduces a strict source-first read-only preflight for exact uncomplicated ON/OFF, using current MCP label-filtered search, bounded adjacent word join variants and one live detail proof of ID, advertised command, ordinary Light/Outlet capability and reported opposite state. It then provides only the correct native writer tool schema to the model, which must still select the command and pass original source and real approval checks. No direct text-to-write dispatch or approval bypass. Diagnostics include source-bootstrap status and read counts. Timers, policy controls, compound writes and unknown effects remain unchanged; V1 untouched. [Details](HOMEBRAIN-V2-ALPHA114-SOURCE-FIRST-ROUTINE-20261115.md).
+
 ## 15 November 2026 — alpha.113 narrowed read-only native verification step
 
 Alpha.112 fastpath preserved review in the actual request because it required original full hub_get_device and prohibited waitFor. Alpha.113 accepts strictly matching optional waitFor and performs only a bounded, separately tagged read-only current device-detail verification for a model-selected exact simple switch command backed by a complete filtered inventory with unambiguous target and ordinary Light/Outlet capability. Identity, advertised command and reported opposite state are checked again from original native details. The selected writer and native approval gate are untouched; a native accepted and converged original command can produce a short, truthful terminal acknowledgement without further model round. No V1 changes or live speed claims. [Contract](HOMEBRAIN-V2-ALPHA113-WAITFOR-VERIFIED-FASTPATH-20261115.md).
