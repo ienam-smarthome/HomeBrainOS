@@ -1,5 +1,9 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 15 November 2026 — alpha.117 postwrite current-state observation with monotonic timing
+
+The first installed alpha.116 results meet the local routine no-extra-click acceptance: 4.49s OFF, 6.14s ON, one AI round and native accepted writer each, but no independent post-command state read. Alpha.117 adds one read-only source-scoped hub_get_device call AFTER native acceptance (1.35s cap) to report the subsequently observed Hubitat value, or honestly mark mismatch/unavailable. The write snapshot still is not later readback; later reported state still does not prove physical effect or unique initiator. Original source proof, model-selected command, permission/authorisation and complex investigation flows are unchanged. Same-monotonic-clock stage offsets and tagged source receipts support honest latency breakdown. [Details](HOMEBRAIN-V2-ALPHA117-BOUNDED-ROUTINE-READBACK-20261115.md).
+
 ## 15 November 2026 — alpha.116 parent-source-qualified native component lights
 
 Real alpha.115 approval friction was traced to a legitimate native Light+Switch+SwitchLevel device reported as a virtual component behind a parent. Alpha.115's virtual-block blanket was overly broad. Alpha.116 recognises only strict native component dimmer/light/bulb children and verifies a separately reported native physical Matter/Zigbee/Z-Wave lighting bridge parent ID, label, role and provenance with bounded read-only original MCP calls before waiving the extra approval. Ordinary standalone lights remain handled as before. No virtual generic switches or sensitive operations gain the exemption, no upfront write is generated from text, and native permissions and request cancellation remain intact. Synthetic regression tests cannot guarantee a real parent source will qualify. [Detail](HOMEBRAIN-V2-ALPHA116-BRIDGED-COMPONENT-LIGHTS-20261115.md).
