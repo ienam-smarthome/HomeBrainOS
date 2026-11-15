@@ -589,7 +589,7 @@ class ComponentBridgeLiveShapeTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["routine_native_authorization"]
                         ["automatic_authorization_used"])
         self.assertIn("OFF command accepted", result["answer"])
-        self.assertIn("not independently verified", result["answer"])
+        self.assertIn("has not been independently verified", result["answer"])
 
     async def test_unverified_virtual_parent_keeps_actual_approval_card(self):
         for kwargs in (
