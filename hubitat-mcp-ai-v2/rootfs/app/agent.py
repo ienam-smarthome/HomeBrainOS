@@ -13,7 +13,8 @@ from typing import Any
 import httpx
 
 from mcp import MCPError, MCPContractError, MCPClient, redact, is_tool_catalog
-from interaction import needs_confirmation
+from interaction import Interaction, needs_confirmation
+from native_action_contract import source_derived_timing_answer
 from action_intent_guard import automation_write_requires_confirmation, rule_activation_outcome
 from one_off_rule_policy import (
     rule_pre_dispatch_issue, requested_temporal_scope, scoped_request_text,
@@ -948,6 +949,20 @@ class Agent:
                     question, answer, receipts
                 )
             verified_answer = verification.get("answer", answer)
+            # Keep precise native delayed-onset/duration meanings and honest
+            # write-receipt scope in the published answer. Pure output-only,
+            # based on successful same-request native device/write receipts.
+            # Never change the model-selected operation or its approval.
+            action_contract = source_derived_timing_answer(
+                question, verified_answer, receipts
+            ) if native_action_receipts_seen else {
+                "status": "not_applicable", "answer": verified_answer
+            }
+            verified_answer = action_contract.get("answer", verified_answer)
+            action_contract_meta = {
+                key: value for key, value in action_contract.items()
+                if key != "answer"
+            }
             verification_meta = {
                 key: value for key, value in verification.items()
                 if key != "answer"
@@ -956,6 +971,7 @@ class Agent:
                 "success": bool(verified_answer), "prior_receipts_used": prior_receipts,
                 "answer": verified_answer or "The model returned an empty answer.",
                 "structured_history_verification": verification_meta,
+                "action_semantics_verification": action_contract_meta,
                 "action_performance": {
                     "model_reported_ms": round(sum(
                         m["total_ms"] for m in model_round_metrics
@@ -1650,6 +1666,15 @@ class Agent:
                     if automation_approval_required:
                         automation_confirmation_requests += 1
                     if before_call is not None:
+                        # The bound, per-request UI interaction receives
+                        # current native device-detail receipts only for
+                        # source-verified DISPLAY identity. This does not
+                        # edit tool arguments, choose commands, or approve.
+                        approval_owner = getattr(before_call, "__self__", None)
+                        if isinstance(approval_owner, Interaction):
+                            approval_owner.register_current_native_device_details(
+                                receipts
+                            )
                         approval_started = time.monotonic()
                         try:
                             await asyncio.wait_for(
