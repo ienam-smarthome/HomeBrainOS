@@ -60,7 +60,7 @@ def _requested(question: str) -> tuple[str, str] | None:
     direction, target = match.group(1).lower(), match.group(2).strip()
     if not target or _UNSAFE_TARGET_CLAUSE.search(target):
         return None
-    return direction, " ".join(target.split()).casefold()
+    return direction, _normal(target)
 
 
 def _arguments(call: dict) -> tuple[str, dict] | None:
@@ -91,7 +91,9 @@ _CONTEXT_ENTRY = re.compile(
 
 
 def _normal(text: str) -> str:
-    return " ".join(text.split()).casefold()
+    # Normalize conventional word separators for device labels without
+    # guessing a synonym, device class, alias or target identifier.
+    return re.sub(r"[\\s_-]+", "", text).casefold()
 
 
 def _selected(question: str, calls: list[dict], *, approval_available: bool):
