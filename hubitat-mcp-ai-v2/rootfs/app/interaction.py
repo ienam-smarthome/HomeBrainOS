@@ -10,6 +10,9 @@ from mcp import MCPError, redact
 from action_intent_guard import automation_write_requires_confirmation
 from action_proposal_review import is_native_action_proposal
 from native_action_contract import verified_device_details, numeric_minutes, timing_kind
+from routine_approval_policy import (
+    source_verified_auto_approval_class, matches_original_native_write,
+)
 
 
 def needs_confirmation(value) -> bool:
@@ -110,8 +113,15 @@ def action_preview(name: str, arguments: dict, effect: str, *, verified_devices:
 
 
 class Interaction:
-    def __init__(self, *, require_native_write_approval: bool = False):
+    def __init__(self, *, require_native_write_approval: bool = False,
+                 auto_approve_lights: bool = False,
+                 trusted_safe_switch_ids: frozenset[str] = frozenset()):
         self.require_native_write_approval = require_native_write_approval
+        self.auto_approve_lights = auto_approve_lights is True
+        self.trusted_safe_switch_ids = frozenset(trusted_safe_switch_ids)
+        self._routine_proof: dict | None = None
+        self.routine_auto_approval_used = False
+        self.routine_auto_approval_class: str | None = None
         self.current = None
         self.pending = None
         self._decision = None
@@ -128,6 +138,7 @@ class Interaction:
     def invalidate(self) -> None:
         """Superseded requests lose all native approval authority immediately."""
         self._cancelled = True
+        self._routine_proof = None  # Request cannot reuse original Ask authority.
         self.phase = {"kind": "cancelled"}
         if self._decision is not None and not self._decision.done():
             self._decision.cancel()
@@ -142,6 +153,32 @@ class Interaction:
     def register_current_native_device_details(self, receipts: list[dict]) -> None:
         """Source-only display registry for this particular Ask/approval."""
         self._verified_devices = verified_device_details(receipts)
+
+    def offer_current_ask_routine_authorization(
+        self, candidate: dict | None, receipts: list[dict],
+    ) -> bool:
+        """Single-use, exact-native-writer authorization for this current Ask.
+
+        The agent must first verify the current original request against its
+        model-selected native tool and fresh ORIGINAL native MCP receipts.
+        This does not create, select, submit, or rewrite a tool. It cannot be
+        used by another request or after any native write submission.
+        """
+        self._routine_proof = None
+        if (self._cancelled or self.native_write_submission_started
+                or not self.require_native_write_approval):
+            return False
+        allowed_class = source_verified_auto_approval_class(
+            candidate, receipts, auto_lights=self.auto_approve_lights,
+            safe_switch_ids=self.trusted_safe_switch_ids,
+        )
+        if allowed_class is None:
+            return False
+        self._routine_proof = {
+            "candidate": copy.deepcopy(candidate),
+            "class": allowed_class,
+        }
+        return True
 
     def status(self) -> dict:
         return {"current": self.current, "pending": self.pending,
@@ -164,6 +201,24 @@ class Interaction:
         structured_write = (is_native_action_proposal(name, arguments, [])
                             if self.require_native_write_approval else False)
         explicit_confirmation = needs_confirmation(arguments)
+        # Consume the proof on the VERY NEXT native call, whether or not its
+        # name/args match. Extra/changed writes can never inherit permission.
+        proof = self._routine_proof
+        self._routine_proof = None
+        if (structured_write and not automation_write
+                and not explicit_confirmation
+                and not self.routine_auto_approval_used
+                and isinstance(proof, dict)
+                and matches_original_native_write(
+                    proof["candidate"], name, arguments
+                )):
+            self.routine_auto_approval_used = True
+            self.routine_auto_approval_class = proof["class"]
+            self.set_phase(
+                "approved",
+                detail="Original Ask authorised verified routine native command",
+            )
+            return
         if not (explicit_confirmation or automation_write or structured_write):
             return
         effect = action_effect_class(name, arguments,
