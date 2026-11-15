@@ -1,5 +1,9 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 15 November 2026 — V2 alpha.120 merged and synthetic gates verified
+
+[PR #1678](https://github.com/ienam-smarthome/HomeBrainOS/pull/1678) merged into `main` at **0dade9e41f06d15ea047dee46893e4cc1ca7400f** after all 11 final-head GitHub checks completed successfully: V2 native/pilot suite, full Python test suite, metadata, image/container smoke, UI screenshot capture, scorecard integrity and validation. The first CI attempt failed solely on six stale alpha.119 version-string assertions, fixed in the final PR commit; the new original-receipt temporal tests passed. The result does **not** establish installed α.120 12-hour coverage, causal correctness, latency improvement or the permanent charter's general first-answer targets. Next: installed uncoached read-only PRIVATE first-answer review, then held-out cross-domain source-sufficiency and inference-efficiency work. V1 and live hub configurations were not changed.
+
 ## 15 November 2026 — V2 alpha.120 evidence-preserving first-answer candidate (PR acceptance pending)
 
 Installed alpha.119 private first answer on a 12-hour focal heating→idle question was scored **6/8** (grounding 2, source coverage 1, causal calibration 2, usefulness 1), improving on the preceding alpha.118 2/8 case. The alpha.119 typed final projection refused an unverified focal transition and unsupported cause, but lost inspectable positive focal setpoint/temperature/valve and independent peer thermostat-mode OFF context. Native MCP 6/6 successful; five historical reads, no Monitor read, capped/truncated history, 9 AI rounds, 843,879 input tokens, 55.8s server duration. Focal event-time and execution cause remain **unknown**; 12-hour coverage not demonstrated.
