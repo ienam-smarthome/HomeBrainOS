@@ -26,11 +26,13 @@ class FakeNativeModel:
     def __init__(self):
         self.submissions = []
         self.started = []
+        self.prepare_flags = []
         self.writes_started = asyncio.Event()
 
     async def answer(self, question, history, mcp, deadline, before_call=None,
                      **kwargs):
         self.started.append(question)
+        self.prepare_flags.append(bool(kwargs.get('prepare_action', False)))
         if question == "OLD pending approval":
             await before_call(
                 "hub_call_device_command",
@@ -85,6 +87,16 @@ class SupersessionHttpTests(unittest.IsolatedAsyncioTestCase):
                 state._state[key] = value
             else:
                 state._state.pop(key, None)
+
+    async def test_prepare_action_preserves_user_intent(self):
+        original = "Turn off fictional reading lamp"
+        response = await self.client.post("/api/ask", headers=UI_HEADERS, json={
+            "request_id": str(uuid4()), "question": original,
+            "history": [], "prepare_action": True,
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.model.started[-1], original)
+        self.assertIs(self.model.prepare_flags[-1], True)
 
     async def start_old(self, question):
         rid = str(uuid4())
