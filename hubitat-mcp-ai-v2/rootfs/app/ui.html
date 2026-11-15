@@ -499,7 +499,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
  <span class="voice-privacy">Voice input may use a browser speech service.</span>
  <label class="voice-toggle" for="readAnswers"><input id="readAnswers" type="checkbox" onchange="toggleAutoRead(this.checked)">Read replies aloud</label>
 </div>
-<details class="session-note evidence-disclosure"><summary>Conversation and privacy</summary><p>Conversation stays in this open page only. Follow-ups include an index of earlier sources and redacted excerpts. The AI can inspect older receipts in chunks when needed. Live-state questions and new actions still require fresh verification. Evidence is memory-only.</p></details>
+<details class="session-note evidence-disclosure"><summary>Conversation and privacy</summary><p>Every new Ask or Speak starts a fresh conversation with no earlier chat or source receipts. Starting another question ends the previous request and revokes any pending approval; an in-flight native write may still have an uncertain downstream outcome. The assistant cannot authorise a change from old text. Evidence is memory-only and never uploaded automatically.</p></details>
 </div>
 </div><div class="answer-feed" id="answerFeed" aria-label="Newest answers first" aria-live="polite"><p class="feed-empty" id="feedEmpty">Your conversation starts here <span>Ask a question, request an action, or use the microphone. Answers and source evidence appear here.</span></p>
 <div class="card live-activity" id="activityCard" hidden><h2>Active operation <small>actual native MCP activity</small></h2><pre id="activity" class="activity-raw"></pre><ol id="activityTrace" class="work-steps"></ol>
@@ -684,7 +684,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 </section>
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.109";
+const UI_VERSION="2.0.0-alpha.110";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let activeAskController=null, askGeneration=0;
