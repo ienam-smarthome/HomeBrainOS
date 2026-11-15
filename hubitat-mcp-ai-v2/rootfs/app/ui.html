@@ -493,6 +493,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
  <label class="sr-only" for="question">Ask HomeBrain a question</label>
  <textarea id="question" aria-label="Your question" placeholder="Ask HomeBrain…" rows="2" spellcheck="true"></textarea>
  <button id="send" type="submit" class="primary" disabled>Ask</button>
+ <button id="cancelAsk" type="button" hidden onclick="void cancelCurrentAsk()" title="Stop the active request and invalidate pending approval">Cancel</button>
 </form>
 <div class="command-footer"><span id="voiceStatus" class="voice-status" role="status" aria-live="polite">Enter to send · Shift+Enter for new line · / to focus</span>
  <span class="voice-privacy">Voice input may use a browser speech service.</span>
@@ -686,6 +687,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 const UI_VERSION="2.0.0-alpha.109";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
+let activeAskController=null, askGeneration=0;
 let conversationId=newRequestId();
 let lastAnswer=null,technicalDetails=null,configuredModel=null,turns=[];
 let lastUnpreparedQuestion=null;
@@ -1244,8 +1246,10 @@ async function checkMonitorSource(){
 let observedActivitySteps=[],activityFingerprint='',requestStartedAt=0;
 function syncCommandBar(){
  const q=byId('question'),button=byId('send');
- const ready=!!q.value.trim()&&!activeRequest;
+ const ready=!!q.value.trim();
  button.disabled=!ready;button.classList.toggle('is-ready',ready);
+ button.textContent=activeRequest?'Ask · New chat':'Ask';
+ byId('cancelAsk').hidden=!activeRequest;
  if(q.style){q.style.height='auto';q.style.height=Math.min(138,Math.max(47,q.scrollHeight||47))+'px';}
 }
 function toggleStatusPill(){
@@ -1403,6 +1407,13 @@ async function pollActivity(){
  try{
   const d=await readJson('api/activity/'+requestId);
   if(activeRequest!==requestId)return;
+  const phase=d.phase?.kind;
+  if(phase==='queued')byId('requestSummary').textContent='Queued for model access — you can start another Ask or Speak.';
+  else if(phase==='catalog')byId('requestSummary').textContent='Checking connected MCP catalog…';
+  else if(phase==='model')byId('requestSummary').textContent='Working · '+String(d.phase.detail||'AI model inference')+'…';
+  else if(phase==='native_call')byId('requestSummary').textContent='Waiting for a native MCP tool response…';
+  else if(phase==='awaiting_approval')byId('requestSummary').textContent='Approval required — review the card above or start a new chat.';
+  else if(phase==='approved')byId('requestSummary').textContent='Approved; checking native submission…';
   byId('activityCard').hidden=!(d.current||d.pending);
   byId('activity').textContent=d.current?JSON.stringify(d.current,null,2):'';
   observedActivity(d.current);
@@ -1597,37 +1608,125 @@ function dismissUnqueuedAction(){
  if(activeRequest)return;
  lastUnpreparedQuestion=null;byId('unpreparedAction').hidden=true;
 }
+// A new Ask/Speak is an independent chat: never inherit old prose,
+// attached tool receipts, pending approvals or an old request's result.
+function resetFreshAskConversation(){
+ const oldConversation=conversationId;
+ conversationId=newRequestId();
+ messages=[];turns=[];renderTurns();
+ byId('olderExchanges').replaceChildren();
+ byId('conversationHistory').hidden=true;
+ void readJson('api/conversation/clear',{method:'POST',
+  headers:{'Content-Type':'application/json','X-Homebrain-Request':'1'},
+  body:JSON.stringify({conversation_id:oldConversation})}).catch(()=>{});
+}
+async function invalidateActiveAsk(requestId){
+ // Critical: server approval is invalidated BEFORE the old fetch is
+ // aborted. An old model response must never authorise a new chat's write.
+ const result=await readJson('api/activity/'+requestId+'/cancel',{
+  method:'POST',headers:{'X-Homebrain-Request':'1'}
+ });
+ if(activeRequest===requestId){
+  if(activeAskController)activeAskController.abort();
+  activeAskController=null;
+  activeRequest=null;pendingApproval=null;
+  byId('approval').hidden=true;byId('activityCard').hidden=true;
+  syncCommandBar();
+ }
+ return result;
+}
+async function cancelCurrentAsk(){
+ const requestId=activeRequest;
+ if(!requestId)return;
+ const token=++askGeneration;
+ byId('requestSummary').textContent='Cancelling the old request and approval…';
+ try{
+  const result=await invalidateActiveAsk(requestId);
+  if(token!==askGeneration)return;
+  byId('requestSummary').textContent=result.native_write_outcome_unknown?
+   'Request stopped. A native write may have been submitted; check its actual device state before retrying.':
+   'Request stopped. No pending approval remains. You may Ask or Speak again.';
+  byId('answer').textContent='Cancelled. No answer or tool result from this request will be reused.';
+  byId('responseTime').textContent='Stopped';
+  byId('question').focus();
+ }catch(error){
+  if(token!==askGeneration)return;
+  byId('requestSummary').textContent='Unable to verify cancellation: '+String(error.message||error)+
+    '. Do not assume the earlier native action was stopped.';
+ }
+}
 async function submitAsk(){
- let q=byId('question').value.trim();if(!q||activeRequest)return;
- // "Proceed" after a completed TEXT confirmation cannot approve anything.
- // Reissue a fresh request through native read + normal write approval.
+ let q=byId('question').value.trim();if(!q)return;
+ const token=++askGeneration;
  if(lastUnpreparedQuestion&&/^(?:proceed|yes|confirm|go ahead|do it)$/i.test(q)){
   q=preparedActionQuestion(lastUnpreparedQuestion);
-  byId('question').value=q;
  }
- syncCommandBar();const send=byId('send');if(send.disabled)return;
- archivePriorExchange();send.disabled=true;
- clearResult();byId('newConversation').disabled=true;
- byId('currentExchange').hidden=false;byId('feedEmpty').hidden=true;
- observedActivitySteps=[];activityFingerprint='';byId('activityTrace').replaceChildren();
- if(!await loadStatus()){
-  showResult(q,'Unable to start: check the interface status above.',null,0,
-   {type:'preflight',message:byId('state').textContent},null);
-  send.disabled=false;byId('newConversation').disabled=false;return;
+ // A busy Ask is superseded only after its server-side gate is revoked.
+ // Do not start a second write while old approval is still authoritative.
+ const previousRequest=activeRequest;
+ if(previousRequest){
+  byId('requestSummary').textContent='Ending previous Ask and invalidating its approval…';
+  try{
+   const stopped=await invalidateActiveAsk(previousRequest);
+   if(token!==askGeneration)return;
+   if(stopped.native_write_outcome_unknown){
+    byId('voiceStatus').textContent='Earlier native write might have been submitted. Verify device state before repeating an action.';
+   }
+  }catch(error){
+   if(token!==askGeneration)return;
+   byId('requestSummary').textContent='New Ask not started: cancellation could not be verified. '+String(error.message||error);
+   return;
+  }
  }
- activeRequest=newRequestId();byId('requestSummary').textContent='Working — selecting tools and gathering evidence…';byId('requestQuestion').hidden=false;byId('requestQuestion').textContent=q;pendingApproval=null;byId('approvalError').textContent='';
+ if(token!==askGeneration)return;
+ resetFreshAskConversation();
+ clearResult();byId('question').value=q;
+ const requestId=newRequestId(),controller=new AbortController();
+ activeAskController=controller;activeRequest=requestId;
  const started=performance.now();requestStartedAt=started;
- const activityTimer=setInterval(pollActivity,750);
- const responseTimer=setInterval(()=>{byId('responseTime').textContent='Waiting: '+((performance.now()-started)/1000).toFixed(1)+' s';},250);
- byId('answer').classList.remove('muted');byId('answer').textContent='Investigating with native MCP tools…';byId('receipts').textContent='Fetching…';
- try{const d=await readJson('api/ask',{method:'POST',headers:{'Content-Type':'application/json','X-Homebrain-Request':'1'},body:JSON.stringify({request_id:activeRequest,conversation_id:conversationId,question:q,history:messages.slice(-12)})});
-  showResult(q,d.answer||'No answer returned.',d,performance.now()-started);
-  messages.push({role:'user',content:q},{role:'assistant',content:d.answer||''});
-  if(d.success&&readAnswers&&d.answer)void speakAnswer(d.answer);
- }catch(e){
-  showResult(q,'Request failed: '+e.message,null,performance.now()-started,{type:'transport',message:e.message});
+ byId('currentExchange').hidden=false;byId('feedEmpty').hidden=true;
+ byId('requestQuestion').hidden=false;byId('requestQuestion').textContent=q;
+ byId('requestSummary').textContent='Starting a fresh Ask…';
+ byId('answer').classList.remove('muted');
+ byId('answer').textContent='Checking native MCP tools…';
+ byId('receipts').textContent='Fetching…';
+ byId('approvalError').textContent='';
+ observedActivitySteps=[];activityFingerprint='';byId('activityTrace').replaceChildren();
+ pendingApproval=null;syncCommandBar();
+ const activityTimer=setInterval(()=>{if(activeRequest===requestId)void pollActivity();},750);
+ const responseTimer=setInterval(()=>{
+  if(activeRequest!==requestId)return;
+  const duration=((performance.now()-started)/1000).toFixed(1);
+  byId('responseTime').textContent=
+   (pendingApproval?'Awaiting approval: ':'Waiting: ')+duration+' s';
+ },250);
+ try{
+  if(!await loadStatus()){
+   if(activeRequest===requestId)
+    showResult(q,'Unable to start: check the interface status above.',null,0,
+     {type:'preflight',message:byId('state').textContent},requestId);
+   return;
+  }
+  if(activeRequest!==requestId||token!==askGeneration)return;
+  const data=await readJson('api/ask',{method:'POST',signal:controller.signal,
+   headers:{'Content-Type':'application/json','X-Homebrain-Request':'1'},
+   body:JSON.stringify({request_id:requestId,conversation_id:conversationId,
+    question:q,history:[]})});
+  if(activeRequest!==requestId||token!==askGeneration)return;
+  showResult(q,data.answer||'No answer returned.',data,performance.now()-started,null,requestId);
+  if(data.success&&readAnswers&&data.answer)void speakAnswer(data.answer);
+ }catch(error){
+  if(activeRequest===requestId&&token===askGeneration&&error.name!=='AbortError')
+   showResult(q,'Request failed: '+error.message,null,performance.now()-started,
+    {type:'transport',message:error.message},requestId);
+ }finally{
+  clearInterval(activityTimer);clearInterval(responseTimer);
+  if(activeRequest===requestId){
+   activeRequest=null;activeAskController=null;pendingApproval=null;
+   byId('activityCard').hidden=true;byId('approval').hidden=true;
+   syncCommandBar();
+  }
  }
- finally{clearInterval(activityTimer);clearInterval(responseTimer);activeRequest=null;pendingApproval=null;byId('activityCard').hidden=true;byId('approval').hidden=true;byId('newConversation').disabled=false;syncCommandBar();}
 }
 
 // V1 Speak and answer playback, isolated from agent/MCP tool semantics.
@@ -1659,7 +1758,6 @@ function stopVoice(send=false){
 }
 function startVoice(){
  if(activeRecognition){stopVoice(true);return;}
- if(byId('send').disabled&&activeRequest){voiceMessage('Finish the current request before speaking.');return;}
  stopAudio();
  const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
  if(!Recognition){
@@ -1688,7 +1786,7 @@ function startVoice(){
   activeRecognition=null;voiceSendOnStop=false;
   byId('speak').textContent='🎤';byId('speak').classList.remove('listening');
   byId('speak').setAttribute('aria-pressed','false');
-  if(shouldSend&&byId('question').value.trim()&&!activeRequest){
+  if(shouldSend&&byId('question').value.trim()){
    voiceMessage('Sending spoken question…');void submitAsk();
   }else if(shouldSend&&!byId('question').value.trim()){
    voiceMessage('Voice stopped: no speech recognised; nothing was sent.');
@@ -1934,14 +2032,20 @@ function renderTurns(){
  const box=byId('turns');box.replaceChildren();const previous=turns.slice(0,-1);byId('conversationHistory').hidden=!previous.length;
  for(const turn of previous){const item=document.createElement('div');item.className='previous-turn';const q=document.createElement('strong');q.textContent=turn.question;const a=document.createElement('pre');a.textContent=turn.answer;item.append(q,a);box.appendChild(item);}
 }
-function newConversation(){
- if(byId('send').disabled)return;
+async function newConversation(){
  stopVoice();stopAudio();
- const oldConversation=conversationId;conversationId=newRequestId();
- void readJson('api/conversation/clear',{method:'POST',
-  headers:{'Content-Type':'application/json','X-Homebrain-Request':'1'},
-  body:JSON.stringify({conversation_id:oldConversation})}).catch(()=>{});
- messages=[];turns=[];clearResult();renderTurns();byId('question').value='';byId('answer').textContent='';
+ const token=++askGeneration,old=activeRequest;
+ if(old){
+  try{await invalidateActiveAsk(old);}
+  catch(error){
+   if(token===askGeneration)byId('requestSummary').textContent=
+    'Cannot safely end previous Ask: '+String(error.message||error);
+   return;
+  }
+ }
+ if(token!==askGeneration)return;
+ resetFreshAskConversation();
+ clearResult();byId('question').value='';byId('answer').textContent='';
  byId('olderExchanges').replaceChildren();byId('currentExchange').hidden=true;byId('feedEmpty').hidden=false;
  observedActivitySteps=[];byId('activityTrace').replaceChildren();syncCommandBar();
  byId('rawAnswer').textContent='No answer yet.';byId('requestQuestion').hidden=true;byId('requestQuestion').textContent='';byId('requestSummary').textContent='New conversation. Previous prose and stored MCP evidence are cleared.';byId('question').focus();
