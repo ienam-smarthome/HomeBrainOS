@@ -42,7 +42,7 @@ class NativeLifecycleTests(unittest.TestCase):
                  ' This will be sent after UI approval.')
         answer = unprepared_answer(state, draft)
         self.assertIn("**No action queued.**", answer)
-        self.assertIn("there is nothing to approve", answer)
+        self.assertIn("No device command was sent", answer)
         self.assertNotIn('"name":"hub_call_device_command"', answer)
         self.assertNotIn("will be sent after UI approval", answer)
 

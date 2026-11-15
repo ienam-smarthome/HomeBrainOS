@@ -204,7 +204,7 @@ async def lifecycle(app: FastAPI):
             await app.state.model.close()
 
 
-app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.110", lifespan=lifecycle)
+app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.111", lifespan=lifecycle)
 app.include_router(benchmark_router)
 app.include_router(autonomous_router)
 app.include_router(reasoning_router)
@@ -230,6 +230,7 @@ class AskRequest(BaseModel):
     request_id: UUID = Field(default_factory=uuid4)
     conversation_id: UUID | None = None
     question: str = Field(min_length=1, max_length=10000)
+    prepare_action: bool = False  # explicitly selected new retry; NOT write consent
     history: list[dict] = Field(default_factory=list, max_length=20)
 
 
@@ -481,6 +482,7 @@ async def ask(request: AskRequest, http_request: Request):
                     prior_evidence=prior, prior_receipts=prior_count,
                     prior_reader=read_prior if request.conversation_id and indexed else None,
                     **monitor_kwargs,
+                    **({"prepare_action": True} if request.prepare_action else {}),
                 )
                 result["prior_sources_indexed"] = indexed
                 result["prior_evidence_reads"] = sum(

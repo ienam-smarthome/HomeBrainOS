@@ -1,5 +1,9 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 15 November 2026 — alpha.111 retry intent, actual native write classification and UI simplicity
+
+The latest installed alpha.110 direct-action retry was ultimately native-accepted after approval, but its reported lifecycle was `not_applicable`, because the UI prepended appended `read-only device evidence` prose into the original command and the conservative request classifier treated the whole thing as no-write. The first attempt had wasted ~10 seconds to reach a verbose no-action message. A second attempt took ~21.4 seconds, six model rounds, ~2.25 seconds approval waiting and ~290k prompt tokens. V2 alpha.111 preserves the unchanged original request, sends preparation as separate user-selected bool, gives internal model guidance without affecting original intent/authorization, and shortens no-action UI. The original native write approval and receipt correctness remains unchanged. Tests are synthetic, latency acceptance is pending; no incident-specific action rule. [Engineering note](HOMEBRAIN-V2-ALPHA111-CLEAN-ACTION-INTENT-20261115.md).
+
 ## 15 November 2026 — alpha.110 new chat supersedes an unanswered request
 
 The latest source-real alpha.109 first-answer review identifies a long approval wait: about 214.9 of 299.4 seconds were inside the live native write approval gate. The model contributed ~75.8 seconds. The request eventually received native command acceptance, but the existing single backend Ask lock and UI which disabled Ask/Speak/New chat kept the user trapped behind an unanswered prompt. A screenshot's "Evidence · 0 calls" reflected lack of completed streamed receipts, not proof that no native/model work had occurred.
