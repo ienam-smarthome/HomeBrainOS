@@ -35,7 +35,8 @@ from investigation_review import (
     review_kind, review_prompt, is_current_state_question,
     FINAL_CLAIM_AUDIT_PROMPT, should_audit_completion,
     final_claim_receipt_scope_index, CAUSAL_FOLLOW_THROUGH_PROMPT,
-    should_recheck_causal_evidence,
+    should_recheck_causal_evidence, FRESH_SOURCE_RECOVERY_PROMPT,
+    should_offer_fresh_source_recovery,
 )
 from config_evidence import config_source_map
 from device_monitor import TOOL_NAME as MONITOR_TOOL, TOOL_DEFINITION as MONITOR_TOOL_DEFINITION
@@ -815,7 +816,12 @@ class Agent:
               "reason or a physical cause. Native File Manager listings or "
               "incomplete file chunks do not verify archived measurements. "
               "The model owns source selection; no mandatory source order "
-              "or automatic history call is imposed."
+              "or automatic history call is imposed. Previous conversation "
+              "receipts are optional source-scoped context, not the full "
+              "current-request source index or an instruction to stop reading. "
+              "A user saying do not change anything prohibits WRITES, not "
+              "proportionate READ-ONLY observations, unless they also explicitly "
+              "prohibit source access."
         )
         history = [
             {"role": row["role"], "content": row["content"][:10000]}
@@ -836,6 +842,7 @@ class Agent:
         leaf_schema_discoveries = 0
         source_review_invoked = False
         source_review_kind = None
+        fresh_source_recovery_invoked = False
         causal_follow_through_invoked = False
         causal_follow_through_candidate = ""
         causal_review_receipt_count = -1
@@ -881,6 +888,17 @@ class Agent:
                     item.get("success") is False for item in receipts),
             })
 
+        def fresh_read_attempts() -> list[dict]:
+            # Current Ask receipts only. Prior conversation reader and
+            # catalog/clock lookups cannot prove that the target was observed.
+            return [
+                item for item in receipts if isinstance(item, dict)
+                and is_read_only_review_tool(item.get("name", ""))
+                and item.get("name") not in (
+                    _PRIOR_TOOL, _CATALOG_TOOL, CLOCK_TOOL
+                )
+            ]
+
         def completed_answer(answer: str, audit_status: str) -> dict[str, Any]:
             # Exact ALL-RETURNED-event requests get a typed, source-derived
             # chronology rather than an unverified model enumeration. This is
@@ -905,6 +923,13 @@ class Agent:
                 "leaf_schema_discoveries": leaf_schema_discoveries,
                 "source_review_invoked": source_review_invoked,
                 "source_review_kind": source_review_kind,
+                "fresh_source_recovery_invoked": fresh_source_recovery_invoked,
+                "fresh_source_recovery_status": (
+                    "not_invoked" if not fresh_source_recovery_invoked else
+                    "read_succeeded" if any(x.get("success") is True for x in fresh_read_attempts()) else
+                    "read_attempt_failed" if fresh_read_attempts() else
+                    "no_current_read_attempt"
+                ),
                 "causal_follow_through_invoked": causal_follow_through_invoked,
                 "causal_review_read_receipts_added": (
                     sum(row.get("success") is True
@@ -1320,7 +1345,17 @@ class Agent:
                         or ("current_state" if not receipts
                             and is_current_state_question(question) else None)
                     )
-                    if source_review_kind == "causal":
+                    fresh_source_recovery_invoked = should_offer_fresh_source_recovery(
+                        question, kind=source_review_kind,
+                        has_current_read_attempt=bool(fresh_read_attempts()),
+                        available_read_tools=bool(read_only_review_catalog(tools)),
+                        has_action_receipt=native_action_receipts_seen > 0,
+                    )
+                    if fresh_source_recovery_invoked:
+                        # Reuse this exact existing model-review round. No
+                        # compulsory source selection and no extra model pass.
+                        guidance = FRESH_SOURCE_RECOVERY_PROMPT
+                    elif source_review_kind == "causal":
                         causal_review_receipt_count = len(receipts)
                         # The index navigates ORIGINAL received source scope;
                         # it is not an independent receipt or evidence of a cause.
@@ -1368,6 +1403,10 @@ class Agent:
                     )
                 if (enable_source_review and enable_final_claim_audit
                         and source_review_kind not in ("action_outcome", "current_state")
+                        # An audit with NO new source after the recovery
+                        # opportunity only polishes unsupported prose.
+                        and not (fresh_source_recovery_invoked
+                                 and not fresh_read_attempts())
                         and should_audit_completion(
                             source_review_invoked=source_review_invoked,
                             already_audited=final_claim_audit_invoked,
@@ -1397,6 +1436,8 @@ class Agent:
                            if source_review_kind == "action_outcome"
                            else "not_applicable_to_current_state_review"
                            if source_review_kind == "current_state"
+                           else "skipped_no_fresh_read" if enable_final_claim_audit
+                           and fresh_source_recovery_invoked and not fresh_read_attempts()
                            else "skipped_low_time" if source_review_invoked
                            and enable_source_review else "not_invoked"),
                 )

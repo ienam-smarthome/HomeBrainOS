@@ -59,6 +59,7 @@ class StageTraceTests(unittest.IsolatedAsyncioTestCase):
         # This is an intentionally WRONG final scripted answer. Diagnostics must
         # expose this regression rather than labeling completed audit as correct.
         model = ScriptedAgent([
+            call("hub_list_device_events", {"deviceId": "SYN-9"}),
             answer("The synthetic bridge reported OFF; initiator unknown."),
             answer("No command issuer has been verified by these records."),
             answer("The synthetic event was definitely externally initiated."),
@@ -71,17 +72,19 @@ class StageTraceTests(unittest.IsolatedAsyncioTestCase):
             await model.close()
         self.assertTrue(result["final_claim_audit_invoked"])
         self.assertEqual(result["final_claim_audit_status"], "completed")
-        self.assertEqual(result["rounds"], 3)
+        self.assertEqual(result["rounds"], 4)
         self.assertEqual([row["stage"] for row in result["answer_stage_trace"]], [
             "pre_source_review", "pre_final_audit", "post_final_audit"])
         self.assertEqual([row["tool_receipts_seen"] for row in
-                          result["answer_stage_trace"]], [0, 0, 0])
+                          result["answer_stage_trace"]], [1, 1, 1])
         self.assertIn("initiator unknown", result["answer_stage_trace"][0]["answer"])
         self.assertIn("externally initiated",
                       result["answer_stage_trace"][-1]["answer"])
         self.assertEqual(result["answer"],
                          result["answer_stage_trace"][-1]["answer"])
-        self.assertEqual(mcp.calls, [])
+        self.assertEqual(mcp.calls, [
+            ("hub_list_device_events", {"deviceId": "SYN-9"})
+        ])
 
     async def test_review_can_add_an_independently_chosen_read(self):
         model = ScriptedAgent([
@@ -109,6 +112,7 @@ class StageTraceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_model_failure_preserves_pre_audit_draft_in_trace(self):
         model = ScriptedAgent([
+            call("hub_list_device_events", {"deviceId": "SYN-9"}),
             answer("Cause not established from synthetic receipts."),
             answer("No verified command issuer in returned samples."),
             RuntimeError("synthetic model timeout"),

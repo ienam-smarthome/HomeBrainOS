@@ -1,5 +1,10 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 15 November 2026 — alpha.104 zero-fresh-read recovery
+
+Installed alpha.103 source-real captures demonstrated the scoped verifier's valid zero-returned-switch-row projection and a separate failure in model-led initial source selection: a second read-only request reused unrelated prior receipts, invoked three cloud model rounds, and made no current-request native MCP calls. The LLM interpreted "do not change anything" as "no fresh tool calls" and the existing measurement review / final audit did not recover. Alpha.104 appends explicit read-only source-recovery guidance at the **existing** review round only if eligible current-request historical/causal/source verification has no observational source attempt. A true explicit no-read user restriction is honoured; past receipts are not current-request proof. If there is still no new read attempt, do not spend a final tool-free audit round on unsupported prose. Native catalog authority, model choice, tool permission, source scopes, privacy and action consent remain unchanged. CI does not prove Nemotron obeys this prompt. [Detailed design](HOMEBRAIN-V2-ALPHA104-FRESH-READ-RECOVERY-20261115.md).
+
+
 ## 15 November 2026 — alpha.103 mixed-scope source-verification
 
 Two owner-provided installed alpha.102 source-real first-answer traces completed normal targeted device inventory + native event history, but Nemotron selected `switch`-filtered six-hour event reads while also being asked to enumerate every command issuer. One result held eight returned switch rows and the other zero. Both were successful bounded native responses; neither supports a complete command inventory. Alpha.102's typed verifier correctly rejected exhaustive command coverage but incorrectly replaced the entire state timeline with a generic unverified refusal, suppressing valid returned rows. The underlying cloud final audit completed in both cases; no write effects or source tool errors were recorded. The separate Hub & Device Monitor was offered but unused.
