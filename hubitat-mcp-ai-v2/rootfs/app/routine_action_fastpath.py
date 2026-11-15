@@ -86,7 +86,7 @@ def _arguments(call: dict) -> tuple[str, dict] | None:
 # never a client-selected writer or an authority to skip approval.
 _CONTEXT_ENTRY = re.compile(
     r"^- (?P<label>.+) \((?P<id>[A-Za-z0-9_-]{1,40}), [^\r\n()]*\) - "
-    r"(?P<capabilities>[^;\r\n]+); (?P<states>[^\r\n]*)$"
+    r"(?P<capabilities>[^;\r\n]+)(?:; (?P<states>[^\r\n]*))?$"
 )
 
 
@@ -146,7 +146,7 @@ def _context_devices(doc: dict) -> list[dict] | None:
             return None
         capabilities = {v.strip() for v in match["capabilities"].split(",")}
         states = {}
-        for item in match["states"].split(","):
+        for item in (match["states"] or "").split(","):
             key, sep, value = item.strip().partition("=")
             if sep:
                 states[key.strip()] = value.strip()
