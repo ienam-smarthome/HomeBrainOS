@@ -169,7 +169,7 @@ class UIContracts(unittest.TestCase):
             'duration>400&&activeRecognition',
             '@media(prefers-color-scheme:light)',
             '@media(prefers-reduced-motion:reduce)',
-            '2.0.0-alpha.113',
+            '2.0.0-alpha.114',
         ):
             self.assertIn(needle, HTML, needle)
         # System Health owns the inventory; chat stays a full-width conversation.
@@ -210,7 +210,7 @@ class UIContracts(unittest.TestCase):
             'Array.isArray(response?.answer_stage_trace)',
             'observed_after_ms',
             'Original MCP receipt',
-            'UI_VERSION="2.0.0-alpha.113"',
+            'UI_VERSION="2.0.0-alpha.114"',
             "api/activity/",
             'pendingApproval.effect_class',
             'void submitAsk()',
