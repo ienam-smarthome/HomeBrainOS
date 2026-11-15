@@ -237,7 +237,7 @@ _PROSE_CONFIRMATION = re.compile(
     r"(?:would|do)\s+you\s+(?:like|want)\s+me\s+to\s+proceed|"
     r"before\s+I\s+(?:proceed|execute)|"
     r"await(?:ing)?\s+(?:your\s+)?(?:confirmation|approval)|"
-    r"need\s+(?:your\s+)?(?:confirmation|approval))\\b",
+    r"need\s+(?:your\s+)?(?:confirmation|approval))\b",
     re.IGNORECASE,
 )
 

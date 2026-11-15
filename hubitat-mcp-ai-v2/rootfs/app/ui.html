@@ -507,7 +507,16 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 <article class="card answer-card" id="currentExchange" hidden>
 <div class="row answer-heading"><h2>Latest answer</h2><span id="copyStatus" class="copy-status right" role="status" aria-live="polite" aria-atomic="true"></span><button id="readAnswer" disabled type="button" onclick="toggleAnswerAudio()">🔊 Read answer</button><button id="copyAnswer" disabled onclick="copyResult('answer')">Copy answer</button><button id="copyReview" disabled onclick="copyResult('review')">Copy for review</button></div>
 <div class="answer-meta"><p id="requestSummary" role="status" aria-live="polite">Your answer will appear here.</p><p id="responseTime" class="muted" aria-live="polite">Response time: —</p></div><p id="requestQuestion" hidden></p>
-<div id="answer" class="muted"></div><details class="work-trace-panel" id="completedTrace"><summary>Observed work trace</summary><ol id="completedTraceList" class="work-steps"></ol></details>
+<div id="answer" class="muted"></div>
+<div id="unpreparedAction" class="action-card" hidden role="group" aria-label="Action not prepared">
+ <h3>Action not queued</h3>
+ <p id="unpreparedActionNote">No device command has been queued or executed. A text reply such as “proceed” is not an approval.</p>
+ <div class="action-buttons">
+  <button id="prepareUnqueued" type="button" class="primary" onclick="prepareUnqueuedAction()">Prepare action</button>
+  <button id="editUnqueued" type="button" onclick="editUnqueuedAction()">Edit request</button>
+  <button id="dismissUnqueued" type="button" onclick="dismissUnqueuedAction()">Dismiss</button>
+ </div>
+</div><details class="work-trace-panel" id="completedTrace"><summary>Observed work trace</summary><ol id="completedTraceList" class="work-steps"></ol></details>
 <details class="evidence-panel"><summary id="evidenceSummary">Evidence · 0 calls</summary><div id="evidenceRows"></div><p class="private-warning">PRIVATE source evidence may contain device names, IDs, timestamps and household data. Inspect it before sharing.</p>
 <button id="copyTechnical" disabled onclick="copyResult('technical')">Copy technical details</button>
 <button id="downloadTechnical" disabled onclick="downloadTechnical()">Download PRIVATE JSON</button><details><summary>Full PRIVATE Technical JSON</summary><pre id="receipts">No tool calls yet.</pre></details></details><p class="live-review-note">For live review, ask normally, then Copy for review and paste into your review chat. This includes private Technical JSON; check before sharing. Nothing is uploaded automatically.</p>
@@ -679,6 +688,7 @@ const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let conversationId=newRequestId();
 let lastAnswer=null,technicalDetails=null,configuredModel=null,turns=[];
+let lastUnpreparedQuestion=null;
 let copyFeedbackTimer=null,copyAttempt=0;
 let ttsInfo={enabled:false};
 let cachedHealthOverview=null;
@@ -1437,6 +1447,8 @@ function resetCopyFeedback(){
  status.classList.remove('copy-status-error');
 }
 function clearResult(){
+ lastUnpreparedQuestion=null;
+ byId('unpreparedAction').hidden=true;
  stopAudio();
  resetCopyFeedback();
  lastAnswer=null;technicalDetails=null;configuredModel=null;
@@ -1457,6 +1469,18 @@ function showResult(question,answer,response,clientMs,error=null,requestId=activ
  byId('currentExchange').hidden=false;byId('feedEmpty').hidden=true;
  byId('answer').classList.remove('muted');byId('answer').replaceChildren(renderAnswer(answer));
  byId('rawAnswer').textContent=answer;
+ // An unqueued prose-only confirmation has NO native operation to approve.
+ // Only a fresh model-selected write may open the existing live approval card.
+ const unprepared=response?.action_selection?.status==='unprepared_confirmation';
+ lastUnpreparedQuestion=unprepared?question:null;
+ byId('unpreparedAction').hidden=!unprepared;
+ if(unprepared){
+  byId('unpreparedActionNote').textContent=
+   'No native action was queued or executed. Choose Prepare action to ask '+
+   'the model to select a supported native command; the separate Approve / '+
+   'Edit / Dismiss card appears only if a real write is pending. '+
+   'A chat “proceed” alone never authorises a write.';
+ }
  byId('requestQuestion').hidden=false;byId('requestQuestion').textContent=question;
  evidenceRows(response);completedWork(response);
  const calls=response?.tool_calls||[],failed=calls.filter(c=>c.success===false).length;
@@ -1527,8 +1551,42 @@ async function copyResult(which){
   if(attempt===copyAttempt)resetCopyFeedback();
  },copied?2600:4800);
 }
+function preparedActionQuestion(original){
+ // A retry is a NEW investigation, not approval of cached prose,
+ // an old native call, or an earlier device identity.
+ return original+'\nPrepare the requested action again from fresh native '+
+  'read-only device evidence. If a matching safe supported command exists, '+
+  'select that native MCP operation so the web UI can show its explicit '+
+  'approval card. Do not make an unrelated helper, claim execution, or '+
+  'stop at a text-only confirmation. Actual execution still requires '+
+  'the separate approval card.';
+}
+function prepareUnqueuedAction(){
+ if(activeRequest||!lastUnpreparedQuestion)return;
+ const original=lastUnpreparedQuestion;
+ byId('question').value=preparedActionQuestion(original);
+ syncCommandBar();
+ void submitAsk();
+}
+function editUnqueuedAction(){
+ if(activeRequest||!lastUnpreparedQuestion)return;
+ const original=lastUnpreparedQuestion;
+ dismissUnqueuedAction();
+ byId('question').value=original;
+ syncCommandBar();byId('question').focus();
+}
+function dismissUnqueuedAction(){
+ if(activeRequest)return;
+ lastUnpreparedQuestion=null;byId('unpreparedAction').hidden=true;
+}
 async function submitAsk(){
- const q=byId('question').value.trim();if(!q||activeRequest)return;
+ let q=byId('question').value.trim();if(!q||activeRequest)return;
+ // "Proceed" after a completed TEXT confirmation cannot approve anything.
+ // Reissue a fresh request through native read + normal write approval.
+ if(lastUnpreparedQuestion&&/^(?:proceed|yes|confirm|go ahead|do it)$/i.test(q)){
+  q=preparedActionQuestion(lastUnpreparedQuestion);
+  byId('question').value=q;
+ }
  syncCommandBar();const send=byId('send');if(send.disabled)return;
  archivePriorExchange();send.disabled=true;
  clearResult();byId('newConversation').disabled=true;
