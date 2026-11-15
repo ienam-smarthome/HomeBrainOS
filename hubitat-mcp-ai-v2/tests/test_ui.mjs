@@ -146,6 +146,22 @@ assert.equal(h.run('technicalDetails.error.type'),'transport');assert.equal(h.ru
 h.state.status.version='old';const count=h.askCalls;await h.run('submitAsk()');
 assert.equal(h.askCalls,count);assert.equal(h.el('responseTime').textContent,'Response time: not sent');
 assert.equal(h.run('technicalDetails.model'),null);assert.equal(h.run('technicalDetails.request_id'),null);
+// A new Prepare action is a fresh Ask with unchanged user intent.
+// No appended 'read-only device evidence' text may suppress action handling.
+const retry=harness();
+retry.el('question').value='Turn off fictional reading lamp';
+retry.state.result={success:true,answer:'No action queued',elapsed_ms:1000,
+ tool_calls:[{name:'hub_list_devices',success:true}],
+ action_lifecycle:{status:'not_prepared'},
+ action_selection:{status:'unprepared_confirmation',native_write_queued:false}};
+await retry.run('submitAsk()');
+assert.equal(retry.el('unpreparedAction').hidden,false);
+retry.run('prepareUnqueuedAction()');
+await new Promise(resolve=>setImmediate(resolve));
+assert.equal(retry.state.askBodies.at(-1).question,'Turn off fictional reading lamp');
+assert.equal(retry.state.askBodies.at(-1).prepare_action,true);
+assert.deepEqual(retry.state.askBodies.at(-1).history,[]);
+assert.notEqual(retry.state.askBodies.at(-1).conversation_id,retry.state.askBodies[0].conversation_id);
 const d=harness();d.el('question').value='One request';let release;
 d.state.pending=new Promise(resolve=>{release=resolve;});
 const first=d.run('submitAsk()');await new Promise(resolve=>setImmediate(resolve));
