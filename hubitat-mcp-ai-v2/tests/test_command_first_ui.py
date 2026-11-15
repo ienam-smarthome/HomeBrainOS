@@ -36,6 +36,22 @@ class ActionCards(unittest.IsolatedAsyncioTestCase):
         await task
         self.assertIsNone(interaction.pending)
 
+    async def test_numeric_native_parameters_visible_without_write(self):
+        interaction = Interaction(require_native_write_approval=True)
+        args = {"deviceId": "LAB-DEMO-TIMER", "command": "delayPolicy",
+                "parameters": [10]}
+        task = asyncio.create_task(interaction.before_call(
+            "hub_call_device_command", args, "Fictional future action"))
+        await asyncio.sleep(0)
+        self.assertIsNotNone(interaction.pending)
+        self.assertEqual(
+            interaction.pending["preview"]["fields"]["parameters"], "10")
+        self.assertEqual(
+            interaction.pending["preview"]["verb"], "delayPolicy")
+        interaction.decide(interaction.pending["id"], False)
+        with self.assertRaises(MCPError):
+            await task
+
     async def test_reads_have_no_approval_card(self):
         interaction = Interaction(require_native_write_approval=True)
         await interaction.before_call(

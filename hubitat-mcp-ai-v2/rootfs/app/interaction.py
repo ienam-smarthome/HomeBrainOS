@@ -72,6 +72,15 @@ def action_preview(name: str, arguments: dict, effect: str) -> dict:
             elif key in {"args", "settings"} and isinstance(value, dict):
                 visit(value, depth+1)
     visit(safe)
+    # Show numeric native command parameters in the actual approval card:
+    # minutes/level values must not be hidden while approving a write.
+    # This is a *display* of original proposal args, never new tool args.
+    if isinstance(safe, dict):
+        params = safe.get("parameters", safe.get("params"))
+        if (isinstance(params, list) and 0 < len(params) <= 5
+                and all(type(x) in (int, float) and -1e9 < x < 1e9
+                        for x in params)):
+            fields["parameters"] = ", ".join(str(x) for x in params)[:80]
     leaf = safe.get("tool") if isinstance(safe, dict) else None
     verb = (safe.get("command") or safe.get("operation")) if isinstance(safe, dict) else None
     if not verb and isinstance(safe.get("args"), dict):

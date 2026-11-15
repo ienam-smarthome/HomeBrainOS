@@ -1366,7 +1366,7 @@ function previewPendingAction(pending){
    'Structured native action pending. Verify the exact source arguments before approval.';
  const host=byId('approvalChips');host.replaceChildren();
  for(const [field,value] of Object.entries(preview?.fields||{})){
-  if(!['device','time','days'].includes(field)||typeof value!=='string')continue;
+  if(!['device','time','days','parameters'].includes(field)||typeof value!=='string')continue;
   const chip=document.createElement('label');chip.className='action-chip';chip.append(field+' ');
   const input=document.createElement('input');input.value=value;input.maxLength=90;
   input.setAttribute('data-field',field);input.setAttribute('aria-label','Proposed '+field);
