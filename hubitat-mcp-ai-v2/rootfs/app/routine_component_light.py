@@ -24,7 +24,13 @@ from routine_action_fastpath import _normal, _original
 _COMPONENT_DIMMER = re.compile(
     r"\bcomponent\b.*\b(?:dimmer|light|bulb)\b", re.IGNORECASE,
 )
-_BRIDGE_ROLE = re.compile(r"\b(?:bridge|lighting gateway)\b", re.IGNORECASE)
+_BRIDGE_ROLE = re.compile(r"\\b(?:bridge|lighting gateway)\\b", re.IGNORECASE)
+_PARENT_SENSITIVE_ROLE = re.compile(
+    r"\\b(?:internet|network|router|vpn|block|security|alarm|lock|"
+    r"thermostat|heating|boiler|hvac|camera|cctv|garage|door|gate|"
+    r"gas|water|pump|freezer|fridge|oven|power policy|mesh)\\b",
+    re.IGNORECASE,
+)
 _PHYSICAL_PARENT_PROTOCOLS = frozenset({"matter", "zigbee", "z-wave", "zwave"})
 
 
@@ -175,11 +181,13 @@ def verified_physical_bridge_parent(
         return False
     # A native physical bridge record, not a generic virtual/simulated hub.
     driver = str(row.get("driver") or "")
-    if "virtual" in driver.casefold():
+    parent_description = " ".join([
+        parent_label, driver, str(parent_doc.get("name") or "")
+    ])
+    if ("virtual" in driver.casefold()
+            or _PARENT_SENSITIVE_ROLE.search(parent_description)):
         return False
-    return bool(_BRIDGE_ROLE.search(
-        " ".join([parent_label, driver, str(parent_doc.get("name") or "")])
-    ))
+    return bool(_BRIDGE_ROLE.search(parent_description))
 
 
 def _original_read_receipt(name: str, args: dict, response: dict | None,
