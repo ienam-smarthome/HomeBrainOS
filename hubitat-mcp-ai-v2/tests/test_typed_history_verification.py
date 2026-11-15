@@ -177,7 +177,7 @@ class TypedHistoryProjectionTests(unittest.TestCase):
             ([receipt(reported_count=17)], "original_row_count_mismatch"),
             ([receipt(limit=18)], "source_row_limit_reached_or_ambiguous"),
             ([receipt(hours=4)], "requested_history_duration_not_read"),
-            ([receipt(attribute="switch")], "filtered_history_cannot_enumerate_commands"),
+            ([receipt(attribute="motion")], "read_filter_excludes_requested_state"),
             ([receipt(fake_rows() + [dict(name="switch", value="on", date="not-a-date")])],
              "state_row_unverifiable"),
             ([dict(base,response="{bad json")], "native_rows_unavailable"),
@@ -189,6 +189,54 @@ class TypedHistoryProjectionTests(unittest.TestCase):
                 self.assertEqual(r["reason"], reason)
                 self.assertNotIn("BAD MODEL", r["answer"])
                 self.assertIn("cannot verify an exhaustive",r["answer"])
+
+
+    def test_filtered_state_history_is_preserved_with_explicit_command_limit(self):
+        # A successful, filtered native read confirms state rows, NOT an
+        # exhaustive command inventory. Never discard good state evidence.
+        states = [row for row in fake_rows() if row["name"] == "switch"]
+        source = receipt(states, attribute="switch")
+        result = verify_and_project_history(
+            QUESTION, "No commands occurred; just six transitions.", [source]
+        )
+        self.assertEqual(result["status"], "source_ledger_used")
+        self.assertEqual(result["source_event_rows"], 8)
+        self.assertEqual(result["selected_state_rows"], 8)
+        self.assertEqual(result["source_command_rows"], 0)
+        self.assertEqual(
+            result["command_verification_status"],
+            "unverified_attribute_filtered_history",
+        )
+        answer = result["answer"]
+        self.assertIn("**8 returned switch reports**", answer)
+        self.assertIn("27.887s", answer)
+        self.assertIn("31.980s", answer)
+        self.assertIn("**Command coverage not verified:**", answer)
+        self.assertIn("not establish that no commands", answer)
+        self.assertNotIn("No commands occurred", answer)
+        self.assertNotIn("cannot verify an exhaustive returned-event timeline", answer)
+        self.assertIn("Nominal query end", answer)
+
+    def test_filtered_zero_row_history_keeps_bounded_negative(self):
+        source = receipt([], attribute="switch")
+        result = verify_and_project_history(
+            QUESTION, "No switch events or commands occurred.", [source]
+        )
+        self.assertEqual(result["status"], "source_ledger_used")
+        self.assertEqual(result["source_event_rows"], 0)
+        self.assertEqual(result["selected_state_rows"], 0)
+        self.assertEqual(
+            result["command_enumeration_scope"], "filtered_rows_only"
+        )
+        self.assertIn("**0 returned switch reports**", result["answer"])
+        self.assertIn("**Command coverage not verified:**", result["answer"])
+        self.assertNotIn("No switch events or commands occurred", result["answer"])
+
+    def test_unverified_telemetry_does_not_fabricate_zero_source_rows(self):
+        source = receipt(fake_rows(), attribute="motion")
+        result = verify_and_project_history(QUESTION, "DRAFT", [source])
+        self.assertEqual(result["status"], "unverified")
+        self.assertIsNone(result["source_event_rows"])
 
     def test_no_matching_rows_is_bounded_negative(self):
         r=verify_and_project_history(

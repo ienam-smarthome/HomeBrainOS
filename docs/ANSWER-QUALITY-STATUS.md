@@ -1,5 +1,12 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 2026-11-15 — alpha.102 live mixed-scope refusal; alpha.103 scoped projection
+
+Two owner-supplied installed alpha.102 first-answer traces showed successful targeted native `switch`-filtered histories (one with eight returned state rows, one with zero). The original source could not establish a complete command inventory, so the strict typed verifier replaced even the valid source-backed state findings with generic unverified refusals (`filtered_history_cannot_enumerate_commands`). Both tests completed five Nemotron cloud rounds and zero recorded writes; the separate Hub & Device Monitor archive was offered but not queried. The issue is an answer-scope contract failure, not a device/controller malfunction or a measured provider accuracy rate.
+
+Alpha.103 separates independently verifiable state chronology from unverified command enumeration: the typed ledger preserves every safe returned state row, exact intervals and source window, reports a bounded zero-row result when appropriate, and explicitly refuses to claim all commands from an attribute-filtered query. Telemetry now records true parsed row counts on verified projections and uses null, not a misleading zero, when the verifier cannot establish a source count. No compulsory read, additional cloud round, write, V1 or provider change. CI is synthetic; independently measure installed first-answer quality on a NEW read-only history request and ordinary non-exhaustive model-led control. [Engineering scope](HOMEBRAIN-V2-ALPHA103-SCOPED-RECEIPT-VERIFICATION-20261115.md).
+
+
 ## 2026-11-14 — alpha.101 live exhaustive history FAILED; alpha.102 typed projection pending
 
 An owner-supplied alpha.101 first-answer exploratory test asked for all returned ON/OFF history, times/intervals and command issuers. The native unfiltered event receipt succeeded with 30 rows against a 500-row limit, while the model listed only six of eight `switch` reports, combined two distinct short ON intervals into one long interval, omitted two of seven command rows, and inverted causally relevant command-versus-state ordering. Its requested six-hour boundary also disagreed with the native returned `sinceTimestamp`. Both existing source review and final audit ran over five cloud model rounds (~45s) without recovering the errors. The previous reviewer scored 3/8. Correct device selection and zero writes remain positive. No independent live physical verification is claimed. The original PRIVATE receipts are not committed.
