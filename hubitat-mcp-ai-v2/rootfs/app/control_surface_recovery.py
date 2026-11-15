@@ -227,3 +227,108 @@ and distinguish a scheduled future transition from one later observed.
 This is internal model guidance, not a new user request or permission grant.
 Do not mention an internal follow-through check in your answer.
 """
+
+
+# A model's free-text request for approval does not create a native pending
+# operation. A later "proceed" is a NEW Ask and cannot approve that prose.
+_PROSE_CONFIRMATION = re.compile(
+    r"\b(?:please\s+(?:confirm|approve)|"
+    r"once\s+you\s+(?:confirm|approve)|"
+    r"(?:would|do)\s+you\s+(?:like|want)\s+me\s+to\s+proceed|"
+    r"before\s+I\s+(?:proceed|execute)|"
+    r"await(?:ing)?\s+(?:your\s+)?(?:confirmation|approval)|"
+    r"need\s+(?:your\s+)?(?:confirmation|approval))\\b",
+    re.IGNORECASE,
+)
+
+
+def prose_only_action_confirmation(question: str, answer: str) -> bool:
+    """A NEW explicit imperative was deferred to plain text, not a UI card."""
+    return (
+        is_explicit_device_imperative(question)
+        and isinstance(answer, str)
+        and bool(_PROSE_CONFIRMATION.search(answer))
+    )
+
+
+def _has_fresh_device_command_details(receipts: list[dict]) -> bool:
+    """Current-request real device-detail receipt; never a source of routing.
+
+    The model still chooses any command/target. This gate merely avoids
+    prompting a model to write from a broad inventory, old context, or prose.
+    """
+    import json
+    for row in receipts:
+        if (not isinstance(row, dict)
+                or row.get("name") != "hub_get_device"
+                or row.get("success") is not True
+                or row.get("result_kind") != "tool_result"):
+            continue
+        args = row.get("arguments")
+        if not isinstance(args, dict) or args.get("deviceId") is None:
+            continue
+        try:
+            envelope = json.loads(row["response"])
+            content = envelope.get("content")
+            original = json.loads(next(
+                x["text"] for x in content if isinstance(x, dict)
+                and x.get("type") == "text"
+            ))
+        except (KeyError, ValueError, TypeError, StopIteration):
+            continue
+        if (not isinstance(original, dict)
+                or str(original.get("id", "")) != str(args["deviceId"])):
+            continue
+        commands = original.get("commands")
+        if (isinstance(commands, list)
+                and any(isinstance(item, dict)
+                        and isinstance(item.get("name"), str)
+                        and item.get("name") for item in commands)):
+            return True
+    return False
+
+
+def should_recover_action_approval_handoff(
+    question: str, draft_answer: str, receipts: list[dict], *,
+    available_tools: set[str], already_prompted: bool,
+    has_native_write_attempt: bool, remaining_seconds: float,
+    ui_approval_available: bool, source_review_invoked: bool,
+) -> bool:
+    """Use ONE model round to turn a prose-only confirmation into a tool proposal.
+
+    Does not select/execute any native operation; the prewrite checkpoint,
+    UI approval card and upstream permissions all remain mandatory.
+    """
+    return (
+        ui_approval_available and not already_prompted
+        and not has_native_write_attempt and not source_review_invoked
+        and remaining_seconds > 12
+        and "hub_call_device_command" in available_tools
+        and prose_only_action_confirmation(question, draft_answer)
+        and _has_fresh_device_command_details(receipts)
+    )
+
+
+ACTION_APPROVAL_HANDOFF_PROMPT = """Native write approval handoff (internal).
+Your previous answer requested confirmation in prose, but it did NOT queue a
+native MCP operation. The user cannot approve that prose by typing "proceed":
+the existing web UI only presents Approve / Edit / Dismiss while a REAL
+model-selected native write is awaiting its separate authorization gate.
+
+The original user already made an imperative request; that is sufficient
+to PROPOSE the correct native tool call, NOT to bypass UI approval. Review
+the fresh original hub_get_device detail receipt, advertised commands,
+target/effect and the exact delay/duration semantics. If and only if the
+requested effect is unambiguous, supported and safely identified, emit the
+appropriate currently advertised native MCP tool call NOW. The client will
+hold any write for explicit UI approval. Do not request permission in prose
+again when the missing step is just the native approval card.
+
+Do not guess a command, convert delayed-onset into duration, create a
+helper/variable/automation unnecessarily, or assume any unexecuted earlier
+proposal was sent. If a genuinely different permission or clarification is
+needed, describe it exactly instead of submitting an unverified action.
+Never claim a block, timer or state change occurred without a successful
+native write receipt. This review does not authorize execution.
+Do not mention this internal checkpoint to the user.
+"""
