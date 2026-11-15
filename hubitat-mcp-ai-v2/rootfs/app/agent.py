@@ -47,6 +47,9 @@ from control_surface_recovery import (
 )
 from evidence_scope import model_result_with_scope
 from typed_history_verification import verify_and_project_history
+from temporal_transition_verification import (
+    temporal_transition_evidence, verify_recent_transition,
+)
 from source_progress import current_source_progress
 from investigation_review import (
     should_review_completion,
@@ -1052,6 +1055,17 @@ class Agent:
                     question, answer, receipts
                 )
             verified_answer = verification.get("answer", answer)
+            # LAST event-of-type claims require same-device before/after
+            # receipts; a peer or truncated result cannot fill that gap.
+            # Output-only: no additional native read, write or model pass.
+            transition_verification = (
+                {"status": "not_applicable_to_action", "answer": verified_answer}
+                if native_action_receipts_seen else
+                verify_recent_transition(question, verified_answer, receipts)
+            )
+            verified_answer = transition_verification.get(
+                "answer", verified_answer
+            )
             # Keep precise native delayed-onset/duration meanings and honest
             # write-receipt scope in the published answer. Pure output-only,
             # based on successful same-request native device/write receipts.
@@ -1083,10 +1097,15 @@ class Agent:
                 key: value for key, value in verification.items()
                 if key != "answer"
             }
+            transition_meta = {
+                key: value for key, value in transition_verification.items()
+                if key != "answer"
+            }
             return {
                 "success": bool(verified_answer), "prior_receipts_used": prior_receipts,
                 "answer": verified_answer or "The model returned an empty answer.",
                 "structured_history_verification": verification_meta,
+                "temporal_transition_verification": transition_meta,
                 "action_semantics_verification": action_contract_meta,
                 "action_performance": {
                     "model_reported_ms": round(sum(
@@ -1773,6 +1792,23 @@ class Agent:
                         )
                     else:
                         guidance = review_prompt(source_review_kind)
+                    transition_index = temporal_transition_evidence(
+                        question, receipts
+                    )
+                    if transition_index["status"] != "not_applicable":
+                        # An original-receipt navigation aid, never evidence
+                        # of unseen rows or an assigned native tool choice.
+                        guidance += (
+                            "\n\nSource-derived focal transition audit "
+                            "(not independent proof):\n"
+                            + json.dumps(transition_index,
+                                         ensure_ascii=False)[:6500]
+                            + "\nIf the focal before/after pair is not "
+                              "inspectable, do not substitute a time from "
+                              "a peer device or a command event. Independently "
+                              "choose a discriminating offered READ-ONLY "
+                              "source if one is proportionate."
+                        )
                     messages.append({"role": "user", "content": guidance})
                     continue
                 # If the causal source review still ends at an unresolved
@@ -1799,7 +1835,12 @@ class Agent:
                         "role": "user",
                         "content": CAUSAL_FOLLOW_THROUGH_PROMPT
                                    + "\n\nReturned-receipt scope index (navigation only):\n"
-                                   + final_claim_receipt_scope_index(receipts),
+                                   + final_claim_receipt_scope_index(receipts)
+                                   + "\n\nTemporal focal-transition index:\n"
+                                   + json.dumps(
+                                       temporal_transition_evidence(question, receipts),
+                                       ensure_ascii=False
+                                   )[:6500],
                     })
                     continue
                 if final_claim_audit_invoked:
@@ -1809,6 +1850,13 @@ class Agent:
                         "completed" if text else "empty_response_fallback",
                     )
                 if (enable_source_review and enable_final_claim_audit
+                        # This explicit state-transition question is already
+                        # protected by source-derived typed final publication;
+                        # further tool-free model polishing cannot fill a
+                        # missing focal before/after source pair.
+                        and temporal_transition_evidence(
+                            question, receipts
+                        )["status"] == "not_applicable"
                         and source_review_kind not in ("action_outcome", "current_state")
                         # An audit with NO new source after the recovery
                         # opportunity only polishes unsupported prose.
