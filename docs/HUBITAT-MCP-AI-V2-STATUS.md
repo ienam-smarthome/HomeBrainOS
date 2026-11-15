@@ -1,5 +1,12 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 15 November 2026 — alpha.106 model text versus native UI approval
+
+The installed alpha.105 capture of an explicit delayed network-control request demonstrated a complete current-request native inventory + detail read and a correctly advertised timed native command, but no action attempt: the model proposed an unnecessary native variable creation, which was held by the prewrite review, then described the correct device command in prose and asked the user to "confirm". No `hub_call_device_command` receipt or `Interaction.pending` existed. The prior chat "proceed" could not approve this expired, unstructured text, even though the UI already had a proper approval card for *actual* native tool calls. This is distinct from the earlier corrected timing/source/approval safety defects.
+
+Alpha.106 recovers a prose-only confirmation with one bounded model-led source-informed round when the original user gave an imperative and a genuine current-request `hub_get_device` receipt reports available native commands. No native writer is chosen by the application, and no device command executes without the existing same-request approval. If the model declines, expose a selectable retry/edit/dismiss card with an honest "nothing queued" status; a later bare "proceed" enters a NEW verification-and-approval request, not replay of an expired action. Numeric tool parameters are shown during genuine approval. Exact-head CI and new installed acceptance needed. [Design and rollback](HOMEBRAIN-V2-ALPHA106-ACTION-APPROVAL-HANDOFF-20261115.md).
+
+
 ## 15 November 2026 — alpha.105 returned-event listing contract
 
 An installed alpha.104 six-hour Hallway Light state-history request independently selected correct native tools but published an incorrect switch chronology. The original successful receipt included 11 switch rows, 11 command-setLevel rows and three level reports (25 total); the final answer treated a level report as an OFF switch, omitted another OFF and attributed some switch changes directly to a command app. The requested timestamps and intervals were not delivered, despite source-review and final audit completion. The structured verifier was `not_applicable` because the user asked to **list the returned state changes** instead of saying **all/every returned**. The native call omitted `limit`, leaving upstream cap/page exhaustion unknown; its oldest returned event was not the beginning of the six-hour query.
