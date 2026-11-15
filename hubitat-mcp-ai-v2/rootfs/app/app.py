@@ -29,7 +29,7 @@ from device_monitor import HubDeviceMonitor
 from home_overview import OverviewUnavailable, read_overview
 from home_assistant_tts import HomeAssistantTTS, HomeAssistantTTSConfigurationError
 from mcp import MCPError, MCPClient
-from agent import InitialCatalogUnavailable
+from agent import Agent, InitialCatalogUnavailable
 from interaction import Interaction
 from one_off_cleanup import OneOffCleanup
 from conversation import ConversationEvidence
@@ -482,7 +482,8 @@ async def ask(request: AskRequest, http_request: Request):
                     prior_evidence=prior, prior_receipts=prior_count,
                     prior_reader=read_prior if request.conversation_id and indexed else None,
                     **monitor_kwargs,
-                    enable_routine_bootstrap=True,
+                    **({"enable_routine_bootstrap": True}
+                       if isinstance(app.state.model, Agent) else {}),
                     **({"prepare_action": True} if request.prepare_action else {}),
                 )
                 result["prior_sources_indexed"] = indexed
