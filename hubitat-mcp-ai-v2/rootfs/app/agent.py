@@ -1140,7 +1140,9 @@ class Agent:
                 "fresh_source_recovery_invoked": fresh_source_recovery_invoked,
                 "fresh_source_recovery_status": (
                     "not_invoked" if not fresh_source_recovery_invoked else
-                    "read_succeeded" if any(x.get("success") is True for x in fresh_read_attempts()) else
+                    "read_succeeded" if current_source_progress(
+                        receipts
+                    )["has_successful_current_source"] else
                     "read_attempt_failed" if fresh_read_attempts() else
                     "no_current_read_attempt"
                 ),
