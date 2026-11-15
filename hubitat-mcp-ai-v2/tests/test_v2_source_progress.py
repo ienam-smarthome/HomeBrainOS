@@ -179,7 +179,9 @@ class FailureAwareRecoveryIntegrationTests(unittest.IsolatedAsyncioTestCase):
                          ["successful_read_receipts"], 1)
         self.assertEqual(result["current_read_source_progress"]
                          ["failed_read_receipts"], 1)
-        self.assertIn("unknown", result["answer"])
+        self.assertIn("cannot verify an exhaustive returned-event timeline",
+                      result["answer"])
+        self.assertIn("No complete sequence", result["answer"])
 
     async def test_failure_then_prose_only_has_no_extra_claim_audit(self):
         hub = FakeSourceMCP()
@@ -205,7 +207,9 @@ class FailureAwareRecoveryIntegrationTests(unittest.IsolatedAsyncioTestCase):
             result["current_read_source_progress"]["failed_read_receipts"], 1)
         self.assertEqual(result["fresh_source_recovery_status"],
                          "read_attempt_failed")
-        self.assertIn("unverified", result["answer"])
+        self.assertIn("cannot verify an exhaustive returned-event timeline",
+                      result["answer"])
+        self.assertIn("No complete sequence", result["answer"])
 
 
 if __name__ == "__main__":
