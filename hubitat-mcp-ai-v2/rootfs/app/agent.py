@@ -18,6 +18,7 @@ from native_action_contract import source_derived_timing_answer
 from action_lifecycle import (
     inspect_action_lifecycle, unprepared_action_choices, unprepared_answer,
 )
+from routine_action_fastpath import routine_candidate, accepted_routine_answer
 from action_intent_guard import automation_write_requires_confirmation, rule_activation_outcome
 from one_off_rule_policy import (
     rule_pre_dispatch_issue, requested_temporal_scope, scoped_request_text,
@@ -889,6 +890,8 @@ class Agent:
         action_follow_through_invoked = False
         action_approval_handoff_invoked = False
         prewrite_model_review_invoked = False
+        routine_prewrite_review_skipped = False
+        routine_terminal_fastpath_used = False
         prewrite_unsent_proposals: list[dict[str, Any]] = []
         prewrite_no_fresh_evidence_rejections = 0
         one_off_rule_preflight_rejections = 0
@@ -1083,6 +1086,12 @@ class Agent:
                     lifecycle, ui_approval_available=before_call is not None
                 ),
                 "prewrite_model_review_invoked": prewrite_model_review_invoked,
+                "routine_action_fastpath": {
+                    "terminal_native_acceptance_used": routine_terminal_fastpath_used,
+                    "prewrite_model_review_skipped": routine_prewrite_review_skipped,
+                    "eligibility": "strict_original_device_and_intent",
+                    "no_independent_physical_readback": True,
+                },
                 "prewrite_unsent_proposals": prewrite_unsent_proposals,
                 "prewrite_dispatch_changed": prewrite_dispatch_changed,
                 "prewrite_dispatch_comparison": prewrite_dispatch_comparison,
@@ -1251,6 +1260,17 @@ class Agent:
             text = str(message.get("content") or "").strip()
             if not isinstance(calls, list):
                 calls = []
+            # The model selected this operation itself; no command is routed
+            # from user prose. Strict exact-target ORIGINAL hub_get_device
+            # evidence allows *only* routine on/off to skip a duplicate
+            # prewrite model round. The native approval/dispatch is unchanged.
+            routine_for_round = routine_candidate(
+                question, calls, receipts,
+                approval_available=before_call is not None,
+            ) if not source_review_invoked else None
+            if (routine_for_round is not None and enable_action_proposal_review
+                    and not prewrite_model_review_invoked):
+                routine_prewrite_review_skipped = True
             # A native action proposal has not executed merely because a
             # model emitted a tool-call draft. Before the first mutating tool
             # in a live UI request, give the SAME model one bounded chance to
@@ -1258,6 +1278,7 @@ class Agent:
             # source receipts. No tool is preselected or automatically called.
             # No orphaned assistant tool_calls are placed in model history.
             if (enable_action_proposal_review and calls and before_call is not None
+                    and routine_for_round is None
                     and not source_review_invoked
                     and not prewrite_model_review_invoked
                     and deadline - time.monotonic() > 12):
@@ -2031,3 +2052,16 @@ class Agent:
                 messages.append({
                     "role": "tool", "tool_name": name, "content": content,
                 })
+            # Only after the existing approval gate and original native MCP
+            # transport returned true acceptance, publish an evidence-limited
+            # terminal response. No post-write model round, tool replay, extra
+            # read, or assertion about the downstream physical switch state.
+            if routine_for_round is not None:
+                routine_answer = accepted_routine_answer(
+                    routine_for_round, receipts
+                )
+                if routine_answer is not None:
+                    routine_terminal_fastpath_used = True
+                    return completed_answer(
+                        routine_answer, "not_applicable_to_routine_action"
+                    )
