@@ -51,6 +51,31 @@ class ClaimFloorUnitTests(unittest.TestCase):
             [history_receipt()])
         self.assertEqual(r["reason"], "controller_decision_unverified")
 
+    def test_unbounded_absence_and_false_exclusivity_are_not_published(self):
+        for answer in (
+            "No manual commands or external triggers appear in the event history.",
+            "There is no record of any fixture output switching on this morning.",
+            "Only one verifiable activation occurred today.",
+            "No heating occurred in the morning.",
+        ):
+            with self.subTest(answer=answer):
+                self.assertEqual(
+                    causal_publication_floor("Why did it start?", answer,
+                                             [history_receipt()])["reason"],
+                    "unbounded_historical_absence",
+                )
+
+    def test_caveat_in_later_sentence_cannot_authorize_definite_cause(self):
+        answer = (
+            "The device turned on because the controller executed the rule. "
+            "The physical effect is unverified."
+        )
+        self.assertEqual(
+            causal_publication_floor("Why did it turn on?", answer,
+                                     [history_receipt()])["reason"],
+            "controller_decision_unverified",
+        )
+
     def test_scoped_source_limit_and_cautious_hypothesis_unchanged(self):
         for answer in (
             "No matching rows were returned in this query.",
