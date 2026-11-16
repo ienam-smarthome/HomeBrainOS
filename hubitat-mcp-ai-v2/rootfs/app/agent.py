@@ -62,6 +62,7 @@ from causal_outcome_frontier import (
     causal_outcome_frontier, OUTCOME_FIRST_CHECKPOINT,
 )
 from read_only_receipt_fallback import source_only_partial_answer
+from native_read_size_refusal import native_read_size_refusal
 from causal_claim_publication import causal_publication_floor
 from model_inventory_context import compact_inventory_context
 from investigation_review import (
@@ -2351,13 +2352,24 @@ class Agent:
                             first_native_write_response_received_elapsed_ms = round(
                                 (time.monotonic() - started) * 1000
                             )
-                    tool_error = bool(result.get("isError"))
+                    # A transport-successful READ may return only an upstream
+                    # response-size refusal, not the requested source rows.
+                    # Preserve original response; classify evidence failure
+                    # without routing a new tool, retrying, or altering writes.
+                    source_size_refusal = (
+                        native_read_size_refusal(result, name)
+                        if is_read_only_review_tool(name) else None
+                    )
+                    tool_error = bool(result.get("isError")) or bool(source_size_refusal)
                     record = {
                         "name": name, "arguments": redact(args),
                         "success": not tool_error,
                         "elapsed_ms": round((time.monotonic() - started_call) * 1000),
                     }
-                    if tool_error:
+                    if source_size_refusal is not None:
+                        record["error"] = "Native read returned response_too_large"
+                        record["source_limit"] = source_size_refusal
+                    elif tool_error:
                         record["error"] = "MCP tool reported isError"
                     if is_clock:
                         record["result_kind"] = "local_clock_read"
@@ -2397,6 +2409,8 @@ class Agent:
                     else:
                         record["result_kind"] = "tool_result"
                         model_result = self.present_native_result(result, args)
+                        if source_size_refusal is not None:
+                            model_result["client_source_limit"] = source_size_refusal
                         if (name == "hub_list_device_events"
                                 and "appId" in args
                                 and "deviceId" not in args):
