@@ -58,6 +58,7 @@ from investigation_source_ledger import (
 from causal_decision_frontier import (
     causal_controller_frontier, CONTROLLER_DECISION_CHECKPOINT,
 )
+from causal_read_opportunity import causal_read_opportunities
 from causal_outcome_frontier import (
     causal_outcome_frontier, OUTCOME_FIRST_CHECKPOINT,
 )
@@ -1989,11 +1990,24 @@ class Agent:
                             source_frontier=decision_frontier,
                             has_action_receipt=native_action_receipts_seen > 0,
                         ):
+                            # This is only a compact source-and-advertised-schema
+                            # navigation aid. It cannot select or execute reads.
+                            opportunities = causal_read_opportunities(
+                                receipts, read_only_review_catalog(tools)
+                            )
+                            concrete_sources = (
+                                "\n\nActual advertised read-only source options "
+                                "(navigation, NOT executed evidence or a plan):\n"
+                                + json.dumps(opportunities, ensure_ascii=False)[:3200]
+                                if opportunities and opportunities["advertised_source_tools"]
+                                else ""
+                            )
                             guidance = (
                                 CONTROLLER_DECISION_CHECKPOINT
                                 + "\n\nRecorded command-source navigation "
                                   "(not proof of a decision):\n"
                                 + json.dumps(decision_frontier, ensure_ascii=False)[:3800]
+                                + concrete_sources
                                 + "\n\n" + guidance
                             )
                     if source_review_kind == "historical_measurement":
@@ -2058,9 +2072,20 @@ class Agent:
                     causal_follow_through_invoked = True
                     causal_follow_through_candidate = text
                     capture_answer_stage("pre_causal_follow_through", text)
+                    opportunities = causal_read_opportunities(
+                        receipts, read_only_review_catalog(tools)
+                    )
+                    concrete_sources = (
+                        "\n\nAdvertised read-only tool contract and recorded issuer "
+                        "leads (not evidence that logs exist):\n"
+                        + json.dumps(opportunities, ensure_ascii=False)[:3200]
+                        if opportunities and opportunities["advertised_source_tools"]
+                        else ""
+                    )
                     messages.append({
                         "role": "user",
                         "content": CAUSAL_FOLLOW_THROUGH_PROMPT
+                                   + concrete_sources
                                    + "\n\nReturned-receipt scope index (navigation only):\n"
                                    + final_claim_receipt_scope_index(receipts)
                                    + "\n\nTemporal focal-transition index:\n"
