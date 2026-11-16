@@ -1,6 +1,6 @@
 # HomeBrainOS V2 alpha.123 — readable answers without losing evidence
 
-**Status:** code candidate until exact-head CI and merge; installed source-real acceptance and measured answer-quality improvement pending. V2 only. No V1, native API, device write, approvals, model routing or automatic source selection changes.
+**Status:** merged in [PR #1683](https://github.com/ienam-smarthome/HomeBrainOS/pull/1683) at `cb936fc26fe90cf1f1bba448a84b1323cac63ffa` after **11/11 exact-head CI checks green**. Installed source-real acceptance and measured answer-quality improvement remain pending. V2 only. No V1, native API, device write, approvals, model routing or automatic source selection changes.
 
 ## Source-real observation motivating this change
 
