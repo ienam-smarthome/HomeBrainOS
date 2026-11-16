@@ -5,11 +5,11 @@
 ## Verified problem
 
 An installed V2 alpha.133 first answer retrieved an original successful
-\`hub_list_device_events\` history for the named light with a source-attributed
-\`command-off\` and a later bridge-reported OFF state. The model overstated
+`hub_list_device_events` history for the named light with a source-attributed
+`command-off` and a later bridge-reported OFF state. The model overstated
 physical causation; the causal publication floor correctly withheld that
 definite claim, **but the source-only fallback discarded all native
-\`command-*\` rows**. The published answer therefore lost a genuinely
+`command-*` rows**. The published answer therefore lost a genuinely
 reported command issuer even though it had the receipt.
 
 This is a generic **partial-answer evidence-loss** defect, NOT proof that
@@ -20,15 +20,15 @@ change is not a scored accuracy improvement until installed live review.
 
 ## Implementation
 
-- Preserve original identity-bound native \`hub_list_device_events\`
+- Preserve original identity-bound native `hub_list_device_events`
   command rows. Support both the explicitly identified device envelope and
   the real upstream legacy shape where the requested device ID is carried
   only in the executed successful original tool arguments.
-- Accept only native \`command-[A-Za-z][A-Za-z0-9]*\` event names with
-  timezone-aware original event timestamps and optional \`type=command\`.
-  A recorded \`producedBy.appId\`, when an ordinary numeric ID, identifies
+- Accept only native `command-[A-Za-z][A-Za-z0-9]*` event names with
+  timezone-aware original event timestamps and optional `type=command`.
+  A recorded `producedBy.appId`, when an ordinary numeric ID, identifies
   **who issued the recorded command**, not their internal trigger.
-  A \`triggered[]\` observer, a bridge-reported state, current inventory
+  A `triggered[]` observer, a bridge-reported state, current inventory
   metadata or an arbitrary app-filtered event query never substitutes for
   command provenance.
 - Keep at most one most-recent example **per distinct command name** per
