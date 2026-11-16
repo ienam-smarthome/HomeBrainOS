@@ -1,6 +1,6 @@
 # HomeBrainOS V2 alpha.132 — System Health activity age and runtime snapshot
 
-**Status:** candidate, GitHub CI pending. No installed source-real acceptance claims.
+**Status:** merged [PR #1700](https://github.com/ienam-smarthome/HomeBrainOS/pull/1700) at `4284b84c8568cb48f7b2bb0aec07080b900a846a` after **4/4 exact-head CI workflows green**. Installed source-real acceptance remains outstanding.
 
 ## Scope and existing implementation
 

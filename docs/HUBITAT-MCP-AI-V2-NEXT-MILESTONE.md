@@ -1,5 +1,12 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## After alpha.132: validate System Health, then improve targeted non-LLM troubleshooting
+
+V2 alpha.132 [PR #1700](https://github.com/ienam-smarthome/HomeBrainOS/pull/1700) merged with four green exact-head workflows. New source-scoped >24h lastActivity card and cached model-free runtime/recorder/monitor status complement the existing V2 System Health tab. **Next installed check**: reload V2 Preview alpha.132, inspect names and timestamp coverage, distinguish quiet/sleepy devices from actual `healthStatus=offline`, check runtime's last saved-probe time and unprobed states, and verify tab changes/expansions do not add another MCP inventory request or LLM call. The initial inventory read remains one; the existing recorder schedule is unchanged.
+
+**Next build priority after installed checks:** a targeted troubleshooting view that reuses the selected snapshot and existing saved diagnostics, lets users inspect why an alert appears and see its timestamp/source coverage, and offers optional read-only investigation prompts only on demand. Do not create continuous scans, claim app-configured means connected, treat old lastActivity as a device fault, or re-enter unsupported causal prompt loops. V1, scheduler, native write approval, model routing and household data privacy remain unchanged. See [Engineering note](HOMEBRAIN-V2-ALPHA132-SYSTEM-HEALTH-FRESHNESS-20261116.md).
+
+
 ## Post-alpha.131 — develop System Health / Troubleshooting Center, not another causal prompt
 
 V2 alpha.131 [PR #1698](https://github.com/ienam-smarthome/HomeBrainOS/pull/1698) merged with 4/4 green exact-head workflows. It fixes a real native source-accounting defect (`response_too_large` transport success must NOT equal retrieved device data). The installed alpha.130 causal first answer failed to verify the shared output, instead choosing a participating TRV, despite existing output-first instructions; no measured cross-domain deterministic fix exists. Avoid another device-specific prompt patch or declaring the model's role-selection fixed.
