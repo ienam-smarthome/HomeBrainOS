@@ -37,7 +37,10 @@ button:disabled{opacity:.55;cursor:not-allowed}.toolbar{display:flex;gap:8px;fle
 textarea{min-height:130px;font:inherit;line-height:1.5}#answer{white-space:normal;line-height:1.7}#answer p{margin:10px 0}
 #answer h3{font-size:1.1rem;margin:22px 0 8px}#answer li{margin:5px 0}
 .answer-table-wrap{overflow:auto;max-width:100%;border:1px solid var(--edge);border-radius:10px;margin:16px 0}
-.answer-table-wrap table{border-collapse:collapse;width:100%;min-width:460px}
+.answer-table-wrap table{border-collapse:collapse;width:100%;min-width:460px;table-layout:auto}
+#answer .answer-table-wrap td,#answer .answer-table-wrap th{overflow-wrap:anywhere;white-space:normal;line-height:1.55}
+#answer .answer-table-wrap table[data-columns="2"] th:first-child{width:26%;min-width:120px}
+#answer .answer-table-wrap td code{white-space:normal;overflow-wrap:anywhere}
 th,td{text-align:left;padding:10px 13px;border-bottom:1px solid var(--edge);vertical-align:top}th{background:#203148}
 code{background:#101b2c;padding:2px 5px;border-radius:4px}pre code{padding:0}
 #answer .answer-timestamp{display:inline-block;max-width:100%;padding:2px 7px;
@@ -684,7 +687,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 </section>
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.122";
+const UI_VERSION="2.0.0-alpha.123";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let activeAskController=null, askGeneration=0;
@@ -1985,6 +1988,15 @@ function appendMathText(node,text){
  appendAnswerTimestampText(node,text.slice(at));
 }
 function appendInline(node,text){
+ // Only a literal legacy <br> token becomes a DOM line break. No HTML is
+ // interpreted: scripts and all other tags remain harmless visible text.
+ const parts=String(text).split(/<br\s*\/?\s*>/gi);
+ for(let i=0;i<parts.length;i++){
+  if(i)node.appendChild(document.createElement('br'));
+  appendInlineSegment(node,parts[i]);
+ }
+}
+function appendInlineSegment(node,text){
  const pattern=/(\x60[^\x60]+\x60|\*\*[^*]+\*\*|\*[^*]+\*)/g;let at=0;
  for(const match of text.matchAll(pattern)){
   appendMathText(node,text.slice(at,match.index));
@@ -2007,7 +2019,7 @@ function renderAnswer(value){
   const cells=tableCells(line),divider=tableCells(lines[i+1]||'');
   if(cells&&divider&&cells.length===divider.length&&divider.every(c=>/^:?-{3,}:?$/.test(c))){
    const wrap=document.createElement('div');wrap.className='answer-table-wrap';wrap.tabIndex=0;wrap.setAttribute('role','region');wrap.setAttribute('aria-label','Scrollable answer table');
-   const table=document.createElement('table'),head=document.createElement('thead'),tr=document.createElement('tr');for(const cell of cells){const th=document.createElement('th');th.scope='col';appendInline(th,cell);tr.appendChild(th);}head.appendChild(tr);table.appendChild(head);
+   const table=document.createElement('table'),head=document.createElement('thead'),tr=document.createElement('tr');table.setAttribute('data-columns',String(cells.length));for(const cell of cells){const th=document.createElement('th');th.scope='col';appendInline(th,cell);tr.appendChild(th);}head.appendChild(tr);table.appendChild(head);
    const body=document.createElement('tbody');i++;while(i+1<lines.length){const row=tableCells(lines[i+1]);if(!row||row.length!==cells.length)break;i++;const tr=document.createElement('tr');for(const cell of row){const td=document.createElement('td');appendInline(td,cell);tr.appendChild(td);}body.appendChild(tr);}table.appendChild(body);wrap.appendChild(table);root.appendChild(wrap);list=null;continue;
   }
   const bullet=line.match(/^[-*]\s+(.+)$/),number=line.match(/^\d+[.)]\s+(.+)$/);

@@ -31,6 +31,36 @@ Prefer named months to avoid ambiguity between UK day/month and US month/day.
 If the user asks for an original timestamp or machine-readable ISO, give it
 unchanged alongside any optional readable display.
 
+## Answer-first readability (all device types)
+
+Answer the user's question **before** showing the investigation. For ordinary
+status and history questions, start with one to three plain-English sentences
+stating the key observed value, state or event, a readable date/time where
+material, and the source limitation. Add only a few short bullets or small
+headings (e.g. **What the records show** and **What remains uncertain**) if
+needed. A small chronological comparison table is useful when the user asked
+for a list; do not use a large two-column evidence-audit table to present
+paragraphs, raw tool fields or an entire data grid. Avoid repeating the same
+conclusion in a second summary or narrating the internal review process.
+
+Do **not** put literal HTML tags such as `<br>`, fenced JSON, raw source
+payloads, schema keys or a long audit checklist in the main answer unless
+explicitly requested. Original source details remain in PRIVATE Technical
+JSON and the optional evidence disclosure; those must not be discarded or
+rewritten. Prefer a readable observation (e.g. **1 W at 9:01 am GMT**)
+to a raw timestamp/value object. Include exact seconds when competing events
+require them, without losing original precision in receipts.
+
+In a sampled-history explanation, distinguish an actually received report,
+a carried-forward value and an empty saved bin. Missing archive values alone
+do not prove a telemetry outage, device power-off or a continuous switch
+state. A current reported switch state does not establish its state throughout
+the historical interval. Describe an inferred mechanism (such as an appliance
+cycle) as consistent with the readings, not physically verified by them.
+Preserve genuinely relevant evidence, uncertainty, event issuers and source
+boundaries even while keeping the prose compact. This is a *presentation*
+contract, not automatic tool selection or permission to omit unresolved facts.
+
 This is presentation guidance, **not** a causal inference, missing-history
 fix, new source requirement, automatic reread, device-specific prompt or
 evidence transformer. Read-only chronology and source coverage must remain

@@ -374,6 +374,15 @@ If sufficient evidence already exists, answer with it. If no useful
 read-only source exists or history remains missing, state the verified
 coverage and what cannot be determined. Do not invent readings or perform
 actions. Do not mention this internal checkpoint.
+
+When composing the user-facing answer, lead with the direct finding and a
+short explanation of relevant evidence/gaps. Do NOT turn a compact answer
+into a long two-column evidence audit, put HTML <br> or JSON inside a
+Markdown table, repeat a summary or enumerate raw bin fields. Keep detailed
+technical source values in their original receipts. A current switch-state
+snapshot cannot establish the state throughout a historic power interval;
+missing saved bins cannot by themselves establish a paused telemetry stream,
+and power variation alone does not prove the appliance's internal mechanism.
 """
 
 
@@ -553,6 +562,12 @@ returned counts and source-derived limits. It is a NAVIGATION aid, not
 independent proof or a substitute for the original successful receipts.
 Read any conflicts against the original source and report uncertainty.
 Preserve positive findings, including verified issuers and direct readings.
+The final audit must **correct** unsupported claims without expanding a
+short user-facing answer into a raw evidence table, repeated technical
+checklist, fenced JSON or HTML line-break markup. Preserve the direct
+answer first, then concise source limits; leave full originals in PRIVATE
+receipts. Do not claim missing saved bins prove a reporting outage or a
+current switch state proves interval-long continuity.
 
 For causal questions, distinguish (a) a recorded state change,
 (b) the device/bridge reporting it, (c) a recorded command issuer if present,
