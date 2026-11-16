@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "rootfs" / "app"))
 from agent import Agent
 from investigation_source_ledger import (
     source_review_ledger, may_skip_unchanged_final_audit,
+    historical_source_frontier, HISTORICAL_SOURCE_TYPE_GAP_PROMPT,
 )
 
 
@@ -45,7 +46,88 @@ def history_receipt(*, events, limit=20, hours=12, cap=None):
     }
 
 
+
+def monitor_receipt(mode="status", *, device_id="LAB-1", metric="power",
+                    success=True, selected=True):
+    """Fictional monitor receipt; no real household/device/credentials."""
+    if mode == "status":
+        payload = {"read_only": True, "selected_devices": [
+            {"id": device_id, "has_power": True, "power_w": 0,
+             "power_fresh": False,
+             "last_monitor_power_event_at_utc": "2030-04-01T08:00:00Z"}
+        ] if selected else []}
+    else:
+        payload = {"read_only": True, "device_id": device_id,
+                   "metric": metric, "summary": {"expected_bin_positions": 72},
+                   "samples": []}
+    return {"name": "homebrain_read_device_monitor",
+            "arguments": {"mode": mode, **(
+                {"device_id": device_id, "metric": metric, "range": "6h"}
+                if mode == "history" else {})},
+            "success": success, "result_kind": "local_monitor_read",
+            "operation_executed": True,
+            "response": json.dumps({"local_device_monitor": payload})}
+
+
 class LedgerTests(unittest.TestCase):
+    def test_monitor_status_is_not_saved_history_for_zero_native_rows(self):
+        native = history_receipt(events=[], hours=6)
+        status = monitor_receipt()
+        original = json.dumps([native, status], sort_keys=True)
+        for receipts in ([native, status], [status, native]):
+            with self.subTest(order=receipts[0]["name"]):
+                scoped = historical_source_frontier(
+                    receipts, monitor_offered=True,
+                )
+                self.assertEqual(scoped["native_event_history_reads"], 1)
+                self.assertEqual(scoped["native_returned_event_rows"], 0)
+                self.assertEqual(scoped["monitor_latest_value_status_reads"], 1)
+                self.assertEqual(scoped["monitor_saved_history_successful_reads"], 0)
+                self.assertEqual(
+                    scoped["native_history_targets_selected_in_monitor_status"],
+                    ["LAB-1"],
+                )
+                self.assertTrue(scoped["status_only_historical_gap_for_model_review"])
+                self.assertTrue(scoped["no_monitor_history_read_does_not_prove_archive_empty"])
+                self.assertFalse(scoped["full_requested_window_or_continuous_state_verified"])
+                nav = json.loads(source_review_ledger(receipts, monitor_offered=True))
+                self.assertTrue(nav["historical_measurement_source_type_frontier"][
+                    "status_only_historical_gap_for_model_review"])
+        self.assertEqual(original, json.dumps([native, status], sort_keys=True))
+        self.assertIn("NOT query saved historical bins", HISTORICAL_SOURCE_TYPE_GAP_PROMPT)
+        self.assertIn("NOT proof", HISTORICAL_SOURCE_TYPE_GAP_PROMPT)
+        self.assertNotIn("LAB-1", HISTORICAL_SOURCE_TYPE_GAP_PROMPT)
+
+    def test_history_or_failed_attempt_does_not_pretend_status_closed_gap(self):
+        native = history_receipt(events=[], hours=6)
+        status = monitor_receipt()
+        history = monitor_receipt("history")
+        for receipts in ([native, status, history],
+                         [history, status, native]):
+            frontier = historical_source_frontier(receipts, monitor_offered=True)
+            self.assertEqual(frontier["monitor_saved_history_attempts"], 1)
+            self.assertEqual(frontier["monitor_saved_history_successful_reads"], 1)
+            self.assertFalse(frontier["status_only_historical_gap_for_model_review"])
+            self.assertFalse(frontier["full_requested_window_or_continuous_state_verified"])
+        failed = monitor_receipt("history", success=False)
+        frontier = historical_source_frontier([native, status, failed], monitor_offered=True)
+        self.assertEqual(frontier["monitor_saved_history_successful_reads"], 0)
+        self.assertEqual(frontier["native_history_targets_with_monitor_history_attempts"],
+                         ["LAB-1"])
+        self.assertFalse(frontier["status_only_historical_gap_for_model_review"])
+        self.assertTrue(frontier["no_monitor_history_read_does_not_prove_archive_empty"])
+
+    def test_unselected_or_unoffered_monitor_does_not_trigger_source_type_hint(self):
+        native = history_receipt(events=[], hours=6)
+        status = monitor_receipt(selected=False)
+        for offered in (False, True):
+            self.assertFalse(historical_source_frontier(
+                [native, status], monitor_offered=offered,
+            )["status_only_historical_gap_for_model_review"])
+        self.assertFalse(historical_source_frontier(
+            [native, monitor_receipt()], monitor_offered=False,
+        )["status_only_historical_gap_for_model_review"])
+
     def test_repeated_idle_reports_are_not_a_transition_or_full_window(self):
         rows = [
             {"name": "thermostatOperatingState", "value": "idle",
