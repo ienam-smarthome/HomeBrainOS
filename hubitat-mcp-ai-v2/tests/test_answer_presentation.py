@@ -20,6 +20,19 @@ class AnswerPresentationGuidanceTests(unittest.TestCase):
         self.assertNotIn("5313", guidance)
         self.assertNotIn("08:10:10.107+0000", guidance)
 
+    def test_answer_first_readability_is_general_and_evidence_safe(self):
+        path = Path(__file__).resolve().parents[1] / "rootfs" / "app" / "skills" / "hubitat" / "answer-presentation.md"
+        guidance = path.read_text(encoding="utf-8")
+        for phrase in (
+            "Answer-first readability", "plain-English sentences",
+            "two-column evidence-audit table", "fenced JSON",
+            "original source details", "carried-forward value",
+            "current reported switch state", "not physically verified",
+        ):
+            self.assertIn(phrase, guidance)
+        self.assertNotIn("deviceId=7105", guidance)
+        self.assertNotIn("Freezer", guidance)
+
     def test_source_reliability_not_overridden_by_presentation_skill(self):
         # Formatting instructions cannot become a fictional source or an
         # independent confirmation of a reported causal event.
