@@ -1,6 +1,6 @@
 # HomeBrainOS V2 alpha.127 — preserve source-grounded completion
 
-**Status:** candidate pending exact-head CI and merge. V2 only; never modifies V1, the heating scheduler, any smart-home device, automation permissions, write approval or the connected model route. Installed alpha.127 source-real quality and efficiency are NOT measured.
+**Status:** merged [PR #1690](https://github.com/ienam-smarthome/HomeBrainOS/pull/1690) at `93af6b34bdeb9ca660356ec00168ba746bad72bd` after **11/11 final-head CI checks green**. V2 only; never modifies V1, the heating scheduler, any smart-home device, automation permissions, write approval or the connected model route. Installed alpha.127 source-real quality and efficiency remain NOT measured.
 
 ## Motivation: PRIVATE installed alpha.126 first answer, 16 November 2026
 

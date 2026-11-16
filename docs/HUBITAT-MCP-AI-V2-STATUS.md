@@ -1,5 +1,10 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 16 November 2026 — alpha.127 merged, read-only answer resilience
+
+[PR #1690](https://github.com/ienam-smarthome/HomeBrainOS/pull/1690) merged at `93af6b34bdeb9ca660356ec00168ba746bad72bd` after **11/11 exact-head CI successes**. Native read-only source-event fallback responds with bounded positive original facts if the model later returns empty; clearly labelled partial with no proved cause/physical outcome. No recycling of unsound model draft, no fresh tool call or added AI round, no native write approval change, no V1 or scheduler edits. Model skill also avoids redundant broad history when a source-scoped answer is possible. Real installed alpha.127 validation pending; source-only fallback should remain exceptional, not replace a complete model-led investigation. [Engineering note](HOMEBRAIN-V2-ALPHA127-EVIDENCE-PRESERVING-COMPLETION-20261116.md).
+
+
 ## 16 November 2026 — alpha.127 candidate: evidence-preserving completion
 
 Installed alpha.126 failed to produce an answer after 10 successful reads, 12 model rounds and ~109s even though original primary output event reports had eventually been retrieved; its draft contained an unsupported schedule-caused explanation. V2-only alpha.127 candidate adds a sharply bounded emergency partial factual answer from actual successful native device-state histories on empty/error/deadline MODEL completion, labelled partial and with causes/physical outcome unverified; does not replay speculative drafts. Normal answers and write paths unchanged, and model remains in charge of source reads. Adds prompt-scope reuse guidance, without a new forced tool or fixed round cap. [Engineering note](HOMEBRAIN-V2-ALPHA127-EVIDENCE-PRESERVING-COMPLETION-20261116.md). CI and source-real acceptance pending; V1/heating scheduler unchanged.
