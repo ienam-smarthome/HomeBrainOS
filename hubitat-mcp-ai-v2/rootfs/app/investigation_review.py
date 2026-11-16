@@ -569,6 +569,17 @@ text cannot prove historical input values or which callback/timer fired.
 An enabled-but-unchecked backup/override/restriction input is not verified
 inactive at the focal time. Event-time alignment and a recorded command
 issuer are strong evidence, not proof of the controller's internal reason.
+When an ORIGINAL returned device event identifies an app as the command
+issuer, treat that as a useful proximate finding. For a WHY answer, check
+whether event-time controller decision logs and input events were actually
+read; app list, room mode, current configuration, and an older sensor value
+do NOT establish the exact callback, timer, threshold, latch or hysteresis
+decision for the focal command. Never claim available execution logs were
+exhausted when none were attempted, or say the internal reason was verified
+from an issuer row alone. Preserve the source's actual event chronology
+when attribute rows precede a recorded command row. Keep the final answer
+short, but explicitly distinguish observed command, app decision and
+reported physical effect.
 If the CURRENT configuration explicitly returns null/empty for a capability
 input required by the proposed causal story, flag that as contrary or
 unresolved evidence: do not confidently select that path just because its
@@ -1240,6 +1251,7 @@ def should_recheck_causal_evidence(
         not already_rechecked
         and review_kind_name == "causal"
         and is_causal_question(question)
+        and not _EXPLICIT_NO_FRESH_READ.search(question)
         and available_read_tools
         and not has_action_receipt
         and first_review_receipt_count > 0
@@ -1258,6 +1270,9 @@ _EXPLICIT_NO_FRESH_READ = re.compile(
     r"(?:(?:mcp|hub|tool)\s+)?"
     r"(?:read|reads|query|queries|call|calls|access|contact)\b"
     r"|\b(?:do\s+not|don't)\s+use\s+(?:any\s+|new\s+)?tools\b"
+    r"|\b(?:do\s+not|don't|without)\s+make\s+"
+    r"(?:(?:any|new|further|fresh)\s+){0,2}"
+    r"(?:(?:mcp|hub|tool)\s+)?(?:calls|reads|queries)\b"
     r"|\b(?:no\s+(?:new|further|fresh)\s+(?:tool\s+)?(?:calls|reads|queries))\b"
     r"|\b(?:use\s+only|only\s+use|rely\s+only\s+on)\s+"
     r"(?:the\s+)?(?:prior|previous|earlier|existing)\s+"
@@ -1316,6 +1331,23 @@ def should_offer_fresh_source_recovery(
         and not has_action_receipt
     )
 
+
+
+def should_prompt_controller_decision_gap(
+    question: str, *, review_kind_name: str | None,
+    source_frontier: dict, has_action_receipt: bool = False,
+) -> bool:
+    """Prompt the EXISTING review, never dispatch an app/tool/extra round."""
+    return (
+        review_kind_name == "causal"
+        and is_causal_question(question)
+        and not _EXPLICIT_NO_FRESH_READ.search(question)
+        and not has_action_receipt
+        and isinstance(source_frontier, dict)
+        and source_frontier.get(
+            "controller_decision_source_unchecked_for_model_review"
+        ) is True
+    )
 
 
 def should_prompt_historical_status_gap(
