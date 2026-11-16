@@ -76,6 +76,13 @@ class ClaimFloorUnitTests(unittest.TestCase):
             "controller_decision_unverified",
         )
 
+    def test_unverified_initiator_assertion_does_not_pass(self):
+        assert causal_publication_floor(
+            "Why did the fictional relay activate?",
+            "The controller is therefore the verifiable initiator of the relay event.",
+            [history_receipt()],
+        )["reason"] == "controller_decision_unverified"
+
     def test_scoped_source_limit_and_cautious_hypothesis_unchanged(self):
         for answer in (
             "No matching rows were returned in this query.",
