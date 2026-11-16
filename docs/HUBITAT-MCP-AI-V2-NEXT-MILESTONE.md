@@ -1,5 +1,12 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## Next after alpha.135: independently measured review-phase optimization
+
+V2 alpha.135 [PR #1707](https://github.com/ienam-smarthome/HomeBrainOS/pull/1707) merged with all four exact-head CI workflows passing. It adds **passive** model-round phase, elapsed and source-receipt count fields to Technical JSON and `scripts/first_answer_latency_profile.py` for offline privacy-preserving comparison (not a live runtime speed optimization). Source-reviewed original installed alpha.134 capture: 7/8 one bounded first answer, 8 rounds/366,837 input tokens/~191.4 seconds, 5 successful native reads/~7.5 seconds total; source review and final claim audit were materially expensive yet also protected correctness. Do not remove these checkpoints from a single example.
+
+**Immediate installed acceptance:** update V2 Preview to `2.0.0-alpha.135`, run a fresh uncoached, source-scoped READ-ONLY first answer, preserve its ORIGINAL PRIVATE Technical JSON, verify model rounds include `phase`, `source_receipts_before`, `tools_offered`, `model_messages_before` and `client_round_elapsed_ms`; check no extra model/tool calls. Run the private offline profiler on the original capture and compare against older alpha.134 data with inferred phase labels, not fake directly-recorded evidence. Continue real frozen benchmark review across different controlled outputs and situations. Before changing prompts, controller role selection, final audit or number of source reads, demand a cross-domain improvement in measured time/tokens **without a reduction in independent evidence quality, native authorization or physical-outcome calibration**. [Engineering note](HOMEBRAIN-V2-ALPHA135-ROUND-PHASE-PROFILING-20261116.md).
+
+
 ## After alpha.134 — source-real acceptance and benchmark-first causal fidelity
 
 V2 alpha.134 [PR #1705](https://github.com/ienam-smarthome/HomeBrainOS/pull/1705) merged after 4/4 green exact-head workflows. It fixes a general source-only **fallback data-loss** defect: native `command-*` event names with verified original request identity and `producedBy.appId` remain visible even when the model's definite physical/controller cause is withheld, alongside separately reported states. This does NOT demonstrate that the connected model can select the correct controlled output or diagnose the underlying trigger.
