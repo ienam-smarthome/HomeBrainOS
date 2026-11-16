@@ -153,8 +153,8 @@ class UIContracts(unittest.TestCase):
             'id="currentExchange" hidden',
             'id="feedEmpty"',
             'id="statusPill"', 'id="statusPanel"',
-            'id="overviewLights"', 'id="overviewMotion"',
-            'id="overviewBattery"', 'id="overviewDevices"',
+            'id="healthAttention"', 'id="healthActive"',
+            'id="healthRefreshStatus"', 'id="refreshOverview"',
             'id="diagnosticsTab"', 'id="evaluationTab"',
             'id="approvalChips"', 'id="editApproval"',
             'id="dryRunApproval"', 'id="decline"',
@@ -169,15 +169,17 @@ class UIContracts(unittest.TestCase):
             'duration>400&&activeRecognition',
             '@media(prefers-color-scheme:light)',
             '@media(prefers-reduced-motion:reduce)',
-            '2.0.0-alpha.132',
+            '2.0.0-alpha.133',
         ):
             self.assertIn(needle, HTML, needle)
         # System Health owns the inventory; chat stays a full-width conversation.
         ask = HTML.split('<section id="ask"')[1].split('<section id="systemHealth"')[0]
         health = HTML.split('<section id="systemHealth"')[1].split('<section id="diagnostics"')[0]
         self.assertNotIn('class="overview-aside"', ask)
-        self.assertIn('id="healthInventoryDetails"', health)
-        self.assertIn('class="overview-aside"', health)
+        self.assertNotIn('id="healthInventoryDetails"', health)
+        self.assertNotIn('class="overview-aside"', health)
+        self.assertIn('id="healthRuntime"', health)
+        self.assertIn('id="refreshOverview"', health)
         self.assertIn('<h2>Latest answer</h2>', ask)
         self.assertIn('grid-row:2', HTML)
         self.assertNotIn('data-question="Block ', HTML)
@@ -210,7 +212,7 @@ class UIContracts(unittest.TestCase):
             'Array.isArray(response?.answer_stage_trace)',
             'observed_after_ms',
             'Original MCP receipt',
-            'UI_VERSION="2.0.0-alpha.132"',
+            'UI_VERSION="2.0.0-alpha.133"',
             "api/activity/",
             'pendingApproval.effect_class',
             'void submitAsk()',
