@@ -18,3 +18,30 @@ The model completed all three answers without the emergency alpha.127 empty-answ
 The floor does not replace the model's actual investigation, does not pick/force a tool, and never applies to an explicit modifying device request or native action path. It is an additional guard against publishing a severely unsupported conclusion, **not** an 8/8 causal answer. It cannot prove that a real-world system operated or that an internal decision occurred. It may conservatively publish a partial result even when source reasoning beyond its fixed source-category check could establish a cause. Improvement in first-answer quality, genuine app-log discovery, model rounds, tokens, and response time must be validated in a NEW installed, uncoached source-real investigation. Do not imply CI proves those outcomes.
 
 Use original read receipts to measure controlled-output history, event-time source selection, command issuer versus event decision, bounded chronology, fallback activation, source failures and model input reduction. Do not publish private household logs or claim independent physical evidence.
+
+## Source frontier addition after upstream contract review
+
+The connected upstream MCP project documents `hub_get_logs` with
+`mode=past`, `appId` and a time window, as distinct from
+`hub_list_device_events(appId=...)` which returns app-emitted events.
+Availability still depends on the installed server's actual live catalog
+and access policy; this PR does not call a live hub or force either read.
+
+The existing causal controller-decision frontier now indexes bounded
+**app-producer IDs from original non-command device state rows** separately
+from genuine `command-*` issuer rows and `triggered[]` listeners.
+An original app-produced state is a *candidate investigative lead*, not
+verified command issuance or event-specific decision. In the existing model
+source-review turn, the checkpoint can invite a model-selected targeted
+past-log or event-time input read even if no command row was returned.
+Successful read attempts are counted independently for reporter-app
+candidates, and empty/failed app-log reads do not prove no execution.
+No extra model round or host-selected tool/target is introduced.
+
+Additional fictional regressions cover reporter versus issuer,
+event-app versus native past-log source type, unrelated/empty/failed log
+requests, broad categorical denials, short uncertainty caveats and
+cross-domain source safety. The published claim floor only checks
+necessary source-category coverage; it cannot certify that a log's
+contents really prove the decision. No source-real model result is claimed.
+
