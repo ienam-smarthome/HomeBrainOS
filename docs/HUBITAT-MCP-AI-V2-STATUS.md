@@ -1,5 +1,10 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 16 November 2026 — alpha.125 code candidate: controller issuer ≠ controller decision
+
+Installed alpha.124 causal first answer found a genuine native command issuer but never read execution logs or historical control-input observations. Eight original reads succeeded, with no source errors; 11 model rounds, ~685k provider input tokens, ~42.9s server. Its chronology also needs to keep setpoint attribute reports preceding their recorded command row. New V2-only alpha.125 adds bounded original command-source frontier with recorded app IDs and app-scoped log attempts versus config reads, plus a **model-chosen** optional read checkpoint in the existing causal review. No mandatory log call, fixed tool route, auto write, physical-verification claim, scheduler-behaviour change or V1 change. [Engineering note](HOMEBRAIN-V2-ALPHA125-CAUSAL-CONTROLLER-DECISIONS-20261116.md). Pending exact-head CI and installed live acceptance.
+
+
 ## 16 November 2026 — alpha.122 merged after 10 green final-head checks
 
 [V2 PR #1681](https://github.com/ienam-smarthome/HomeBrainOS/pull/1681) merged at `df368d4f923e41b044492d19aac4851f34034406` with all **10 final-head checks green**. Changes: source-derived current-request model review ledger, narrow conditional skip of redundant extra final audit on unchanged uncapped error-free *attribute-filtered* noncausal event sources, and resolved UK clock formatting for typed transitions. Unfiltered, failed, capped, command-bearing and causal histories retain stricter review behavior. This is a synthetic/CI milestone, NOT installed source-real alpha.122 proof. Keep V1/native write safety unchanged. Next capture a new uncoached read-only historical answer with complete original PRIVATE Technical JSON and compare first-answer quality and model/tool costs against alpha.121. [Engineering note](HOMEBRAIN-V2-ALPHA122-RECEIPT-SOURCE-COVERAGE-20261116.md).
