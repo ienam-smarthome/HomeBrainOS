@@ -336,6 +336,9 @@ def source_review_ledger(receipts: list[dict], *, monitor_offered: bool = False)
         "receipt_rows": items,
         "receipts_omitted_due_to_cap": max(0, len(receipts) - _MAX_RECEIPTS),
         "monitor_configured_and_offered_not_proven_connected": bool(monitor_offered),
+        "historical_measurement_source_type_frontier": historical_source_frontier(
+            receipts, monitor_offered=monitor_offered,
+        ),
         "review_contract": (
             "Compare requested time bounds with returned oldest/newest per exact "
             "attribute. Repeated identical state values do not prove a transition "
