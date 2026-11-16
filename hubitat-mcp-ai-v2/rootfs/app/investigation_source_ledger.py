@@ -22,7 +22,7 @@ _COMMON_STATES = frozenset({
 })
 _SAFE_ARGS = frozenset({
     "deviceId", "appId", "hoursBack", "limit", "since", "until",
-    "attribute", "format", "mode",
+    "attribute", "format", "mode", "device_id", "metric", "range",
 })
 _MAX_RECEIPTS = 14
 _MAX_EVENTS = 250
@@ -164,6 +164,7 @@ def historical_source_frontier(
     monitor_history_attempts = 0
     selected_targets: set[str] = set()
     history_targets: set[str] = set()
+    attempted_history_targets: set[str] = set()
     for row in receipts:
         if not isinstance(row, dict):
             continue
@@ -191,6 +192,13 @@ def historical_source_frontier(
         mode = args.get("mode")
         if mode in ("history", "compare"):
             monitor_history_attempts += 1
+            requested_ids = ([args.get("device_id")] if mode == "history"
+                             else args.get("device_ids"))
+            if isinstance(requested_ids, list):
+                for ident in requested_ids[:5]:
+                    ident = str(ident or "")
+                    if ident in targets:
+                        attempted_history_targets.add(ident)
         if row.get("success") is not True:
             continue
         outer, native = _response(row)
@@ -221,6 +229,25 @@ def historical_source_frontier(
                 if ident in targets:
                     history_targets.add(ident)
 
+    # Match monitor history requests even if those reads preceded the native
+    # target lookup. Different-device history cannot close this target's gap.
+    if targets and monitor_history_attempts and not attempted_history_targets:
+        for row in receipts:
+            if (not isinstance(row, dict)
+                    or row.get("name") != "homebrain_read_device_monitor"
+                    or not isinstance(row.get("arguments"), dict)):
+                continue
+            args = row["arguments"]
+            requested_ids = ([args.get("device_id")]
+                             if args.get("mode") == "history"
+                             else args.get("device_ids")
+                             if args.get("mode") == "compare" else None)
+            if isinstance(requested_ids, list):
+                for ident in requested_ids[:5]:
+                    ident = str(ident or "")
+                    if ident in targets:
+                        attempted_history_targets.add(ident)
+
     # A status-first inventory can precede the targeted event query; inspect
     # its original selected IDs again so receipt order cannot erase a match.
     if targets and monitor_status_reads and not selected_targets:
@@ -250,7 +277,7 @@ def historical_source_frontier(
         monitor_offered and native_event_reads > 0
         and native_event_rows == 0 and monitor_status_reads > 0
         and bool(selected_targets - history_targets)
-        and monitor_history_attempts == 0
+        and bool(selected_targets - attempted_history_targets)
     )
     return {
         "source_type_scope": "current_request_successful_original_receipts_only",
@@ -263,6 +290,7 @@ def historical_source_frontier(
         "monitor_latest_value_status_reads": monitor_status_reads,
         "monitor_saved_history_attempts": monitor_history_attempts,
         "monitor_saved_history_successful_reads": monitor_history_reads,
+        "native_history_targets_with_monitor_history_attempts": sorted(attempted_history_targets)[:5],
         "native_history_targets_selected_in_monitor_status": sorted(selected_targets)[:5],
         "native_history_targets_with_monitor_history_receipts": sorted(history_targets)[:5],
         "status_is_not_saved_historical_measurements": True,
