@@ -1,5 +1,9 @@
 # HomeBrainOS development agent instructions
 
+## V2 alpha.123 answer readability — 16 November 2026
+
+The installed alpha.122 source-real Freezer power-history capture **did use** Hub & Device Monitor (1 native inventory + 1 monitor read, no writes) and contained useful 1–81 W sampled evidence plus 32/144 null bins, but its final first answer was unreadable: huge evidence table, displayed literal <br> and JSON, repetitive summaries. It also overstated interval-long switch ON, proven telemetry pause and verified compressor causes from a current snapshot/binned power alone. Alpha.123 V2-only candidate improves concise answer-first model guidance at the existing source and final-audit checkpoints, plus safe DOM rendering of legacy <br> and 2-column table wrapping; original receipts and V1 unchanged. Source-real gains are NOT measured. [Engineering note](docs/HOMEBRAIN-V2-ALPHA123-READABLE-ANSWERS-20261116.md).
+
 ## V2 alpha.122 merged handoff — 16 November 2026
 
 [PR #1681](https://github.com/ienam-smarthome/HomeBrainOS/pull/1681) merged at `df368d4f923e41b044492d19aac4851f34034406` after **10/10 final-head GitHub checks passed**. This V2-only source-review ledger/conditional audit/timezone improvement is NOT installed source-real acceptance; prior alpha.121 three-case human assessments remain the only current first-answer observations. Follow up with ONE fresh uncoached read-only historical investigation from another device type; examine full PRIVATE original receipts, target and time-window coverage, cause/reporters, caps/errors, source selection, model rounds/tokens, GMT/BST. No V1, routine write-approval, or native-write behavior changed. [Engineering note](docs/HOMEBRAIN-V2-ALPHA122-RECEIPT-SOURCE-COVERAGE-20261116.md).
