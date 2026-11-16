@@ -1,5 +1,10 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+
+## Alpha.123 — readable first answer, no lost evidence
+
+After the alpha.122 Freezer power-history live test, improve V2's display and model's final prose generally (not a Freezer-specific template): direct finding first, compact factual explanation and source limits, no raw HTML/JSON/evidence matrices. Source review must not infer historical switch continuity, outages or physical mechanisms from current state/saved bins. V2's existing DOM-only renderer must show legacy <br> safely and keep raw answer/PRIVATE receipts unchanged. Install after green checks; ask a new uncoached history question and compare original receipts plus screenshot for improved readable answer, correctness, token/round efficiency, and safety. [Note](HOMEBRAIN-V2-ALPHA123-READABLE-ANSWERS-20261116.md).
+
 ## Alpha.122 merged and next source-real acceptance (16 November 2026)
 
 PR [#1681](https://github.com/ienam-smarthome/HomeBrainOS/pull/1681) merged at `df368d4f923e41b044492d19aac4851f34034406` following **10/10 green exact-head CI checks**. Install the updated V2 Preview and ask ONE new uncoached read-only historical question from a different device type, e.g. Bedroom 2 TRV operating-state reports in the last 12 hours. Compare original receipt caps, requested-versus-returned window, repeated state values versus verified transitions, reporter/issuer, optional Monitor chosen or not, model rounds/input tokens, and GMT/BST. Do not claim live accuracy, source completeness, efficiency gain or write regression absence from CI alone. Preserve V1 and native action safeguards. [Details](HOMEBRAIN-V2-ALPHA122-RECEIPT-SOURCE-COVERAGE-20261116.md).
