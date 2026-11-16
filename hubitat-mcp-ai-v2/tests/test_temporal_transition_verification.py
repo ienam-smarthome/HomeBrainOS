@@ -439,8 +439,8 @@ class IntegratedTemporalPublicationTests(unittest.IsolatedAsyncioTestCase):
             "focal_transition_unverified",
         )
         self.assertIn("cannot verify", result["answer"])
-        self.assertIn("10:00 pm UTC", result["answer"])
-        self.assertIn("9:53 pm UTC", result["answer"])
+        self.assertIn("10:00 pm GMT", result["answer"])
+        self.assertIn("9:53 pm GMT", result["answer"])
         self.assertNotIn("definitively caused", result["answer"])
         self.assertEqual([x[0] for x in hub.calls], [
             "hub_list_devices", "hub_list_device_events",
