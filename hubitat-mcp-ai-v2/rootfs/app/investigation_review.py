@@ -1251,6 +1251,7 @@ def should_recheck_causal_evidence(
         not already_rechecked
         and review_kind_name == "causal"
         and is_causal_question(question)
+        and not _EXPLICIT_NO_FRESH_READ.search(question)
         and available_read_tools
         and not has_action_receipt
         and first_review_receipt_count > 0
@@ -1269,6 +1270,9 @@ _EXPLICIT_NO_FRESH_READ = re.compile(
     r"(?:(?:mcp|hub|tool)\s+)?"
     r"(?:read|reads|query|queries|call|calls|access|contact)\b"
     r"|\b(?:do\s+not|don't)\s+use\s+(?:any\s+|new\s+)?tools\b"
+    r"|\b(?:do\s+not|don't|without)\s+make\s+"
+    r"(?:(?:any|new|further|fresh)\s+){0,2}"
+    r"(?:(?:mcp|hub|tool)\s+)?(?:calls|reads|queries)\b"
     r"|\b(?:no\s+(?:new|further|fresh)\s+(?:tool\s+)?(?:calls|reads|queries))\b"
     r"|\b(?:use\s+only|only\s+use|rely\s+only\s+on)\s+"
     r"(?:the\s+)?(?:prior|previous|earlier|existing)\s+"
