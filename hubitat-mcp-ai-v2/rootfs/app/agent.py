@@ -51,6 +51,9 @@ from temporal_transition_verification import (
     temporal_transition_evidence, verify_recent_transition,
 )
 from source_progress import current_source_progress
+from investigation_source_ledger import (
+    source_review_ledger, may_skip_unchanged_final_audit,
+)
 from investigation_review import (
     should_review_completion,
     is_read_only_review_tool, read_only_review_catalog,
@@ -892,6 +895,7 @@ class Agent:
         leaf_schema_discoveries = 0
         source_review_invoked = False
         source_review_kind = None
+        source_review_receipt_count = None
         fresh_source_recovery_invoked = False
         causal_follow_through_invoked = False
         causal_follow_through_candidate = ""
@@ -1063,7 +1067,7 @@ class Agent:
                 if native_action_receipts_seen else
                 verify_recent_transition(
                     question, verified_answer, receipts,
-                    timezone_name=hub_timezone,
+                    timezone_name=clock_timezone_name,
                 )
             )
             verified_answer = transition_verification.get(
@@ -1765,6 +1769,7 @@ class Agent:
                 ):
                     capture_answer_stage("pre_source_review", text)
                     source_review_invoked = True
+                    source_review_receipt_count = len(receipts)
                     source_review_kind = (
                         "action_outcome" if native_action_receipts_seen > 0
                         else review_kind(question)
@@ -1789,12 +1794,17 @@ class Agent:
                         # The index navigates ORIGINAL received source scope;
                         # it is not an independent receipt or evidence of a cause.
                         guidance = review_prompt(source_review_kind)
-                        guidance += (
-                            "\n\nOriginal receipt-scope navigation index (not independent proof):\n"
-                            + final_claim_receipt_scope_index(receipts)
-                        )
+                        # Source navigation follows below for ALL review kinds.
+                        # Do not replay a second verbose index on this pass.
                     else:
                         guidance = review_prompt(source_review_kind)
+                    guidance += (
+                        "\n\nOriginal receipt-scope navigation index "
+                        "(not independent proof):\n"
+                        + source_review_ledger(
+                            receipts, monitor_offered=device_monitor is not None
+                        )
+                    )
                     transition_index = temporal_transition_evidence(
                         question, receipts
                     )
@@ -1864,6 +1874,10 @@ class Agent:
                             question, receipts
                         )["status"] == "not_applicable"
                         and source_review_kind not in ("action_outcome", "current_state")
+                        and not may_skip_unchanged_final_audit(
+                            receipts, review_kind=source_review_kind,
+                            receipt_count_at_review=source_review_receipt_count,
+                        )
                         # An audit with NO new source after the recovery
                         # opportunity only polishes unsupported prose.
                         and not (fresh_source_recovery_invoked
@@ -1902,6 +1916,11 @@ class Agent:
                            and fresh_source_recovery_invoked and not current_source_progress(
                                 receipts
                             )["has_successful_current_source"]
+                           else "skipped_unchanged_uncapped_sources"
+                           if may_skip_unchanged_final_audit(
+                               receipts, review_kind=source_review_kind,
+                               receipt_count_at_review=source_review_receipt_count,
+                           )
                            else "skipped_low_time" if source_review_invoked
                            and enable_source_review else "not_invoked"),
                 )
