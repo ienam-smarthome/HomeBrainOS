@@ -61,6 +61,7 @@ from causal_decision_frontier import (
 from causal_outcome_frontier import (
     causal_outcome_frontier, OUTCOME_FIRST_CHECKPOINT,
 )
+from read_only_receipt_fallback import source_only_partial_answer
 from investigation_review import (
     should_review_completion,
     is_read_only_review_tool, read_only_review_catalog,
@@ -1077,7 +1078,9 @@ class Agent:
                 for row in receipts
             )
 
-        def completed_answer(answer: str, audit_status: str) -> dict[str, Any]:
+        def completed_answer(
+            answer: str, audit_status: str, *, fallback_status: str = "not_used"
+        ) -> dict[str, Any]:
             # Exact ALL-RETURNED-event requests get a typed, source-derived
             # chronology rather than an unverified model enumeration. This is
             # an output-only contract: no new tool/model pass, native write or
@@ -1250,9 +1253,13 @@ class Agent:
                     "downstream_physical_effect_unverified": True,
                 },
                 "response_success_scope": (
+                    "partial_original_read_only_receipt_summary; model did not "
+                    "complete a reliable answer; cause and physical effect unknown"
+                    if fallback_status != "not_used" else
                     "model_answer_returned; action success requires a native "
                     "write receipt and downstream outcome remains unverified"
                 ),
+                "answer_fallback_status": fallback_status,
                 "action_approval_handoff_invoked": action_approval_handoff_invoked,
                 "action_approval_handoff_status": (
                     "not_invoked" if not action_approval_handoff_invoked
@@ -1286,6 +1293,8 @@ class Agent:
                 "final_claim_audit_status": audit_status,
                 "deadline_finalization_invoked": deadline_finalization_invoked,
                 "deadline_finalization_status": (
+                    "source_only_partial" if deadline_finalization_invoked
+                    and fallback_status != "not_used" else
                     "completed" if deadline_finalization_invoked and bool(answer)
                     else "empty_model_answer" if deadline_finalization_invoked
                     else "not_invoked"
@@ -1336,6 +1345,29 @@ class Agent:
                 "model_round_metrics": model_round_metrics,
                 "elapsed_ms": round((time.monotonic() - started) * 1000),
             }
+
+        def original_source_partial(status: str) -> dict[str, Any] | None:
+            """Last resort, ONLY on unanswered, read-only investigative paths.
+
+            An earlier unaudited model draft can have an invented cause. Do not
+            replay it when a later round returned empty or failed: render only
+            inspectable native device-event observations instead. Never hide a
+            requested/attempted native write or change safety authorisation.
+            """
+            if (native_action_receipts_seen or current_write_attempted()
+                    or review_kind(question) not in (
+                        "causal", "historical_measurement", "source_verification"
+                    ) or is_explicit_device_imperative(question)):
+                return None
+            grounded = source_only_partial_answer(
+                question, receipts, timezone_name=clock_timezone_name
+            )
+            if not grounded:
+                return None
+            return completed_answer(
+                grounded, "source_only_partial_no_model_audit",
+                fallback_status=status,
+            )
 
         while True:
             if hasattr(mcp, "cached_leaf_schemas"):
@@ -1399,6 +1431,9 @@ class Agent:
                 })
                 tools = []
             if remaining <= 0:
+                partial = original_source_partial("deadline_exhausted")
+                if partial is not None:
+                    return partial
                 if final_claim_audit_candidate:
                     return completed_answer(final_claim_audit_candidate, "deadline_fallback")
                 if causal_follow_through_candidate:
@@ -1424,6 +1459,10 @@ class Agent:
             try:
                 message = await self.round(messages, tools, remaining)
             except RuntimeError as exc:
+                partial = original_source_partial("model_or_transport_error")
+                if partial is not None:
+                    partial["model_error_kind"] = model_error_kind(exc)
+                    return partial
                 evidence = write_failure_evidence(receipts)
                 notice = model_failure_notice(evidence)
                 if final_claim_audit_candidate and not notice:
@@ -1617,12 +1656,17 @@ class Agent:
 
             if final_claim_audit_invoked and calls:
                 # Tools were not offered; do not execute an unsolicited call.
-                return completed_answer(final_claim_audit_candidate, "tool_request_fallback")
+                partial = original_source_partial("unoffered_audit_tool_rejected")
+                return (partial if partial is not None else completed_answer(
+                    final_claim_audit_candidate, "tool_request_fallback"))
 
             if deadline_finalization_invoked:
                 # The final model round was deliberately tool-free. A model
                 # request to call any tool is NOT authority to execute it.
                 if calls:
+                    partial = original_source_partial("unoffered_deadline_tool_rejected")
+                    if partial is not None:
+                        return partial
                     return {
                         "success": False,
                         "answer": ("The model did not finish a source-grounded "
@@ -1638,9 +1682,21 @@ class Agent:
                     }
                 # This is NOT the existing source-to-claim audit. Preserve
                 # that distinction in separate Technical JSON fields.
+                if not text:
+                    partial = original_source_partial("empty_deadline_final_round")
+                    if partial is not None:
+                        return partial
                 return completed_answer(text, "not_invoked")
 
             if not calls:
+                # A source-sufficiency/audit round can consume the remaining
+                # budget and return no prose at all. Preserve grounded read-only
+                # history instead of publishing an empty answer or speculative
+                # earlier draft. Do not add an extra model or native source round.
+                if not text and (source_review_invoked or final_claim_audit_invoked):
+                    partial = original_source_partial("empty_after_source_review")
+                    if partial is not None:
+                        return partial
                 # A text-only "please confirm" is not a pending UI approval.
                 # Reuse one bounded model opportunity to select an advertised
                 # native writer from fresh device details. All real writes still
@@ -1950,6 +2006,10 @@ class Agent:
                     continue
                 if final_claim_audit_invoked:
                     capture_answer_stage("post_final_audit", text)
+                    if not text:
+                        partial = original_source_partial("empty_final_audit_round")
+                        if partial is not None:
+                            return partial
                     return completed_answer(
                         text or final_claim_audit_candidate,
                         "completed" if text else "empty_response_fallback",
