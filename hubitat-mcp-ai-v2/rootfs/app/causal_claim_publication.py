@@ -20,7 +20,7 @@ _DENIAL = re.compile(
 _GLOBAL_ABSENCE = re.compile(
     r"\b(?:no\s+(?:heating\s+)?(?:demand|activation|transition|"
     r"command|event)s?\s+(?:occurred|existed|from|during|at|today)|"
-    r"only\s+(?:verifiable\s+|verified\s+|recorded\s+)?"
+    r"only\s+(?:(?:one|the)\s+)?(?:verifiable\s+|verified\s+|recorded\s+)?"
     r"(?:heating\s+)?(?:activation|event|transition|cause)\b)", re.I,
 )
 _UNBOUNDED_COMMAND_ABSENCE = re.compile(
