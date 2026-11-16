@@ -1,5 +1,10 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 16 November 2026 — alpha.127 candidate: evidence-preserving completion
+
+Installed alpha.126 failed to produce an answer after 10 successful reads, 12 model rounds and ~109s even though original primary output event reports had eventually been retrieved; its draft contained an unsupported schedule-caused explanation. V2-only alpha.127 candidate adds a sharply bounded emergency partial factual answer from actual successful native device-state histories on empty/error/deadline MODEL completion, labelled partial and with causes/physical outcome unverified; does not replay speculative drafts. Normal answers and write paths unchanged, and model remains in charge of source reads. Adds prompt-scope reuse guidance, without a new forced tool or fixed round cap. [Engineering note](HOMEBRAIN-V2-ALPHA127-EVIDENCE-PRESERVING-COMPLETION-20261116.md). CI and source-real acceptance pending; V1/heating scheduler unchanged.
+
+
 ## 16 November 2026 — alpha.126 outcome-first causal source review MERGED
 
 [PR #1688](https://github.com/ienam-smarthome/HomeBrainOS/pull/1688) merged at `2d0150d5d2998051392b3dea32e7682f9dae0e45` with **9/9 exact-head checks green**. V2-only original-inventory-versus-history navigation, outcome-first model-led causal review and final factual audit; no fixed output-device selector, mandatory tool, new model round, native writer, V1 or heating scheduler changes. Alpha.125 first-answer failure: **1/8** with eight successful but mis-scoped source reads, 11 rounds and 49.4s. Alpha.126 installed model/source-real acceptance remains unmeasured. [Engineering note](HOMEBRAIN-V2-ALPHA126-OUTCOME-FIRST-SOURCE-SUFFICIENCY-20261116.md).
