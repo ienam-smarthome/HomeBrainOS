@@ -1,5 +1,23 @@
 # HomeBrainOS development agent instructions
 
+## V2 alpha.128 candidate — current implementation under CI (16 November 2026)
+
+Three PRIVATE installed alpha.127 causal first answers completed but still
+failed grounding/causation: setpoint producer confused with decision, a shared
+output omitted from history before a global negative, and repeated broad
+inventory/model rounds. New PR #1692 is a **V2-only** candidate: preserve
+all original receipts, compact only the model-facing broad causal inventory,
+show non-command app-produced state events as unverified controller leads,
+distinguish real app-scoped `hub_get_logs` past logs from app-emitted
+`hub_list_device_events` rows, and fail closed on a narrow set of definite
+causal/absence claims without original execution category. The result is a
+labelled source-only partial answer, not a fabricated reason. No fixed app
+IDs, compulsory reads, V1, native writes, approvals or heating scheduler
+edits. Pending exact-head CI and installed uncoached first-answer quality;
+do not confuse synthetic regressions with proven live improvement.
+[Engineering note](docs/HOMEBRAIN-V2-ALPHA128-CAUSAL-PUBLICATION-FLOOR-20261116.md).
+
+
 ## V2 alpha.127 merged — 16 November 2026
 
 [PR #1690](https://github.com/ienam-smarthome/HomeBrainOS/pull/1690) merged as `93af6b34bdeb9ca660356ec00168ba746bad72bd` after **11/11 exact-head checks passed**. V2-only source-evidence partial completion rescue for read-only investigative MODEL failures/empty finalization: native original successful state-event receipts give bounded positive observations and strict valid field/state/date rendering, marked *partial*, without recycling an unsupported earlier draft. Native writes, approvals, V1 and scheduler unchanged. Model skill now advises source-scope reuse rather than repeated broad history calls, but there is **NO measured installed model efficiency gain** from synthetic CI. Installed alpha.127 first-answer accuracy, fallback activation rate, token usage and latency are **unverified**. Next: update V2 Preview, ask one uncoached read-only causal WHY, evaluate original receipts, what evidence was actually selected, final cause calibration and whether fallback was necessary. [Engineering note](docs/HOMEBRAIN-V2-ALPHA127-EVIDENCE-PRESERVING-COMPLETION-20261116.md).
