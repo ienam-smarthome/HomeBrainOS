@@ -1,5 +1,9 @@
 # HomeBrainOS development agent instructions
 
+## V2 alpha.124 model-led historical source-type frontier — 16 November 2026
+
+Installed alpha.123 uncoached appliance power history (PRIVATE original receipts): 3/3 read-only successful calls (native inventory, 6h native power events returning zero, separate Monitor mode=status latest-value only), no Monitor history read, no writes, 6 rounds, ~279k provider input tokens, 22.1s server. Readable published answer still incorrectly treated the absent native rows/status snapshot as an absent monitor archive and labelled a last-power-event timestamp the last non-zero reading without its value. Human score 4/8. Alpha.124 V2-only candidate adds a general receipt-derived **source-TYPE** frontier and source-review checkpoint inside the existing model-led round; monitor status is not archive history, native zero rows do not disprove separate saved bins, and the model selects (or declines) an offered relevant read. No forced tool/read, new model round, automatic writer, V1 change or installed acceptance claim. See [engineering note](docs/HOMEBRAIN-V2-ALPHA124-HISTORICAL-SOURCE-TYPE-20261116.md).
+
 ## V2 alpha.123 merged handoff — 16 November 2026
 
 [PR #1683](https://github.com/ienam-smarthome/HomeBrainOS/pull/1683) merged at `cb936fc26fe90cf1f1bba448a84b1323cac63ffa` after **11/11 exact-head CI checks passed**. Installed V2 alpha.123 user-facing/source-real acceptance remains unmeasured; the owner-provided installed alpha.122 Freezer screenshot/PRIVATE receipt is the motivation, not evidence that the new version fixed the live answer. After install, test one uncoached read-only cross-domain question, assess concise presentation, raw HTML/JSON, original receipts, uncertainty, time labels, model rounds/tokens and elapsed time. V1 and native write/approval paths unchanged. [Engineering note](docs/HOMEBRAIN-V2-ALPHA123-READABLE-ANSWERS-20261116.md).

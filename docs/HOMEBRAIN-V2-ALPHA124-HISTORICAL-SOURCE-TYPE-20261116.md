@@ -1,0 +1,20 @@
+# HomeBrainOS V2 alpha.124 — historical source-type sufficiency
+
+**Status:** candidate until exact-head CI and merge; installed source-real acceptance unmeasured. V2 only. V1 unchanged.
+
+## Evidence motivating change (PRIVATE source-real alpha.123 first answer)
+
+In the installed 16 November alpha.123 six-hour appliance-power investigation, three read-only operations succeeded with no tool errors or writes: device inventory (switch OFF, 0 W reported snapshot), native power-filtered six-hour history (0 returned rows) and optional Hub & Device Monitor **mode=status** (latest/cached values only; last power-event timestamp outside the requested six-hour window). **No monitor mode=history read occurred.** The published answer conflated missing native event rows and status-only information with an archive-wide absence and incorrectly called an old power-event timestamp the latest *non-zero* value without its actual wattage. It speculated on a logging threshold, poll activity and an unobserved interval of inactivity. Six model rounds, ~279,345 provider-reported input tokens, 22.1-second server time. First-answer assessment: 4/8. Readability improved since alpha.122, but the evidence decision was not sufficient.
+
+## General implementation — no device-specific routing
+
+1. Extend the existing original-receipt navigation ledger with an **explicit historical-source-type frontier** distinguishing native filtered event rows (including zero rows) from a successful Monitor latest-value status and actual successful Monitor saved-history/compare receipts. It scopes monitor history attempts and successful observations to the exact identified native target, carries source and selected-target provenance, never infers that a missing status/empty native history proves archive absence, and never treats saved bins as continuous measurement.
+2. When the ordinary *existing* historical-measurement source review sees a targeted native zero-row result and Monitor status reports that target selected but no attempt to read its history, prepend a short **source-type checkpoint**. The connected model still decides whether a proportionate, schema-valid, read-only history query would materially help. It may read or explain why not; no forced tool, no additional scheduled/model round, no fallback when Monitor is unconfigured/unselected, and explicit no-fresh-read constraints are respected.
+3. Correct generic historical measurement and final-audit guidance: Monitor status is not a six-hour archive, `last_monitor_power_event_at_utc` without a wattage is not a last non-zero report, `power_fresh=false` is a snapshot freshness caveat, and current OFF/0 W cannot prove historical inactivity. Maintain natural user-facing times and source-bounded uncertainty.
+4. Surface the compact source-type frontier in PRIVATE Technical JSON. The raw original native and monitor receipts, model-led selection and native write/approval paths remain unchanged.
+
+## Deterministic tests and evidence
+
+Fictional fixtures check status/history read-order, positive native values versus zero native rows, selected/unselected devices, configured/unconfigured Monitor, a failed archive attempt, and distinct-device archived reads. An integration test verifies the model can **elect** to read the saved history after the gap checkpoint without the host dispatching it; a companion test verifies the model can decline without a host-forced tool call. Tests also guard explicit no-new-read and action/write boundaries. No real device, cloud inference, private receipts or installed hub modified by the fixtures.
+
+After exact-head green CI and install, retest with a fresh uncoached six-hour historical measurement from another monitored device/quantity. Check that actual monitor history was requested when useful, that original saved-bin provenance/interval is used, that unsupported absences/non-zero/continuity claims are avoided, and record model rounds, tokens, elapsed time and answer readability. CI alone does not establish source-real improvement.

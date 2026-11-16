@@ -12,8 +12,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "rootfs" / "app"))
 
 from agent import Agent
+from investigation_review import should_prompt_historical_status_gap
 from investigation_source_ledger import (
     source_review_ledger, may_skip_unchanged_final_audit,
+    historical_source_frontier, HISTORICAL_SOURCE_TYPE_GAP_PROMPT,
 )
 
 
@@ -45,7 +47,116 @@ def history_receipt(*, events, limit=20, hours=12, cap=None):
     }
 
 
+
+def monitor_receipt(mode="status", *, device_id="LAB-1", metric="power",
+                    success=True, selected=True):
+    """Fictional monitor receipt; no real household/device/credentials."""
+    if mode == "status":
+        payload = {"read_only": True, "selected_devices": [
+            {"id": device_id, "has_power": True, "power_w": 0,
+             "power_fresh": False,
+             "last_monitor_power_event_at_utc": "2030-04-01T08:00:00Z"}
+        ] if selected else []}
+    else:
+        payload = {"read_only": True, "device_id": device_id,
+                   "metric": metric, "summary": {"expected_bin_positions": 72},
+                   "samples": []}
+    return {"name": "homebrain_read_device_monitor",
+            "arguments": {"mode": mode, **(
+                {"device_id": device_id, "metric": metric, "range": "6h"}
+                if mode == "history" else {})},
+            "success": success, "result_kind": "local_monitor_read",
+            "operation_executed": True,
+            "response": json.dumps({"local_device_monitor": payload})}
+
+
 class LedgerTests(unittest.TestCase):
+    def test_monitor_status_is_not_saved_history_for_zero_native_rows(self):
+        native = history_receipt(events=[], hours=6)
+        status = monitor_receipt()
+        original = json.dumps([native, status], sort_keys=True)
+        for receipts in ([native, status], [status, native]):
+            with self.subTest(order=receipts[0]["name"]):
+                scoped = historical_source_frontier(
+                    receipts, monitor_offered=True,
+                )
+                self.assertEqual(scoped["native_event_history_reads"], 1)
+                self.assertEqual(scoped["native_returned_event_rows"], 0)
+                self.assertEqual(scoped["monitor_latest_value_status_reads"], 1)
+                self.assertEqual(scoped["monitor_saved_history_successful_reads"], 0)
+                self.assertEqual(
+                    scoped["native_history_targets_selected_in_monitor_status"],
+                    ["LAB-1"],
+                )
+                self.assertTrue(scoped["status_only_historical_gap_for_model_review"])
+                self.assertTrue(scoped["no_monitor_history_read_does_not_prove_archive_empty"])
+                self.assertFalse(scoped["full_requested_window_or_continuous_state_verified"])
+                nav = json.loads(source_review_ledger(receipts, monitor_offered=True))
+                self.assertTrue(nav["historical_measurement_source_type_frontier"][
+                    "status_only_historical_gap_for_model_review"])
+        self.assertEqual(original, json.dumps([native, status], sort_keys=True))
+        self.assertIn("NOT query saved historical bins", HISTORICAL_SOURCE_TYPE_GAP_PROMPT)
+        self.assertIn("NOT proof", HISTORICAL_SOURCE_TYPE_GAP_PROMPT)
+        self.assertNotIn("LAB-1", HISTORICAL_SOURCE_TYPE_GAP_PROMPT)
+
+    def test_history_or_failed_attempt_does_not_pretend_status_closed_gap(self):
+        native = history_receipt(events=[], hours=6)
+        status = monitor_receipt()
+        history = monitor_receipt("history")
+        for receipts in ([native, status, history],
+                         [history, status, native]):
+            frontier = historical_source_frontier(receipts, monitor_offered=True)
+            self.assertEqual(frontier["monitor_saved_history_attempts"], 1)
+            self.assertEqual(frontier["monitor_saved_history_successful_reads"], 1)
+            self.assertFalse(frontier["status_only_historical_gap_for_model_review"])
+            self.assertFalse(frontier["full_requested_window_or_continuous_state_verified"])
+        failed = monitor_receipt("history", success=False)
+        frontier = historical_source_frontier([native, status, failed], monitor_offered=True)
+        self.assertEqual(frontier["monitor_saved_history_successful_reads"], 0)
+        self.assertEqual(frontier["native_history_targets_with_monitor_history_attempts"],
+                         ["LAB-1"])
+        self.assertFalse(frontier["status_only_historical_gap_for_model_review"])
+        self.assertTrue(frontier["no_monitor_history_read_does_not_prove_archive_empty"])
+
+    def test_unselected_or_unoffered_monitor_does_not_trigger_source_type_hint(self):
+        native = history_receipt(events=[], hours=6)
+        status = monitor_receipt(selected=False)
+        for offered in (False, True):
+            self.assertFalse(historical_source_frontier(
+                [native, status], monitor_offered=offered,
+            )["status_only_historical_gap_for_model_review"])
+        self.assertFalse(historical_source_frontier(
+            [native, monitor_receipt()], monitor_offered=False,
+        )["status_only_historical_gap_for_model_review"])
+
+    def test_source_type_review_respects_no_new_reads_and_write_boundary(self):
+        frontier = historical_source_frontier(
+            [history_receipt(events=[]), monitor_receipt()],
+            monitor_offered=True,
+        )
+        self.assertTrue(should_prompt_historical_status_gap(
+            "In the last six hours show recorded power history.",
+            review_kind_name="historical_measurement",
+            source_frontier=frontier,
+        ))
+        self.assertFalse(should_prompt_historical_status_gap(
+            "In the last six hours show recorded power history. No new tool calls.",
+            review_kind_name="historical_measurement",
+            source_frontier=frontier,
+        ))
+        self.assertFalse(should_prompt_historical_status_gap(
+            "Set heat in six hours.", review_kind_name="historical_measurement",
+            source_frontier=frontier,
+        ))
+        self.assertFalse(should_prompt_historical_status_gap(
+            "Show recorded power history.", review_kind_name="causal",
+            source_frontier=frontier,
+        ))
+        self.assertFalse(should_prompt_historical_status_gap(
+            "Show recorded power history.", review_kind_name="historical_measurement",
+            source_frontier=frontier, has_action_receipt=True,
+        ))
+
     def test_repeated_idle_reports_are_not_a_transition_or_full_window(self):
         rows = [
             {"name": "thermostatOperatingState", "value": "idle",
@@ -222,6 +333,143 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Original receipt-scope navigation index", prompt)
         self.assertIn("short_observed_values", prompt)
         self.assertIn("full_requested_window_proven_covered", prompt)
+
+
+
+class FictionalPowerMCP:
+    def __init__(self):
+        self.calls = []
+
+    async def list_tools(self, refresh=False):
+        return [{
+            "name": "hub_list_device_events",
+            "description": "Read-only original device event log",
+            "inputSchema": {"type": "object", "properties": {
+                "deviceId": {"type": "string"},
+                "attribute": {"type": "string"},
+                "hoursBack": {"type": "integer"},
+                "limit": {"type": "integer"},
+            }},
+        }]
+
+    async def call(self, name, args):
+        self.calls.append((name, args))
+        if name != "hub_list_device_events":
+            raise AssertionError("No write or unrelated native read is supported")
+        return {"content": [{"type": "text", "text": json.dumps({
+            "deviceId": "LAB-1", "attributeFilter": "power",
+            "sinceTimestamp": "2030-04-02T03:00:00+0000",
+            "events": [], "count": 0,
+        })}]}
+
+
+class FictionalSavedMonitor:
+    def __init__(self):
+        self.calls = []
+
+    async def query(self, args):
+        self.calls.append(dict(args))
+        if args["mode"] == "status":
+            return {"read_only": True, "selected_devices": [{
+                "id": "LAB-1", "name": "Fictional Meter",
+                "has_power": True, "power_w": 0.0, "power_fresh": False,
+                "last_monitor_power_event_at_utc": "2030-04-01T08:00:00Z",
+            }]}
+        if args["mode"] == "history":
+            return {"read_only": True, "device_id": args["device_id"],
+                    "metric": args["metric"], "range": args["range"],
+                    "summary": {"expected_bin_positions": 72,
+                                "populated_bin_positions": 1,
+                                "null_bin_positions_within_expected": 71},
+                    "samples": [{"bin_start_utc": "2030-04-02T08:00:00Z",
+                                 "saved_value": 4.0, "unit": "W"}]}
+        raise AssertionError("Unexpected history mode")
+
+
+class FictionalPowerAgent(Agent):
+    def __init__(self, *, read_history=True):
+        super().__init__("http://127.0.0.1:11434", "fictional", "", 20)
+        def call(name, **args):
+            return {"content": "", "tool_calls": [{
+                "function": {"name": name, "arguments": args},
+            }]}
+        self.script = [
+            call("hub_list_device_events", deviceId="LAB-1",
+                 attribute="power", hoursBack=6, limit=100),
+            call("homebrain_read_device_monitor", mode="status"),
+            {"content": "No readings were returned by native events; status was checked."},
+        ]
+        if read_history:
+            self.script.extend([
+                call("homebrain_read_device_monitor", mode="history",
+                     device_id="LAB-1", metric="power", range="6h"),
+                {"content": "A saved 4 W bin was returned by a separate archive; "
+                            "native events had no power rows. Physical continuity "
+                            "and other unobserved consumption remain unknown."},
+            ])
+        else:
+            self.script.append({"content": "Only monitor status was checked; the "
+                                "historical monitor archive is unverified."})
+        self.messages_seen = []
+
+    async def round(self, messages, tools, remaining):
+        self.messages_seen.append([dict(x) for x in messages])
+        if not self.script:
+            raise AssertionError("Unexpected extra model round or native tool")
+        return self.script.pop(0)
+
+
+class HistoricalStatusOnlyIntegrationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_model_can_choose_archived_history_after_status_gap(self):
+        agent = FictionalPowerAgent()
+        hub, monitor = FictionalPowerMCP(), FictionalSavedMonitor()
+        try:
+            result = await agent.answer(
+                "In the last 6 hours show the recorded power history for the "
+                "fictional meter and explain gaps. Do not change anything.",
+                [], hub, 90, device_monitor=monitor,
+                enable_final_claim_audit=False,
+                enable_causal_follow_through=False,
+            )
+        finally:
+            await agent.close()
+        self.assertTrue(result["success"])
+        self.assertTrue(result["source_review_invoked"])
+        self.assertEqual(result["rounds"], 5)
+        self.assertEqual([args["mode"] for args in monitor.calls],
+                         ["status", "history"])
+        self.assertEqual([name for name, args in hub.calls],
+                         ["hub_list_device_events"])
+        self.assertTrue(result["read_source_usage"][
+            "hub_device_monitor_history_used"])
+        self.assertFalse(result["historical_measurement_source_frontier"][
+            "status_only_historical_gap_for_model_review"])
+        self.assertIn("Historical measurement source-type checkpoint",
+                      agent.messages_seen[3][-1]["content"])
+        self.assertIn("saved 4 W bin", result["answer"])
+        self.assertEqual(len(result["tool_calls"]), 3)
+
+    async def test_model_can_decline_history_without_host_forcing_it(self):
+        agent = FictionalPowerAgent(read_history=False)
+        hub, monitor = FictionalPowerMCP(), FictionalSavedMonitor()
+        try:
+            result = await agent.answer(
+                "Show recorded power history for the fictional meter in "
+                "the last six hours. Do not change anything.",
+                [], hub, 90, device_monitor=monitor,
+                enable_final_claim_audit=False,
+                enable_causal_follow_through=False,
+            )
+        finally:
+            await agent.close()
+        self.assertTrue(result["success"])
+        self.assertEqual(result["rounds"], 4)
+        self.assertEqual([args["mode"] for args in monitor.calls], ["status"])
+        self.assertTrue(result["historical_measurement_source_frontier"][
+            "status_only_historical_gap_for_model_review"])
+        self.assertFalse(result["read_source_usage"][
+            "hub_device_monitor_history_used"])
+        self.assertIn("unverified", result["answer"])
 
 
 if __name__ == "__main__":

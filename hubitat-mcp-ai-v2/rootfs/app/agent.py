@@ -53,6 +53,7 @@ from temporal_transition_verification import (
 from source_progress import current_source_progress
 from investigation_source_ledger import (
     source_review_ledger, may_skip_unchanged_final_audit,
+    historical_source_frontier, HISTORICAL_SOURCE_TYPE_GAP_PROMPT,
 )
 from investigation_review import (
     should_review_completion,
@@ -61,7 +62,7 @@ from investigation_review import (
     FINAL_CLAIM_AUDIT_PROMPT, should_audit_completion,
     final_claim_receipt_scope_index, CAUSAL_FOLLOW_THROUGH_PROMPT,
     should_recheck_causal_evidence, FRESH_SOURCE_RECOVERY_PROMPT,
-    should_offer_fresh_source_recovery,
+    should_offer_fresh_source_recovery, should_prompt_historical_status_gap,
 )
 from config_evidence import config_source_map
 from device_monitor import TOOL_NAME as MONITOR_TOOL, TOOL_DEFINITION as MONITOR_TOOL_DEFINITION
@@ -1262,6 +1263,9 @@ class Agent:
                 "answer_stage_trace": answer_stage_trace,
                 "available_read_sources": source_catalog,
                 "current_read_source_progress": current_source_progress(receipts),
+                "historical_measurement_source_frontier": historical_source_frontier(
+                    receipts, monitor_offered=device_monitor is not None,
+                ),
                 "read_source_usage": {
                     "native_device_event_reads": sum(
                         row.get("name") == "hub_list_device_events"
@@ -1798,6 +1802,19 @@ class Agent:
                         # Do not replay a second verbose index on this pass.
                     else:
                         guidance = review_prompt(source_review_kind)
+                    if source_review_kind == "historical_measurement":
+                        # Source-type *coverage*, not a deterministic tool
+                        # selection. The model has the original successful
+                        # receipts and decides whether history is useful.
+                        frontier = historical_source_frontier(
+                            receipts, monitor_offered=device_monitor is not None,
+                        )
+                        if should_prompt_historical_status_gap(
+                            question, review_kind_name=source_review_kind,
+                            source_frontier=frontier,
+                            has_action_receipt=native_action_receipts_seen > 0,
+                        ):
+                            guidance = HISTORICAL_SOURCE_TYPE_GAP_PROMPT + "\n\n" + guidance
                     guidance += (
                         "\n\nOriginal receipt-scope navigation index "
                         "(not independent proof):\n"
