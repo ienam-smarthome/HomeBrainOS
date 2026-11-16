@@ -1,6 +1,6 @@
 # V2 alpha.131 — source-read integrity and decision to leave causal prompt churn
 
-**Status:** development candidate; exact-head CI and merge pending. V2 Preview only.
+**Status:** merged [PR #1698](https://github.com/ienam-smarthome/HomeBrainOS/pull/1698) at `47232cca1be25010368ed2dd21c20c95ab10a309` after **4/4 exact-head CI workflows passed**. Installed model-led causal accuracy remains unproven. V2 Preview only.
 
 ## Installed alpha.130 evidence and decision
 
