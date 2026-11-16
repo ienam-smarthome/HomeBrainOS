@@ -1,5 +1,9 @@
 # HomeBrainOS development agent instructions
 
+## V2 alpha.122 source-review ledger and audit efficiency (16 November 2026)
+
+The owner's installed alpha.121 three independent read-only historical first answers scored 7/8 (light causal), 6/8 (TRV vs Thermostat), and 5/6 (Hallway chronological listing; causality N/A). Original receipts showed good causal restraint but weak discriminating-source follow-through, a rejected unsupported `stateFilter`, unproven historical coverage and 5/10/5 model rounds. Alpha.122 adds an original-receipt-only bounded source-coverage/value-count ledger to the EXISTING model-selected read-only review, conditionally skips a redundant model-only final audit on unchanged successful uncapped noncausal histories, and resolves typed event times from the configured zone with Europe/London fallback. It does not route tools, force Monitor, declare continuous history, weaken native write checks or touch V1. These are hypotheses until green CI and installed uncoached source-real acceptance. [Engineering note](docs/HOMEBRAIN-V2-ALPHA122-RECEIPT-SOURCE-COVERAGE-20261116.md).
+
 ## V2 alpha.121 natural event times — presentation only (15 November 2026)
 
 Installed alpha.120 correctly found an observed light ON→OFF pair but printed raw ISO, omitted the later ON/source-reported inventory, and offered an unhelpful “unobserved transition” causal caveat. Alpha.121 should prefer natural named UK date/12-hour am-pm time with configured IANA-zone GMT/BST in all user-facing model answers and the typed temporal projection, while keeping original exact offset-aware source evidence/technical JSON. Source-reported later states, bounded inventory and event reporter may be described but cannot establish an issuer, automation trigger, physical effect or complete history. The source-review pipeline and write gate are unchanged. [Engineering note](docs/HOMEBRAIN-V2-ALPHA121-NATURAL-HISTORICAL-TIMES-20261115.md).
