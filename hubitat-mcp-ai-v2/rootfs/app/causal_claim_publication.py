@@ -48,7 +48,7 @@ _SCOPED = re.compile(
     r"inspected\s+(?:rows|window)|"
     r"queried\s+(?:source|window)|no\s+matching\s+rows)\b", re.I,
 )
-_LOG_TOOL = re.compile(r"(?:^|_)(?:app|rule|controller)[a-z0-9_-]*(?:log|execution)(?:s|_|$)|
+_LOG_TOOL = re.compile(r"(?:^|_)(?:app|rule|controller)[a-z0-9_-]*(?:log|execution)(?:s|_|$)|"
                        r"(?:^|_)(?:log|execution)[a-z0-9_-]*(?:app|rule|controller)(?:s|_|$)", re.I)
 _MAX_RECEIPTS = 80
 
