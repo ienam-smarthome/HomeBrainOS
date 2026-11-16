@@ -2397,6 +2397,18 @@ class Agent:
                     else:
                         record["result_kind"] = "tool_result"
                         model_result = self.present_native_result(result, args)
+                        if (name == "hub_list_device_events"
+                                and "appId" in args
+                                and "deviceId" not in args):
+                            # An appId filter on a DEVICE-EVENT query is not
+                            # evidence of a native app execution-log read.
+                            model_result["client_source_category_notice"] = {
+                                "selected_tool": "hub_list_device_events",
+                                "source_kind": "device event listing",
+                                "app_execution_log_read": False,
+                                "empty_rows_do_not_prove_app_log_empty": True,
+                                "note": "If the question concerns an application's actual decision, select an offered genuine app execution-log source or state that the decision remains unverified. Do not retry this same scope to infer logs.",
+                            }
                         if name == "hub_get_info":
                             hub_read = hub_clock_source(name, result)
                             if hub_read is not None:
