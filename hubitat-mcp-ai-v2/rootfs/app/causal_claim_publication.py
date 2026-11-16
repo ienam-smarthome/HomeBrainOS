@@ -23,6 +23,16 @@ _GLOBAL_ABSENCE = re.compile(
     r"only\s+(?:verifiable\s+|verified\s+|recorded\s+)?"
     r"(?:heating\s+)?(?:activation|event|transition|cause)\b)", re.I,
 )
+_UNBOUNDED_COMMAND_ABSENCE = re.compile(
+    r"\bno\b[^\n.]{0,90}\b(?:commands?|triggers?|activations?)\b"
+    r"[^\n.]{0,90}\b(?:appear|occur|recorded|found|observed|issued)\b|"
+    r"\b(?:there\s+(?:is|was)\s+)?no\s+record\s+of\s+(?:any\s+)?"
+    r"[^\n.]{0,90}\b(?:turned|switch(?:ed|ing)?|start(?:ed|ing)?|"
+    r"heat(?:ing)?|activat(?:ed|ion)|operat(?:ed|ion))\b|"
+    r"\bno\s+(?:heating|motion|activity|activation)\s+"
+    r"(?:occurred|started|happened)\b", re.I,
+)
+
 _DEFINITE_CAUSE = re.compile(
     r"\b(?:turned\s+(?:on|off)|started|stopped|activated|deactivated|"
     r"switched|changed|operated)\s+because\b|"
@@ -112,7 +122,7 @@ def causal_publication_floor(question: str, answer: str, receipts: list[dict]) -
 
     # Evaluate complete short prose lines, not raw tool text, code/JSON or
     # headings. A qualified uncertainty is not turned into a definite denial.
-    for line in answer.splitlines():
+    for line in re.split(r'(?<=[.!?])\\s+(?=[A-Z])|\\n', answer):
         line = line.strip().lstrip("> -*#0123456789. ")
         if not line or line.startswith(("|", "`", "{", "[")):
             continue
@@ -120,11 +130,12 @@ def causal_publication_floor(question: str, answer: str, receipts: list[dict]) -
             line = line[:600]
         # A table or explicit returned-rows summary can legitimately report
         # absence IN THAT BOUNDED SOURCE, not a whole-system absence.
-        if (_DENIAL.search(line) or _GLOBAL_ABSENCE.search(line)):
+        if (_DENIAL.search(line) or _GLOBAL_ABSENCE.search(line)
+                or _UNBOUNDED_COMMAND_ABSENCE.search(line)):
             if not _UNCERTAIN.search(line) and not _SCOPED.search(line):
                 return {"status": "unsafe", "reason": "unbounded_historical_absence"}
         if _DEFINITE_CAUSE.search(line):
-            if not _UNCERTAIN.search(line) and not _SCOPED.search(line):
+            if not _UNCERTAIN.search(line):
                 if not _has_event_time_execution_source(receipts):
                     return {"status": "unsafe", "reason": "controller_decision_unverified"}
     return {"status": "passed", "reason": None}
