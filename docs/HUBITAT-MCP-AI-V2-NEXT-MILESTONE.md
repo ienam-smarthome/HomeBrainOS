@@ -1,5 +1,12 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## After alpha.134 — source-real acceptance and benchmark-first causal fidelity
+
+V2 alpha.134 [PR #1705](https://github.com/ienam-smarthome/HomeBrainOS/pull/1705) merged after 4/4 green exact-head workflows. It fixes a general source-only **fallback data-loss** defect: native `command-*` event names with verified original request identity and `producedBy.appId` remain visible even when the model's definite physical/controller cause is withheld, alongside separately reported states. This does NOT demonstrate that the connected model can select the correct controlled output or diagnose the underlying trigger.
+
+**Immediate installed read-only acceptance:** update V2 Preview to `2.0.0-alpha.134`, start a fresh conversation, ask the exact frozen Livingroom Light 2 OFF investigation question, and preserve the FIRST answer plus PRIVATE Technical JSON including failures. Check normal-answer vs fallback status, exact original recorded command issuer, original state reporter, row-limit coverage, physical uncertainty and any missing app execution log. Do not copy private source logs into public fixtures. Feed uncoached captures to `scripts/first_answer_live_intake.py`, verify independently, and report denominator-limited scores. Keep the external unmerged regex patch unapplied, and develop structured claims/role graphs only with repeatable cross-domain before/after evidence. [Engineering note](HOMEBRAIN-V2-ALPHA134-EVIDENCE-TIERED-PARTIAL-20261116.md).
+
+
 ## Next after PR #1703 — obtain honest source-real benchmark baseline
 
 [PR #1703](https://github.com/ienam-smarthome/HomeBrainOS/pull/1703) merged a V2-production-independent PRIVATE first-answer intake CLI (no alpha version bump). It connects original Technical JSON to the 13 exact legacy golden task prompts and prepares ungraded `homebrain-answer-quality-reviews.v1` drafts for human evidence review; write-task prompts and cross-session or uncertain native operations are ineligible for live testing. The remaining 40 curated prompts are **synthetic/anonymized offline packet** definitions, not 40 live evidence matches. Continue to use the existing fixed-source replay and blind scoring for those cases; preserve the fixed 53-case catalog.
