@@ -1,6 +1,6 @@
 # HomeBrainOS V2 alpha.126 — outcome-first causal source sufficiency
 
-**Status:** candidate until exact-head GitHub Actions pass and merge. V2 ONLY. No V1, heating scheduler, native action, approval, or downstream device changes. The installed first-answer behaviour of alpha.126 is unmeasured.
+**Status:** merged in [PR #1688](https://github.com/ienam-smarthome/HomeBrainOS/pull/1688) at `2d0150d5d2998051392b3dea32e7682f9dae0e45` after **9/9 exact-head GitHub Actions passed**. V2 ONLY. No V1, heating scheduler, native action, approval, or downstream device changes. The installed first-answer behaviour of alpha.126 remains unmeasured.
 
 ## Source-real motivation (PRIVATE alpha.125 review, 16 November 2026)
 
