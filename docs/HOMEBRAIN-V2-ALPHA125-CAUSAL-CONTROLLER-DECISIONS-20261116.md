@@ -1,6 +1,6 @@
 # HomeBrainOS V2 alpha.125 — causal controller-decision source follow-through
 
-**Status:** code candidate until exact-head CI and merge. Installed source-real acceptance remains unmeasured. V2-only; no changes to V1, Hubitat controller app logic, live heating settings or native write/approval semantics.
+**Status:** merged in [PR #1686](https://github.com/ienam-smarthome/HomeBrainOS/pull/1686) at `cfaa23e615f033926176aed0de92462cf1674100` after **9/9 exact-head CI checks green**. Installed source-real acceptance remains unmeasured. V2-only; no changes to V1, Hubitat controller app logic, live heating settings or native write/approval semantics.
 
 ## Original evidence and failure being addressed
 

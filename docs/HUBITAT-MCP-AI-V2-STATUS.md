@@ -1,5 +1,10 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 16 November 2026 — alpha.125 merged: model-led command issuer to controller-decision evidence
+
+[PR #1686](https://github.com/ienam-smarthome/HomeBrainOS/pull/1686) merged at `cfaa23e615f033926176aed0de92462cf1674100` after **9/9 exact-head checks green**. The general original-receipt controller decision frontier records app command issuer IDs and attempted/successful app-scoped execution reads separately from current configuration; the model receives a compact causal review checkpoint if relevant evidence is unchecked. No deterministic tool routing or extra round. Original input/command/attribute chronology retained. Code change only, NOT installed acceptance; V1, scheduler and native write approvals untouched. [Engineering note](HOMEBRAIN-V2-ALPHA125-CAUSAL-CONTROLLER-DECISIONS-20261116.md).
+
+
 ## 16 November 2026 — alpha.125 code candidate: controller issuer ≠ controller decision
 
 Installed alpha.124 causal first answer found a genuine native command issuer but never read execution logs or historical control-input observations. Eight original reads succeeded, with no source errors; 11 model rounds, ~685k provider input tokens, ~42.9s server. Its chronology also needs to keep source-observed attribute reports preceding the recorded command row without guessing transport latency. New V2-only alpha.125 adds bounded original command-source frontier with recorded app IDs and app-scoped log attempts versus config reads, plus a **model-chosen** optional read checkpoint in the existing causal review. No mandatory log call, fixed tool route, auto write, physical-verification claim, scheduler-behaviour change or V1 change. [Engineering note](HOMEBRAIN-V2-ALPHA125-CAUSAL-CONTROLLER-DECISIONS-20261116.md). Pending exact-head CI and installed live acceptance.

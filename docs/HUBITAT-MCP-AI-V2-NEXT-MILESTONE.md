@@ -1,5 +1,10 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## Next after alpha.125 merge: source-real causal decision follow-through
+
+[PR #1686](https://github.com/ienam-smarthome/HomeBrainOS/pull/1686) merged after 9/9 exact-head checks. Update V2 Preview to alpha.125. Ask ONE *uncoached*, read-only causal WHY question about a fresh event in another automation domain, without prescribing tool names, app IDs, commands or event timestamps. Capture PRIVATE original receipts, screenshot, time window, command issuer, available execution/input sources, report-versus-actuator physical verification, model rounds, input tokens and elapsed time. Compare to the alpha.124 4/8 baseline but do not assume improvement. Keep heating control policy unchanged until separately justified by event-time histories.
+
+
 ## Alpha.125 — model-led controller-decision source sufficiency
 
 Improve a read-only WHY investigation that already found a recorded command issuer but omitted its app execution logs and historical inputs. Add a generic original-receipt command issuer/decision source frontier, feed a narrow checkpoint to the existing review round, let the model decide any further focused read using live offered tools and exact schema. Do not turn commands into proved controller decisions or physical effects; avoid old sensor snapshots and chronological reversal. Preserve V1/heating-app code/automation approval. After CI and install, test an uncoached cross-domain WHY question and compare original source reads, score, UI concision, rounds/tokens/latency with the 4/8, 11-round alpha.124 baseline. [Note](HOMEBRAIN-V2-ALPHA125-CAUSAL-CONTROLLER-DECISIONS-20261116.md).
