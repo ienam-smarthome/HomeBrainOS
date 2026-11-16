@@ -1236,8 +1236,10 @@ function renderRuntimeHealth(status){
  const stamp=typeof last.recorded_at==='string'?Date.parse(last.recorded_at):NaN;
  const now=Date.now(),probeAge=Number.isFinite(stamp)&&stamp<=now?
   Math.floor((now-stamp)/60000):null;
- const recText=recStatus==='online'?'Diagnostics running':recStatus==='disabled'?'Disabled':
-  recStatus==='waiting'?'Awaiting first sample':recStatus==='error'?'Recorder error':'Status unknown';
+ const recText=recStatus==='online'?(r.running===false?'Last probe reachable · collector stopped':'Last probe reachable'):
+  recStatus==='disabled'?'Disabled':recStatus==='waiting'?'Awaiting first sample':
+  recStatus==='error'?'Recorder error':recStatus==='offline'?'Recent probes unreachable':
+  recStatus==='degraded'?'Probe failure observed':'Status unknown';
  const sampleAge=probeAge===null?'Saved probe timestamp not reported':
   'Last saved probe '+probeAge+' minutes before this view';
  const cadence=Number(r.probe_seconds);
