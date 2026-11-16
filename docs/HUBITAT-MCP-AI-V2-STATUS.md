@@ -1,5 +1,10 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 16 November 2026 — alpha.126 candidate: outcome-first cross-device causal evidence
+
+Installed alpha.125 first answer was **1/8** on a historical shared-output WHY question; the model checked unrelated zone idle/mode/setpoint but no actual output event-time history and incorrectly denied activation. Eight original MCP reads succeeded, no failures, eleven rounds, ~627k provider input tokens, 49.4s server. The new original-receipt outcome source frontier exposes read-history device IDs and focused-inventory members not historically inspected, without treating them as automatically relevant. EXISTING causal model review and final factual audit now check event-time controlled output BEFORE causation or a categorical denial; model chooses optional offered read-only source. No auto tool/app/device, extra model round, native write, V1 or live scheduler adjustment. [Engineering note](HOMEBRAIN-V2-ALPHA126-OUTCOME-FIRST-SOURCE-SUFFICIENCY-20261116.md). Await final-head CI and source-real installed acceptance.
+
+
 ## 16 November 2026 — alpha.125 merged: model-led command issuer to controller-decision evidence
 
 [PR #1686](https://github.com/ienam-smarthome/HomeBrainOS/pull/1686) merged at `cfaa23e615f033926176aed0de92462cf1674100` after **9/9 exact-head checks green**. The general original-receipt controller decision frontier records app command issuer IDs and attempted/successful app-scoped execution reads separately from current configuration; the model receives a compact causal review checkpoint if relevant evidence is unchecked. No deterministic tool routing or extra round. Original input/command/attribute chronology retained. Code change only, NOT installed acceptance; V1, scheduler and native write approvals untouched. [Engineering note](HOMEBRAIN-V2-ALPHA125-CAUSAL-CONTROLLER-DECISIONS-20261116.md).
