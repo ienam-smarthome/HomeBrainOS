@@ -13,7 +13,7 @@ import re
 
 _SAFE_FIELD = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,63}$")
 _SAFE_ID = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
-_SAFE_NUMBER = re.compile(r"^-?\\d{1,10}(?:\\.\\d{1,6})?$")
+_SAFE_NUMBER = re.compile(r"^-?\d{1,10}(?:\.\d{1,6})?$")
 _COMMON_STATES = frozenset({
     "on", "off", "idle", "heating", "cooling", "active", "inactive",
     "open", "closed", "present", "not present", "online", "offline",
@@ -127,8 +127,8 @@ def _event_scope(outer: dict, native: dict, args: dict) -> dict:
         "events_scanned_for_ledger": min(count, _MAX_EVENTS),
         "unscanned_rows": max(0, count - _MAX_EVENTS),
         "returned_limit_reached": capped,
-        "oldest_returned_event": min(stamps).isoformat() if stamps else None,
-        "newest_returned_event": max(stamps).isoformat() if stamps else None,
+        "oldest_indexed_event": min(stamps).isoformat() if stamps else None,
+        "newest_indexed_event": max(stamps).isoformat() if stamps else None,
         "native_reported_query_start": (
             native.get("sinceTimestamp")
             if _utc(native.get("sinceTimestamp")) is not None else None
