@@ -23,6 +23,26 @@ _MAX_NAME = 60
 _MAX_VALUE = 28
 _SAFE_LABEL = re.compile(r"[^\w\s().,\-\u00b0%/]+", re.UNICODE)
 _SAFE_VALUE = re.compile(r"^[\w .,%+\-\u00b0/%]+$", re.UNICODE)
+_SAFE_NUMERIC = re.compile(r"^-?(?:\d{1,9})(?:\.\d{1,6})?$")
+_NUMERIC_FIELDS = frozenset({"temperature", "level", "heatingSetpoint", "power"})
+_STATE_VALUES = {
+    "switch": frozenset({"on", "off"}),
+    "thermostatOperatingState": frozenset({
+        "idle", "heating", "cooling", "pending heat", "pending cool",
+        "fan only", "vent economizer", "unknown",
+    }),
+    "thermostatMode": frozenset({
+        "off", "heat", "cool", "auto", "emergency heat", "eco", "dry", "fan only",
+    }),
+    "motion": frozenset({"active", "inactive"}),
+    "contact": frozenset({"open", "closed"}),
+    "lock": frozenset({"locked", "unlocked", "unknown"}),
+    "presence": frozenset({"present", "not present"}),
+    "water": frozenset({"wet", "dry"}),
+    "valve": frozenset({"open", "closed", "opening", "closing", "on", "off"}),
+    "fanSpeed": frozenset({"off", "low", "medium", "high", "on", "auto"}),
+    "speed": frozenset({"off", "low", "medium", "high", "on", "auto"}),
+}
 # Generic output/observation fields: NONE is evidence of native physical action.
 _STATE_FIELDS = frozenset({
     "thermostatOperatingState", "switch", "motion", "contact", "lock",
@@ -117,6 +137,13 @@ def source_only_partial_answer(
             value = _safe_value(event.get("value"))
             stamp = _timestamp(event.get("date"))
             if value is None or stamp is None:
+                continue
+            # Even a successful native response is untrusted data. Natural
+            # language in a state value is not a valid reported device state.
+            if field in _NUMERIC_FIELDS:
+                if not _SAFE_NUMERIC.fullmatch(value):
+                    continue
+            elif value.lower() not in _STATE_VALUES.get(field, frozenset()):
                 continue
             key = (device_id, field)
             bucket = records.setdefault(key, {
