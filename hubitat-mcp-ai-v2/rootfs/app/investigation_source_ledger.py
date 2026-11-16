@@ -205,8 +205,8 @@ def may_skip_unchanged_final_audit(
 ) -> bool:
     """Avoid another *model-only* polishing pass for simple unchanged evidence.
 
-    Only historical measurement review with successful, uncapped original
-    event rows and zero failed receipts qualifies. The prior source review
+    Only historical measurement review with successful, uncapped, explicitly
+    attribute-filtered original event rows and zero failed receipts qualifies. The prior source review
     already saw the originals and could elect a new read. This does NOT
     establish source sufficiency or answer correctness.
     """
@@ -224,7 +224,23 @@ def may_skip_unchanged_final_audit(
         outer, native = _response(row)
         if not isinstance(outer, dict) or not isinstance(native, dict):
             return False
-        scope = _event_scope(outer, native, row.get("arguments") or {})
+        args = row.get("arguments")
+        args = args if isinstance(args, dict) else {}
+        # An unfiltered or mismatched event query can contain interleaved
+        # attributes, recorded commands and cross-field chronology. The
+        # existing full original-row final audit is important for those.
+        if (not isinstance(args.get("attribute"), str)
+                or native.get("attributeFilter") != args["attribute"]):
+            return False
+        events = native.get("events")
+        if not isinstance(events, list) or any(
+            isinstance(event, dict) and (
+                event.get("type") == "command"
+                or str(event.get("name") or "").startswith("command-")
+            ) for event in events
+        ):
+            return False
+        scope = _event_scope(outer, native, args)
         if not scope or not scope["returned_event_rows"] or scope["returned_limit_reached"]:
             return False
         event_reads += 1
