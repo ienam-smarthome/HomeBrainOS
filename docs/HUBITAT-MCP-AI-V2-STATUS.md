@@ -1,5 +1,10 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 16 November 2026 — alpha.126 outcome-first causal source review MERGED
+
+[PR #1688](https://github.com/ienam-smarthome/HomeBrainOS/pull/1688) merged at `2d0150d5d2998051392b3dea32e7682f9dae0e45` with **9/9 exact-head checks green**. V2-only original-inventory-versus-history navigation, outcome-first model-led causal review and final factual audit; no fixed output-device selector, mandatory tool, new model round, native writer, V1 or heating scheduler changes. Alpha.125 first-answer failure: **1/8** with eight successful but mis-scoped source reads, 11 rounds and 49.4s. Alpha.126 installed model/source-real acceptance remains unmeasured. [Engineering note](HOMEBRAIN-V2-ALPHA126-OUTCOME-FIRST-SOURCE-SUFFICIENCY-20261116.md).
+
+
 ## 16 November 2026 — alpha.126 candidate: outcome-first cross-device causal evidence
 
 Installed alpha.125 first answer was **1/8** on a historical shared-output WHY question; the model checked unrelated zone idle/mode/setpoint but no actual output event-time history and incorrectly denied activation. Eight original MCP reads succeeded, no failures, eleven rounds, ~627k provider input tokens, 49.4s server. The new original-receipt outcome source frontier exposes read-history device IDs and focused-inventory members not historically inspected, without treating them as automatically relevant. EXISTING causal model review and final factual audit now check event-time controlled output BEFORE causation or a categorical denial; model chooses optional offered read-only source. No auto tool/app/device, extra model round, native write, V1 or live scheduler adjustment. [Engineering note](HOMEBRAIN-V2-ALPHA126-OUTCOME-FIRST-SOURCE-SUFFICIENCY-20261116.md). Await final-head CI and source-real installed acceptance.
