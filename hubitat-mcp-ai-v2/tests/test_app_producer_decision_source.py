@@ -67,6 +67,27 @@ class AppProducerFrontierTests(unittest.TestCase):
             "Why did the fixture relay turn on?",
             review_kind_name="causal", source_frontier=f))
 
+    def test_app_emitted_event_is_not_a_device_state_producer(self):
+        app_event = native(
+            "hub_list_device_events", {"appId": 733, "hoursBack": 4},
+            {"source": "app", "appId": 733, "events": [{
+                "name": "switch", "value": "on", "type": "digital",
+                "date": "2030-09-01T08:00:00Z",
+                "producedBy": {"appId": 733},
+            }]},
+        )
+        mismatch = native(
+            "hub_list_device_events", {"deviceId": "FX-ANOTHER"},
+            {"source": "device", "deviceId": "FX-RELAY", "events": [{
+                "name": "switch", "value": "on",
+                "date": "2030-09-01T08:00:00Z",
+                "producedBy": {"appId": 734},
+            }]},
+        )
+        f = causal_controller_frontier([app_event, mismatch])
+        self.assertEqual(f["noncommand_state_producer_app_ids"], [])
+        self.assertFalse(f["controller_decision_source_unchecked_for_model_review"])
+
     def test_app_emitted_event_query_is_not_a_runtime_log(self):
         f = causal_controller_frontier([report, emitted])
         self.assertEqual(f["app_logs_attempted_for_state_producers"], 0)
