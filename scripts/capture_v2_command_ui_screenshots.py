@@ -217,7 +217,7 @@ def main():
                                 check_contrast(page, "ask", color, device)
                                 page.locator("#systemHealthTab").click()
                                 page.wait_for_function(
-                                    "document.querySelector('#healthAttention').children.length === 4"
+                                    "document.querySelector('#healthAttention').children.length === 5"
                                 )
                                 check_contrast(page, "systemHealth", color, device)
                                 page.screenshot(
