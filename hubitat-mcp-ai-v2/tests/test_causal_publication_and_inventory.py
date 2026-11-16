@@ -83,6 +83,54 @@ class ClaimFloorUnitTests(unittest.TestCase):
             [history_receipt()],
         )["reason"] == "controller_decision_unverified"
 
+    def test_intervening_words_do_not_hide_definite_causation(self):
+        for answer in (
+            "The output turned on today because the controller ran.",
+            "The light switched off ten seconds later because a timer fired.",
+            "The valve changed at noon because the rule triggered.",
+        ):
+            with self.subTest(answer=answer):
+                self.assertEqual(
+                    causal_publication_floor(
+                        "Why did the fixture output start?", answer,
+                        [history_receipt()],
+                    )["reason"],
+                    "controller_decision_unverified",
+                )
+
+    def test_unrelated_app_log_is_not_causal_execution_evidence(self):
+        unrelated = {"name": "hub_list_app_logs",
+                     "arguments": {"appId": "999"},
+                     "success": True, "result_kind": "tool_result",
+                     "response": wrapper({"logs": [
+                         {"time": "2030-09-03T08:10:00+01:00",
+                          "message": "Unrelated app executed"}]})}
+        related = history_receipt()
+        sourced = json.loads(json.dumps(EVENTS))
+        sourced["events"][0]["producedBy"] = {"appId": "203"}
+        related["response"] = wrapper(sourced)
+        self.assertEqual(
+            causal_publication_floor(
+                "Why did the fixture output turn on?",
+                "The output turned on because the app executed a rule.",
+                [related, unrelated],
+            )["reason"],
+            "controller_decision_unverified",
+        )
+        # A listener isn't the issuer: triggered[] cannot make logs relevant.
+        no_producer = history_receipt()
+        data = json.loads(json.dumps(EVENTS))
+        data["events"][0]["triggered"] = [{"appId": "999"}]
+        no_producer["response"] = wrapper(data)
+        self.assertEqual(
+            causal_publication_floor(
+                "Why did the fixture output turn on?",
+                "The output turned on because a timer fired.",
+                [no_producer, unrelated],
+            )["reason"],
+            "controller_decision_unverified",
+        )
+
     def test_scoped_source_limit_and_cautious_hypothesis_unchanged(self):
         for answer in (
             "No matching rows were returned in this query.",
@@ -110,7 +158,11 @@ class ClaimFloorUnitTests(unittest.TestCase):
         self.assertEqual(r["reason"], "controller_decision_unverified")
 
     def test_successful_nonempty_event_execution_log_is_different_source_type(self):
-        execution = {"name": "hub_list_app_logs", "arguments": {"appId": "mock"},
+        related = history_receipt()
+        sourced = json.loads(json.dumps(EVENTS))
+        sourced["events"][0]["producedBy"] = {"appId": "203"}
+        related["response"] = wrapper(sourced)
+        execution = {"name": "hub_list_app_logs", "arguments": {"appId": "203"},
                      "success": True, "result_kind": "tool_result",
                      "response": wrapper({"logs": [
                          {"time": "2030-09-03T08:10:00+01:00",
@@ -120,7 +172,7 @@ class ClaimFloorUnitTests(unittest.TestCase):
             causal_publication_floor(
                 "Why did output turn on?",
                 "The output turned on because the controller executed the branch.",
-                [history_receipt(), execution])["status"],
+                [related, execution])["status"],
             "passed",
         )
 
