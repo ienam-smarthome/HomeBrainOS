@@ -12,7 +12,8 @@ from datetime import datetime
 import re
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from investigation_source_ledger import _response, _SAFE_ID, _SAFE_FIELD
+from investigation_source_ledger import _SAFE_FIELD
+from native_device_event_receipt import original_device_event_history
 
 _MAX_RECEIPTS = 40
 _MAX_EVENTS_PER_RECEIPT = 300
@@ -107,23 +108,11 @@ def source_only_partial_answer(
         args = receipt.get("arguments")
         if not isinstance(args, dict):
             continue
-        _, native = _response(receipt)
-        if not isinstance(native, dict) or native.get("source") != "device":
+        validated = original_device_event_history(receipt)
+        if validated is None:
             continue
-        device_id = native.get("deviceId")
-        if type(device_id) is int:
-            device_id = str(device_id)
-        if not isinstance(device_id, str) or not _SAFE_ID.fullmatch(device_id):
-            continue
-        requested_id = args.get("deviceId")
-        if requested_id is not None and str(requested_id) != device_id:
-            # Never conflate two different devices because a tool response
-            # injected a contradictory claimed ID.
-            continue
-        events = native.get("events")
-        if not isinstance(events, list):
-            continue
-        label = _safe_name(native.get("device"), f"Device {device_id}")
+        device_id, native_label, events = validated
+        label = _safe_name(native_label, f"Device {device_id}")
         attribute = args.get("attribute")
         for event in events[:_MAX_EVENTS_PER_RECEIPT]:
             if not isinstance(event, dict) or event.get("type") == "command":
@@ -172,7 +161,7 @@ def source_only_partial_answer(
 
     lines = [
         "**Investigation incomplete — source-only partial result.** "
-        "The model did not finish a reliable explanation. The following "
+        "A reliable complete causal explanation could not be published. The following "
         "are reported observations from this request's successful read-only "
         "MCP histories, not an independently verified physical effect.",
     ]
@@ -206,8 +195,9 @@ def source_only_partial_answer(
         )
     lines.append(
         "These are bounded returned rows, not exhaustive or continuous history. "
-        "**The initiating command, controller decision and independent physical "
-        "outcome are unverified from this partial result.** "
+        "**This partial state-event summary does not independently establish the "
+        "controller decision or physical outcome.** Separate original command "
+        "and application-log receipts, if any, remain available for review. "
         "The original tool receipts and any source errors remain in Technical JSON."
     )
     return "\n\n".join([lines[0], "\n".join(lines[1:])])
