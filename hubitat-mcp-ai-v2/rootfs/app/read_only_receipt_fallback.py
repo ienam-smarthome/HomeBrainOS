@@ -168,6 +168,27 @@ def source_only_partial_answer(
         "request's successful read-only MCP histories. They do not establish "
         "a controller's internal trigger or an independent physical effect.",
     ]
+    if command_rows:
+        lines.append(
+            "**Recorded command issuers from the returned native device histories:** "
+            "These app issuers are native command-row producers, not proof of "
+            "the initiating sensor/button condition, internal app decision, "
+            "command delivery or physical effect."
+        )
+        for row in command_rows:
+            app_id = row["issuer_app_id"]
+            issuer = (
+                f"recorded issuer **{row['issuer_label']}** (app ID {app_id})"
+                if app_id is not None else
+                "issuer not established from this command row"
+            )
+            lines.append(
+                f"- **{row['device_label']}** (ID {row['device_id']}), "
+                f"`{row['command_name']}` at "
+                f"{_friendly_time(row['timestamp'], zone)}; {issuer}."
+            )
+    if records:
+        lines.append("**Returned device state reports:**")
     chosen_devices = set()
     chosen_fields = 0
     for varied, _, bucket, ordered in candidates:
