@@ -31,7 +31,8 @@ _DEFINITE_CAUSE = re.compile(
     r"\b(?:is|was|therefore)\s+the\s+(?:verifiable\s+)?"
     r"(?:initiator|cause)\b|"
     r"\b(?:demand|cause|reason)\s+(?:came|originated)\s+from\b|"
-    r"\b(?:the\s+)?(?:cause|reason)\s+(?:was|is)\b", re.I,
+    r"\b(?:the\s+)?(?:cause|reason)\s+(?:was|is)\s+"
+    r"(?!(?:observed|established|unverified|unknown|uncertain|not)\b)", re.I,
 )
 # Only explanatory assertions, not explicitly *unverified* hypotheses or
 # statements that a fact cannot be established, are eligible.
@@ -47,8 +48,8 @@ _SCOPED = re.compile(
     r"inspected\s+(?:rows|window)|"
     r"queried\s+(?:source|window)|no\s+matching\s+rows)\b", re.I,
 )
-_LOG_TOOL = re.compile(r"\b(?:app|rule|controller)[\w_-]*[\w_-]*(?:log|execution)|"
-                       r"\b(?:log|execution)[\w_-]*[\w_-]*(?:app|rule|controller)", re.I)
+_LOG_TOOL = re.compile(r"(?:^|_)(?:app|rule|controller)[a-z0-9_-]*(?:log|execution)(?:s|_|$)|
+                       r"(?:^|_)(?:log|execution)[a-z0-9_-]*(?:app|rule|controller)(?:s|_|$)", re.I)
 _MAX_RECEIPTS = 80
 
 
