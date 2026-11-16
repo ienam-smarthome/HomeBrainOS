@@ -14,6 +14,7 @@ function harness(){
  water_wet:{count:0,devices_with_state:2,members:[],members_omitted:0},
  heating_active:{count:1,devices_with_state:2,members:[{name:'Lab TRV A'}],members_omitted:0},
  reported_offline:{count:1,devices_with_state:3,members:[{name:'Lab Mesh Device'}],members_omitted:0},
+ last_activity_over_24h:{count:1,devices_with_state:4,members:[{name:'Lab Quiet Sensor',inactive_hours:51}],members_omitted:0},
  other_switches_on:{count:1,devices_with_state:2,members:[{name:'Lab Smart Plug'}],members_omitted:0}},unclassified_on_switches:1},result:{answer:'Original **answer**',elapsed_ms:2000,rounds:2,tool_calls:[{result:{source:'unchanged'}}]},httpError:null,copyWorks:true,askBodies};
  const document={getElementById:el,activeElement:element(),body:{appendChild(){}},createTextNode(text){const e=element('#text');e.textContent=text;return e;},createElementNS(_ns,tag){return element(tag);},createElement(tag){const e=element(tag);e.select=()=>{fallback=e.value;};e.setSelectionRange=()=>{};e.remove=()=>{};return e;},execCommand(){return state.copyWorks;}};
  const navigator={clipboard:{writeText:async text=>{copied=text;}}};
@@ -75,9 +76,17 @@ assert.equal(h.el('overviewHeating').textContent,'1');
 assert.equal(h.el('overviewOffline').textContent,'1');
 assert.equal(h.el('overviewOtherOnPreview').textContent,'Lab Smart Plug');
 assert.equal(h.el('overviewLightsPreview').textContent,'Lab Sample Light 2');
-assert.equal(h.el('healthAttention').children.length,4);
+assert.equal(h.el('healthAttention').children.length,5);
 assert.equal(h.el('healthActive').children.length,4);
 assert.match(h.el('healthAttention').textContent,/Lab Mesh Device/);
+assert.match(h.el('healthAttention').textContent,/Lab Quiet Sensor/);
+assert.match(h.el('healthAttention').textContent,/51h since recorded activity/);
+assert(healthSection.includes('id="healthRuntime"'));
+h.run("renderRuntimeHealth({configured:true,recorder:{status:'online',probe_seconds:30,last:{recorded_at:'2030-01-01T11:59:00Z'}},device_monitor:{enabled:true,configured:true}})");
+assert.match(h.el('healthRuntime').textContent,/App configuration/);
+assert.match(h.el('healthRuntime').textContent,/Configured/);
+assert.match(h.el('healthRuntime').textContent,/Hub diagnostics/);
+assert.match(h.el('healthRuntime').textContent,/Configured · untested/);
 const inventoryBeforeTab=h.overviewCalls,askBeforeTab=h.askCalls;
 h.run("tab('systemHealth')");
 h.run("tab('ask')");
