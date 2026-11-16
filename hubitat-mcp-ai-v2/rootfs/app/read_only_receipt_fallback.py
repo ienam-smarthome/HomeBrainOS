@@ -196,7 +196,7 @@ def source_only_partial_answer(
     lines.append(
         "These are bounded returned rows, not exhaustive or continuous history. "
         "**This partial state-event summary does not independently establish the "
-        "controller decision or physical outcome.** Separate original command "
+        "initiating command, controller decision or physical outcome.** Separate original command "
         "and application-log receipts, if any, remain available for review. "
         "The original tool receipts and any source errors remain in Technical JSON."
     )
