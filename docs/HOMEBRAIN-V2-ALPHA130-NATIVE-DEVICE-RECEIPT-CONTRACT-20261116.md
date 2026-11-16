@@ -1,6 +1,6 @@
 # HomeBrainOS V2 alpha.130 — native device-history envelope compatibility
 
-**Status:** candidate; CI and merge pending. V2 only. No V1, live heating
+**Status:** merged [PR #1696](https://github.com/ienam-smarthome/HomeBrainOS/pull/1696) at `787728599c0abc380dbdef99c3714aca7e0c1b00` after **4/4 exact-head CI workflows green**; installed source-real alpha.130 acceptance remains unmeasured. V2 only. No V1, live heating
 scheduler, hub settings, physical device, model route, read-only source
 selection, write approval or other action safety changes.
 
