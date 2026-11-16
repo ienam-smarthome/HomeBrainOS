@@ -35,7 +35,7 @@ _UNBOUNDED_COMMAND_ABSENCE = re.compile(
 
 _DEFINITE_CAUSE = re.compile(
     r"\b(?:turned\s+(?:on|off)|started|stopped|activated|deactivated|"
-    r"switched|changed|operated)\s+because\b|"
+    r"switched|changed|operated)\b[^\n.!?]{0,110}\bbecause\b|"
     r"\b(?:directly|definitively|certainly)\s+(?:caused|triggered)\b|"
     r"\b(?:indicates|proves|confirms)\s+causation\b|"
     r"\b(?:is|was)\s+(?:therefore\s+)?the\s+(?:verifiable\s+)?"
@@ -83,6 +83,33 @@ def _has_event_time_execution_source(receipts: list[dict]) -> bool:
                 return True
         return False
 
+    # A successful log of an unrelated app is not event-time evidence for
+    # the controller behind an observed state or command. Use only producer
+    # identities from successful original device event histories. A
+    # triggered[] listener is not the initiating application.
+    candidates: set[str] = set()
+    for row in receipts[:_MAX_RECEIPTS]:
+        if (not isinstance(row, dict) or row.get("success") is not True
+                or row.get("name") != "hub_list_device_events"):
+            continue
+        _, native = _response(row)
+        if not isinstance(native, dict) or native.get("source") != "device":
+            continue
+        events = native.get("events")
+        if not isinstance(events, list):
+            continue
+        for event in events[:250]:
+            if not isinstance(event, dict):
+                continue
+            producer = event.get("producedBy")
+            app_id = producer.get("appId") if isinstance(producer, dict) else None
+            if type(app_id) is int:
+                app_id = str(app_id)
+            if isinstance(app_id, str) and re.fullmatch(r"[0-9]{1,9}", app_id):
+                candidates.add(app_id)
+    if not candidates:
+        return False
+
     for row in receipts[:_MAX_RECEIPTS]:
         if not isinstance(row, dict) or row.get("success") is not True:
             continue
@@ -91,6 +118,11 @@ def _has_event_time_execution_source(receipts: list[dict]) -> bool:
             continue
         args = row.get("arguments")
         args = args if isinstance(args, dict) else {}
+        app_id = args.get("appId")
+        if type(app_id) is int:
+            app_id = str(app_id)
+        if app_id not in candidates:
+            continue
         # The documented native hub_get_logs past tab is the actual
         # application runtime log. An appId on hub_list_device_events
         # means APP-EMITTED EVENTS and cannot substitute for runtime logs.
