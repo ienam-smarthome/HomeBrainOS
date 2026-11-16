@@ -1,6 +1,6 @@
 # HomeBrainOS V2 — benchmark-first live capture intake
 
-**Status:** development candidate (CI pending). This is an offline benchmark
+**Status:** merged [PR #1703](https://github.com/ienam-smarthome/HomeBrainOS/pull/1703) at `a9037f13dd4856acc0c746823d04540b72e0f05f` after exact-head Release assurance and repository validation CI green. This is an offline benchmark
 utility only. No V2 app version bump, model prompt, causal publication gate,
 native tool, scheduled task, live Hubitat action or provider change.
 

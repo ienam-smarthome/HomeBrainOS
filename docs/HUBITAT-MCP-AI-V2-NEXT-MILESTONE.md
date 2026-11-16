@@ -1,5 +1,12 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## Next after PR #1703 — obtain honest source-real benchmark baseline
+
+[PR #1703](https://github.com/ienam-smarthome/HomeBrainOS/pull/1703) merged a V2-production-independent PRIVATE first-answer intake CLI (no alpha version bump). It connects original Technical JSON to the 13 exact legacy golden task prompts and prepares ungraded `homebrain-answer-quality-reviews.v1` drafts for human evidence review; write-task prompts and cross-session or uncertain native operations are ineligible for live testing. The remaining 40 curated prompts are **synthetic/anonymized offline packet** definitions, not 40 live evidence matches. Continue to use the existing fixed-source replay and blind scoring for those cases; preserve the fixed 53-case catalog.
+
+**Immediate milestone:** run an independent fresh Ask using an EXACT eligible read-only legacy prompt (e.g. the Livingroom Light 2 OFF-cause task), privately save original first-answer Technical JSON including failure responses, use `scripts/first_answer_live_intake.py` to generate a private ungraded template, and review against original receipts before supplying any grades. Require actual deployed commit SHA, model, original answer, output identity, event-time log/input, reporter versus issuer, time-scope bounds, unknown physical effect, unsuccessful calls, rounds, tokens (if available) and elapsed. Compare multiple independent domains and preserve first attempts. Report small samples as `insufficient_case_coverage`; **no causal patch, structured claim gate or inferred role graph until repeatable before/after source-real evidence shows a general improvement**. The proposed external regex patch has not been merged. [Details](HOMEBRAIN-V2-FIRST-ANSWER-LIVE-INTAKE-20261116.md).
+
+
 ## After alpha.132: validate System Health, then improve targeted non-LLM troubleshooting
 
 V2 alpha.132 [PR #1700](https://github.com/ienam-smarthome/HomeBrainOS/pull/1700) merged with four green exact-head workflows. New source-scoped >24h lastActivity card and cached model-free runtime/recorder/monitor status complement the existing V2 System Health tab. **Next installed check**: reload V2 Preview alpha.132, inspect names and timestamp coverage, distinguish quiet/sleepy devices from actual `healthStatus=offline`, check runtime's last saved-probe time and unprobed states, and verify tab changes/expansions do not add another MCP inventory request or LLM call. The initial inventory read remains one; the existing recorder schedule is unchanged.
