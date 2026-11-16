@@ -62,7 +62,7 @@ from investigation_review import (
     FINAL_CLAIM_AUDIT_PROMPT, should_audit_completion,
     final_claim_receipt_scope_index, CAUSAL_FOLLOW_THROUGH_PROMPT,
     should_recheck_causal_evidence, FRESH_SOURCE_RECOVERY_PROMPT,
-    should_offer_fresh_source_recovery,
+    should_offer_fresh_source_recovery, should_prompt_historical_status_gap,
 )
 from config_evidence import config_source_map
 from device_monitor import TOOL_NAME as MONITOR_TOOL, TOOL_DEFINITION as MONITOR_TOOL_DEFINITION
@@ -1809,7 +1809,11 @@ class Agent:
                         frontier = historical_source_frontier(
                             receipts, monitor_offered=device_monitor is not None,
                         )
-                        if frontier["status_only_historical_gap_for_model_review"]:
+                        if should_prompt_historical_status_gap(
+                            question, review_kind_name=source_review_kind,
+                            source_frontier=frontier,
+                            has_action_receipt=native_action_receipts_seen > 0,
+                        ):
                             guidance = HISTORICAL_SOURCE_TYPE_GAP_PROMPT + "\n\n" + guidance
                     guidance += (
                         "\n\nOriginal receipt-scope navigation index "
