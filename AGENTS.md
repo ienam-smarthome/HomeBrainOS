@@ -1,5 +1,9 @@
 # HomeBrainOS development agent instructions
 
+## V2 alpha.122 merged handoff — 16 November 2026
+
+[PR #1681](https://github.com/ienam-smarthome/HomeBrainOS/pull/1681) merged at `df368d4f923e41b044492d19aac4851f34034406` after **10/10 final-head GitHub checks passed**. This V2-only source-review ledger/conditional audit/timezone improvement is NOT installed source-real acceptance; prior alpha.121 three-case human assessments remain the only current first-answer observations. Follow up with ONE fresh uncoached read-only historical investigation from another device type; examine full PRIVATE original receipts, target and time-window coverage, cause/reporters, caps/errors, source selection, model rounds/tokens, GMT/BST. No V1, routine write-approval, or native-write behavior changed. [Engineering note](docs/HOMEBRAIN-V2-ALPHA122-RECEIPT-SOURCE-COVERAGE-20261116.md).
+
 ## V2 alpha.122 source-review ledger and audit efficiency (16 November 2026)
 
 The owner's installed alpha.121 three independent read-only historical first answers scored 7/8 (light causal), 6/8 (TRV vs Thermostat), and 5/6 (Hallway chronological listing; causality N/A). Original receipts showed good causal restraint but weak discriminating-source follow-through, a rejected unsupported `stateFilter`, unproven historical coverage and 5/10/5 model rounds. Alpha.122 adds an original-receipt-only bounded source-coverage/value-count ledger to the EXISTING model-selected read-only review, conditionally skips a redundant model-only final audit on unchanged successful uncapped noncausal histories, and resolves typed event times from the configured zone with Europe/London fallback. It does not route tools, force Monitor, declare continuous history, weaken native write checks or touch V1. These are hypotheses until green CI and installed uncoached source-real acceptance. [Engineering note](docs/HOMEBRAIN-V2-ALPHA122-RECEIPT-SOURCE-COVERAGE-20261116.md).

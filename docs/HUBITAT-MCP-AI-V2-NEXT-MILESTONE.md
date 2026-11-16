@@ -1,5 +1,9 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## Alpha.122 merged and next source-real acceptance (16 November 2026)
+
+PR [#1681](https://github.com/ienam-smarthome/HomeBrainOS/pull/1681) merged at `df368d4f923e41b044492d19aac4851f34034406` following **10/10 green exact-head CI checks**. Install the updated V2 Preview and ask ONE new uncoached read-only historical question from a different device type, e.g. Bedroom 2 TRV operating-state reports in the last 12 hours. Compare original receipt caps, requested-versus-returned window, repeated state values versus verified transitions, reporter/issuer, optional Monitor chosen or not, model rounds/input tokens, and GMT/BST. Do not claim live accuracy, source completeness, efficiency gain or write regression absence from CI alone. Preserve V1 and native action safeguards. [Details](HOMEBRAIN-V2-ALPHA122-RECEIPT-SOURCE-COVERAGE-20261116.md).
+
 ## Alpha.122 candidate — source-coverage model review and measured efficiency
 
 Code candidate: the existing source-review turn receives a bounded, original-read-only event coverage ledger (counts by exact event type/short state, oldest/latest indexed rows, filters, caps, failed reads and optional Monitor *offered* status, not a verified read). Model still selects and validates any further native read. Only unchanged successful uncapped noncausal historical results bypass an otherwise redundant final model-only audit, never the first source review; causal, failed/capped and additional-source investigations retain existing checks. Typed clock presentation resolves the request timezone. After CI, install Preview and capture a new uncoached, source-real historical first answer; compare 7/8, 6/8, 5/6 alpha.121 limited baselines and 5/10/5 rounds without claiming universal improvements. Preserve routine control and V1. [Contract](HOMEBRAIN-V2-ALPHA122-RECEIPT-SOURCE-COVERAGE-20261116.md).
