@@ -246,33 +246,22 @@ with sync_playwright() as p:
   page.context.route("**/api/**",api)
   errors=[];page.on("pageerror",lambda e:errors.append(str(e)))
   page.goto(f"http://127.0.0.1:{server.server_port}")
-  page.wait_for_function("document.querySelector('#overviewLights').textContent === '1'")
-  assert page.locator("#ask .overview-aside").count()==0,"Ask must not contain the device overview"
-  assert page.locator("#systemHealth .overview-aside").count()==1
-  assert not page.locator("#overviewLightsToggle").is_visible(),"Device overview is on System Health only"
+  page.wait_for_function("document.querySelector('#healthCoverage').textContent.includes('5 devices inspected')")
+  assert page.locator("#healthInventoryDetails").count()==0,"Duplicated device overview is removed"
+  assert page.locator("#systemHealth .overview-aside").count()==0
+  assert page.locator("#ask .overview-aside").count()==0
   if width==1280:
    assert page.locator(".ask-grid").bounding_box()["width"]>850,"Chat should use a wide single column"
   page.locator("#systemHealthTab").click()
-  assert not page.locator("#overviewLightsToggle").is_visible(),"Full overview begins collapsed"
-  page.locator("#healthInventoryDetails > summary").click()
-  assert page.locator("#overviewLightsPreview").inner_text()=="Lab Sample Light 2"
-  assert page.locator("#overviewMotionPreview").inner_text()=="Lab Motion A"
-  assert page.locator("#overviewBatteryPreview").inner_text()=="Lab Battery Sensor · 9%"
-  page.locator("#overviewLightsToggle").click()
-  page.locator("#overviewMotionToggle").click()
-  page.locator("#overviewBatteryToggle").click()
-  assert page.locator("#overviewLightsNames").is_visible()
-  assert page.locator("#overviewLightsNames").inner_text()=="Lab Sample Light 2"
-  assert page.locator("#overviewMotionNames").inner_text()=="Lab Motion A"
-  assert page.locator("#overviewBatteryNames").inner_text()=="Lab Battery Sensor · 9%"
-  assert "ON switches not identified as lights" in page.locator("#overviewStatus").inner_text()
-  assert page.locator("#overviewMotion").inner_text()=="1"
-  assert page.locator("#overviewBattery").inner_text()=="1"
-  assert page.locator("#overviewDevices").inner_text()=="5"
-  assert "of 6 declared" in page.locator("#overviewDevicesScope").inner_text()
-  assert "may be partial" in page.locator("#overviewStatus").inner_text()
-  assert "807 MB" in page.locator("#overviewRecorder").inner_text()
-  assert "20.0%" in page.locator("#overviewRecorder").inner_text()
+  assert page.locator("#refreshOverview").is_visible(),"Manual inventory refresh remains accessible"
+  assert "of 6 declared" in page.locator("#healthCoverage").inner_text()
+  assert "ON switches not identified as lights" in page.locator("#healthRefreshStatus").inner_text()
+  assert "may be partial" in page.locator("#healthRefreshStatus").inner_text()
+  assert "Lab Sample Light 2" in page.locator("#healthActive").inner_text()
+  assert "Lab Motion A" in page.locator("#healthActive").inner_text()
+  assert "Lab Battery Sensor · 9%" in page.locator("#healthAttention").inner_text()
+  page.locator("#healthActive .health-members summary").first.click()
+  assert "Lab Sample Light 2" in page.locator("#healthActive .health-members").first.inner_text()
   assert len(requests)==0,"Overview must not invoke the model or ordinary Ask"
   assert len(overview_requests)==1,"Startup uses one inventory request"
   page.locator("#systemHealthTab").click()
@@ -300,7 +289,7 @@ with sync_playwright() as p:
   page.locator("#refreshOverview").click()
   page.wait_for_function("!document.querySelector('#refreshOverview').disabled")
   page.locator("#askTab").click()
-  assert page.locator("#overviewLights").inner_text()=="1"
+  assert "Lab Sample Light 2" in page.locator("#healthActive").inner_text()
   assert len(requests)==0,"Overview refresh is read-only; no Ask call"
   assert len(overview_requests)==2,"Only manual refresh adds an inventory read"
   page.locator("#question").fill("Read-only fixture question")
