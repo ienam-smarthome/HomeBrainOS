@@ -231,12 +231,30 @@ def source_only_partial_answer(
             f"- **{bucket['name']}** (ID {bucket['device_id']}), "
             f"`{bucket['field']}`: {states}."
         )
-    lines.append(
-        "These are bounded returned rows, not exhaustive or continuous history. "
-        "**This partial state-event summary does not independently establish the "
-        "initiating command, controller decision or physical outcome; these remain "
-        "unverified within this partial state-only summary.** Separate original command "
-        "and application-log receipts, if any, remain available for review. "
-        "The original tool receipts and any source errors remain in Technical JSON."
-    )
+    if command_rows:
+        lines.append(
+            "These are bounded returned rows, not exhaustive or continuous history. "
+            "**The initiating command's recorded issuer is not proof of the "
+            "upstream trigger, the internal controller decision or the physical "
+            "outcome. A later state report shows only what the device reported; "
+            "chronological proximity does not prove exclusive causation.** "
+            "Relevant app execution logs and input histories may still be "
+            "unread. The original tool receipts and any source errors remain "
+            "in Technical JSON."
+        )
+    else:
+        lines.append(
+            "These are bounded returned rows, not exhaustive or continuous history. "
+            "**This partial state-event summary does not independently establish the "
+            "initiating command, controller decision or physical outcome; these remain "
+            "unverified within this partial state-only summary.** Separate original command "
+            "and application-log receipts, if any, remain available for review. "
+            "The original tool receipts and any source errors remain in Technical JSON."
+        )
+    if any_page_at_limit:
+        lines.append(
+            "At least one native event-history page reached its requested "
+            "row limit. Earlier unreturned events and overall retention "
+            "coverage remain unknown."
+        )
     return "\n\n".join([lines[0], "\n".join(lines[1:])])
