@@ -1,5 +1,10 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## Next after alpha.126 merge — uncoached outcome-first source-real test
+
+[PR #1688](https://github.com/ienam-smarthome/HomeBrainOS/pull/1688) merged after **9/9 exact-head CI successes**. Update V2 Preview to alpha.126; in NEW chat ask a natural read-only historical WHY question without naming a device ID, app, MCP tool or timestamp. Verify (1) history of actual controlled output, not just zone/secondary sensors; (2) event-time issuer and controller decision sources where proportionate; (3) exact chronology and report-versus-physical distinctions; (4) concise answer and uncertainty. Use original PRIVATE MCP receipts, not model-only claims. Compare tool scope, first-answer 0/1/2 scores, rounds, tokens and latency against alpha.125 **1/8 / 11 rounds / 626,950 input / 49.4 s**. No live heater/controller changes.
+
+
 ## Next alpha.126 — uncoached outcome-first source sufficiency
 
 After alpha.125 installed causal failure (1/8, 8 good reads but zero historic primary-output or controller execution receipts, 11 rounds, ~627k input, 49.4s), validate V2 alpha.126's GENERAL event-time controlled-output coverage and model-led review. Install new V2 Preview after green exact-head checks. Ask one uncoached read-only WHY/start/stop question. Score against ORIGINAL output-state event history and relevant decision source, command issuer versus reporter, requested and returned windows, and unknown physical effect. Compare source selection, factual grounding 0/1/2, source completeness, calibration, usefulness, rounds/tokens/latency. Do not change heating scheduler, V1 or native write approval. [Engineering note](HOMEBRAIN-V2-ALPHA126-OUTCOME-FIRST-SOURCE-SUFFICIENCY-20261116.md).
