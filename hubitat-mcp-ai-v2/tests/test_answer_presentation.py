@@ -26,7 +26,7 @@ class AnswerPresentationGuidanceTests(unittest.TestCase):
         for phrase in (
             "Answer-first readability", "plain-English sentences",
             "two-column evidence-audit table", "fenced JSON",
-            "original source details", "carried-forward value",
+            "Original source details", "carried-forward value",
             "current reported switch state", "not physically verified",
         ):
             self.assertIn(phrase, guidance)
