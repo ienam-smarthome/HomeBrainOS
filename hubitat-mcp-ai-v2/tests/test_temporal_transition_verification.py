@@ -12,7 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "rootfs" / "app"))
 
 from temporal_transition_verification import (
-    temporal_transition_evidence, verify_recent_transition,
+    temporal_transition_evidence, verify_recent_transition, _friendly_time,
 )
 
 Q = ("In the last 12 hours, when did Fictional Bedroom TRV last change "
@@ -112,11 +112,11 @@ class FocalTransitionTests(unittest.TestCase):
         answer = verify_recent_transition(Q, bogus, source)
         self.assertEqual(answer["status"], "focal_transition_unverified")
         self.assertIn("cannot verify its last HEATING → IDLE", answer["answer"])
-        self.assertIn("17:00:56.395", answer["answer"])
-        self.assertIn("22:00:54.742", answer["answer"])
-        self.assertIn("21:53:35.570", answer["answer"])
-        self.assertIn("22:00:26.949", answer["answer"])
-        self.assertIn("22:00:08.416", answer["answer"])
+        self.assertIn("5:00 pm UTC", answer["answer"])
+        self.assertIn("10:00 pm UTC", answer["answer"])
+        self.assertIn("9:53 pm UTC", answer["answer"])
+        self.assertIn("10:00 pm UTC", answer["answer"])
+        self.assertIn("10:00 pm UTC", answer["answer"])
         self.assertIn("Fictional Thermostat Scheduler", answer["answer"])
         self.assertNotIn("due to Scheduler", answer["answer"])
         self.assertNotIn("last heating event was 15:58", answer["answer"])
@@ -136,8 +136,8 @@ class FocalTransitionTests(unittest.TestCase):
         ])
         got = verify_recent_transition(Q, "Last 16:05 definitely caused", source)
         self.assertEqual(got["status"], "bounded_pair_observed")
-        self.assertIn("22:00:00", got["answer"])
-        self.assertIn("21:20:00", got["answer"])
+        self.assertIn("10:00 pm UTC", got["answer"])
+        self.assertIn("9:20 pm UTC", got["answer"])
         self.assertIn("latest *observed*", got["answer"])
         self.assertIn("not independently verified", got["answer"])
         self.assertNotIn("Last 16:05 definitely caused", got["answer"])
@@ -252,10 +252,10 @@ class FocalTransitionTests(unittest.TestCase):
         self.assertIn("16.0°C", answer["answer"])
         self.assertIn("valveLevel", answer["answer"])
         self.assertIn("0%", answer["answer"])
-        self.assertIn("23:00:07", answer["answer"])
+        self.assertIn("11:00 pm UTC", answer["answer"])
         self.assertIn("Fictional Thermostat Scheduler", answer["answer"])
-        self.assertIn("22:30:01", answer["answer"])
-        self.assertIn("22:30:02", answer["answer"])
+        self.assertIn("10:30 pm UTC", answer["answer"])
+        self.assertIn("10:30 pm UTC", answer["answer"])
         self.assertIn("Fictional Thermostat OFF app", answer["answer"])
         self.assertNotIn("because of the thermostat", answer["answer"])
         self.assertFalse(answer["physical_transition_or_cause_verified"])
@@ -288,6 +288,71 @@ class FocalTransitionTests(unittest.TestCase):
         self.assertIn("21.7°C", answer["answer"])
         self.assertNotIn("42<script>", answer["answer"])
         self.assertNotIn("customSensitiveField", answer["answer"])
+
+
+    def test_winter_summer_and_ambiguous_dst_are_source_anchored(self):
+        self.assertEqual(
+            _friendly_time("2026-11-15T21:48:21.024+0000", "Europe/London"),
+            "Sunday 15 November 2026 at 9:48 pm GMT",
+        )
+        self.assertEqual(
+            _friendly_time("2026-07-15T20:48:21+0000", "Europe/London"),
+            "Wednesday 15 July 2026 at 9:48 pm BST",
+        )
+        self.assertIn(
+            "1:30 am BST",
+            _friendly_time("2026-10-25T00:30:00+0000", "Europe/London"),
+        )
+        self.assertIn(
+            "1:30 am GMT",
+            _friendly_time("2026-10-25T01:30:00+0000", "Europe/London"),
+        )
+        self.assertIn(
+            "9:48 pm UTC",
+            _friendly_time("2026-11-15T21:48:21+0000", "Not/ARealZone"),
+        )
+        self.assertIsNone(_friendly_time("2026-11-15T21:48:21"))
+
+    def test_source_real_shape_light_observed_off_followed_by_on(self):
+        question = ("In the last 12 hours, when did Fictional Lounge Light "
+                    "last change from on to off? What caused it?")
+        rows = [
+            receipt("hub_list_devices", {"format": "summary",
+                    "labelFilter": "Fictional Lounge Light"},
+                    {"devices": [{"id": "110", "label": "Fictional Lounge Light",
+                                  "currentStates": {"switch": "on", "level": "60"}}],
+                     "count": 1}),
+        ]
+        events = [
+            event("switch", "on", "2026-11-15T21:07:38.098+0000"),
+            event("switch", "off", "2026-11-15T21:48:21.024+0000"),
+            event("switch", "on", "2026-11-15T21:49:47.638+0000"),
+        ]
+        events[1]["producedBy"] = {"name": "Fictional Zigbee Bridge",
+                                     "deviceId": "100"}
+        rows.append(native_events(110, "Fictional Lounge Light", events,
+                                  since="2026-11-15T11:53:36+0000"))
+        index = temporal_transition_evidence(question, rows)
+        self.assertEqual(index["focal_pair"]["after"]["timestamp"],
+                         "2026-11-15T21:48:21.024+0000")
+        self.assertEqual(index["focal_later_report"]["observed_value"], "on")
+        answer = verify_recent_transition(
+            question, "Definitely caused by Fictional Bridge at 22:00", rows,
+            timezone_name="Europe/London",
+        )
+        self.assertEqual(answer["status"], "bounded_pair_observed")
+        self.assertIn("Sunday 15 November 2026 at 9:48 pm GMT", answer["answer"])
+        self.assertIn("9:07 pm GMT", answer["answer"])
+        self.assertIn("9:49 pm GMT", answer["answer"])
+        self.assertIn("reported by **Fictional Zigbee Bridge**", answer["answer"])
+        self.assertIn("Inventory read during this request", answer["answer"])
+        self.assertIn("60% level", answer["answer"])
+        self.assertNotIn("2026-11-15T", answer["answer"])
+        self.assertNotIn("Definitely caused", answer["answer"])
+        self.assertIn("initiated", answer["answer"])
+        self.assertEqual(answer["focal_pair_original_timestamps"]["after"],
+                         "2026-11-15T21:48:21.024+0000")
+        self.assertFalse(answer["physical_transition_or_cause_verified"])
 
 
 
@@ -374,8 +439,8 @@ class IntegratedTemporalPublicationTests(unittest.IsolatedAsyncioTestCase):
             "focal_transition_unverified",
         )
         self.assertIn("cannot verify", result["answer"])
-        self.assertIn("22:00:26.949", result["answer"])
-        self.assertIn("21:53:35.570", result["answer"])
+        self.assertIn("10:00 pm UTC", result["answer"])
+        self.assertIn("9:53 pm UTC", result["answer"])
         self.assertNotIn("definitively caused", result["answer"])
         self.assertEqual([x[0] for x in hub.calls], [
             "hub_list_devices", "hub_list_device_events",

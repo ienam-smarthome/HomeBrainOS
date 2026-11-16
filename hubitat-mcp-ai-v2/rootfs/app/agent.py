@@ -1061,7 +1061,10 @@ class Agent:
             transition_verification = (
                 {"status": "not_applicable_to_action", "answer": verified_answer}
                 if native_action_receipts_seen else
-                verify_recent_transition(question, verified_answer, receipts)
+                verify_recent_transition(
+                    question, verified_answer, receipts,
+                    timezone_name=hub_timezone,
+                )
             )
             verified_answer = transition_verification.get(
                 "answer", verified_answer

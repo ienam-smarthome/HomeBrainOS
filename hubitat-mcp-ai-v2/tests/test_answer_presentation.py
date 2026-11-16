@@ -12,7 +12,7 @@ class AnswerPresentationGuidanceTests(unittest.TestCase):
         path = Path(__file__).resolve().parents[1] / "rootfs" / "app" / "skills" / "hubitat" / "answer-presentation.md"
         guidance = path.read_text(encoding="utf-8")
         self.assertIn(guidance.strip(), _SKILL)
-        for required in ("Europe/London", "GMT", "BST", "24-hour",
+        for required in ("Europe/London", "GMT", "BST", "12-hour",
                          "fractional", "time zone is unspecified",
                          "Technical JSON", "Do not rewrite or convert tool arguments"):
             self.assertIn(required, guidance)

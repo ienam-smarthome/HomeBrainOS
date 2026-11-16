@@ -1,5 +1,9 @@
 # HomeBrainOS development agent instructions
 
+## V2 alpha.121 natural event times — presentation only (15 November 2026)
+
+Installed alpha.120 correctly found an observed light ON→OFF pair but printed raw ISO, omitted the later ON/source-reported inventory, and offered an unhelpful “unobserved transition” causal caveat. Alpha.121 should prefer natural named UK date/12-hour am-pm time with configured IANA-zone GMT/BST in all user-facing model answers and the typed temporal projection, while keeping original exact offset-aware source evidence/technical JSON. Source-reported later states, bounded inventory and event reporter may be described but cannot establish an issuer, automation trigger, physical effect or complete history. The source-review pipeline and write gate are unchanged. [Engineering note](docs/HOMEBRAIN-V2-ALPHA121-NATURAL-HISTORICAL-TIMES-20261115.md).
+
 ## V2 alpha.120 evidence-preserving temporal publication (15 November 2026)
 
 The installed alpha.119 first answer improved to 6/8 on a single live 12-hour TRV investigation but omitted positive focal setpoint/temperature/valve and separate peer thermostat-mode observations. Keep the alpha.119 **same-device, same-state-attribute before/after** proof and uncertainty boundary. Alpha.120 adds bounded original-native positive context, not a forced historian, extra paid model round, automatic read, deterministic causal guess or write permission. Only a focal matching event query may attest focal requested lookback; peer evidence cannot substitute. Further source sufficiency and token efficiency remain unmeasured; synthetic CI is not installed acceptance. Do not change V1. [Note](docs/HOMEBRAIN-V2-ALPHA120-EVIDENCE-PRESERVING-CONTEXT-20261115.md).
