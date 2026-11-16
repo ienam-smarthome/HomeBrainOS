@@ -58,17 +58,41 @@ def _has_event_time_execution_source(receipts: list[dict]) -> bool:
     *source-category* floor, not proof that its contents support a causal claim.
     A device events call with appId is NOT an app execution-log read.
     """
+    def has_log_rows(data: dict, depth: int = 0) -> bool:
+        # Native log payloads may be nested by mode. An arbitrary tool
+        # wrapper or mere \"success\" flag is not an execution entry.
+        if depth > 2:
+            return False
+        for key in ("logs", "entries", "lines", "records"):
+            value = data.get(key)
+            if isinstance(value, list) and value:
+                return True
+        for key in ("past", "data", "result", "modes"):
+            value = data.get(key)
+            if isinstance(value, dict) and has_log_rows(value, depth + 1):
+                return True
+        return False
+
     for row in receipts[:_MAX_RECEIPTS]:
         if not isinstance(row, dict) or row.get("success") is not True:
             continue
         name = row.get("name")
-        if not isinstance(name, str) or not _LOG_TOOL.search(name):
+        if not isinstance(name, str):
+            continue
+        args = row.get("arguments")
+        args = args if isinstance(args, dict) else {}
+        # The documented native hub_get_logs past tab is the actual
+        # application runtime log. An appId on hub_list_device_events
+        # means APP-EMITTED EVENTS and cannot substitute for runtime logs.
+        native_past_log = (
+            name == "hub_get_logs"
+            and args.get("appId") is not None
+            and args.get("mode", "past") == "past"
+        )
+        if not native_past_log and not _LOG_TOOL.search(name):
             continue
         _, native = _response(row)
-        if not isinstance(native, dict):
-            continue
-        if any(isinstance(native.get(key), list) and native[key]
-               for key in ("logs", "entries", "events", "lines")):
+        if isinstance(native, dict) and has_log_rows(native):
             return True
     return False
 
