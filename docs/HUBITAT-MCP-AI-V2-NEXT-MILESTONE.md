@@ -1,5 +1,10 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## Alpha.125 — model-led controller-decision source sufficiency
+
+Improve a read-only WHY investigation that already found a recorded command issuer but omitted its app execution logs and historical inputs. Add a generic original-receipt command issuer/decision source frontier, feed a narrow checkpoint to the existing review round, let the model decide any further focused read using live offered tools and exact schema. Do not turn commands into proved controller decisions or physical effects; avoid old sensor snapshots and chronological reversal. Preserve V1/heating-app code/automation approval. After CI and install, test an uncoached cross-domain WHY question and compare original source reads, score, UI concision, rounds/tokens/latency with the 4/8, 11-round alpha.124 baseline. [Note](HOMEBRAIN-V2-ALPHA125-CAUSAL-CONTROLLER-DECISIONS-20261116.md).
+
+
 
 ## Alpha.123 — readable first answer, no lost evidence
 
