@@ -1,6 +1,6 @@
 # HomeBrainOS V2 alpha.135 — passive round-phase cost measurement
 
-**Status:** development candidate, pending exact-head CI and installed acceptance.
+**Status:** merged [PR #1707](https://github.com/ienam-smarthome/HomeBrainOS/pull/1707) at `63527853c42340b83ad0d701ccb62f55ba865491` after **4/4 exact-head CI workflows passed**. Installed alpha.135 acceptance remains outstanding.
 
 ## Source-real motivation (private 16 November alpha.134 capture)
 
