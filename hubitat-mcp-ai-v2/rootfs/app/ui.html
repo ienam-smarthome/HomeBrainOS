@@ -456,6 +456,8 @@ button,textarea,select{color:var(--hb-text);border-color:var(--hb-edge);backgrou
 #systemHealth .health-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0 0 10px}
 #systemHealth .health-card{min-width:0;border:1px solid var(--hb-edge);background:var(--hb-panel);border-radius:12px;padding:12px;overflow-wrap:anywhere}
 #systemHealth .health-card.needs-review{border-left:3px solid var(--hb-accent)}
+#systemHealth .health-runtime-value{display:block;margin-top:8px;font-size:15px;font-weight:700;color:var(--hb-text)}
+#systemHealth .health-runtime-card p{font-size:11px;color:var(--hb-sub);line-height:1.5;margin:8px 0 0}
 #systemHealth .health-card-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}
 #systemHealth .health-card-heading span{color:var(--hb-text);font-size:12px;font-weight:600;min-width:0}
 #systemHealth .health-count{color:var(--hb-text);font-size:24px;line-height:1.1;font-variant-numeric:tabular-nums}
@@ -536,6 +538,9 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
   <p id="healthSnapshotNotes">The initial page load makes one read-only inventory request. This tab presents that snapshot without a further read.</p>
   <small id="healthCoverage">Inventory coverage not yet available</small>
  </div>
+ <h3 class="health-section-title">HomeBrainOS runtime</h3>
+ <p class="health-helper">Existing page-start status, not a live connection test. Saved diagnostics use their observation timestamps.</p>
+ <div id="healthRuntime" class="health-grid" aria-label="HomeBrainOS setup, diagnostics and optional monitor"></div>
  <details class="health-inventory-details" id="healthInventoryDetails"><summary>Device overview · counts, names and refresh</summary>
 <aside class="overview-aside" aria-label="Read-only home overview"><div class="overview-shell" aria-label="Current hub overview">
  <div class="row overview-head"><div><h2>Device overview</h2><p>Observed native device states · read-only snapshot</p></div>
@@ -555,7 +560,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
   <small id="overviewStatus" role="status" aria-live="polite">Loading read-only device overview…</small>
   <small id="overviewRecorder" class="overview-recorder">External diagnostics: checking…</small>
  </div>
- <details class="overview-limits"><summary>About these counts and source coverage</summary><p>All pills and names come from the single read-only Hubitat MCP device inventory used by System Health. Tap a pill to expand its locally stored names; this does not call Ollama or refresh Hubitat. No background refreshes or extra queries are introduced. Counts only cover returned devices with recognised matching states. A dash means no supported state reports, not zero alerts. Lights use positive identification; other ON switches are separately labelled and may be plugs or relays. Offline means explicitly reported healthStatus=offline, not inferred disconnected devices. Heating means explicitly reported heating state, not thermostat demand. Missing or stale attributes are unknown. This is a snapshot, not event history or a current health guarantee.</p></details>
+ <details class="overview-limits"><summary>About these counts and source coverage</summary><p>All pills and names come from the single read-only Hubitat MCP device inventory used by System Health. Tap a pill to expand its locally stored names; this does not call Ollama or refresh Hubitat. No background refreshes or extra queries are introduced. Counts only cover returned devices with recognised matching states. A dash means no supported state reports, not zero alerts. Lights use positive identification; other ON switches are separately labelled and may be plugs or relays. Offline means explicitly reported healthStatus=offline, not inferred disconnected devices. Heating means explicitly reported heating state, not thermostat demand. Missing attributes are unknown. The >24h card uses lastActivity, not proof of disconnection or a fault. This is a snapshot, not event history or a health guarantee.</p></details>
 </div>
 </aside>
  </details>
@@ -574,7 +579,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
    <article class="health-guide"><h4>Device not reporting</h4><p>Look for fresh device telemetry and driver status; missing readings alone do not establish disconnection.</p><button type="button" onclick="prepareHealthQuestion('Investigate devices with missing or reported-offline telemetry; check last reports and source coverage before drawing conclusions. Read-only; do not change anything.')">Prepare investigation</button></article>
    <article class="health-guide"><h4>Hub performance</h4><p>Use existing saved memory, CPU, reboot and connectivity history in Hub Diagnostics.</p><button type="button" onclick="tab('diagnostics')">Open Hub Diagnostics</button></article>
   </div>
-  <p class="health-privacy">System Health opening and expanding reports: zero additional Hubitat inventory calls, zero model calls, no schedules, no writes. The initial inventory request is unchanged.</p>
+  <p class="health-privacy">System Health opening and expanding reports: zero additional Hubitat inventory calls, zero model calls, no schedules, no writes. Runtime cards reuse the initial /api/status response; the initial inventory request is unchanged.</p>
  </div>
 </section>
 <section id="diagnostics">
@@ -696,9 +701,9 @@ let lastAnswer=null,technicalDetails=null,configuredModel=null,turns=[];
 let lastUnpreparedQuestion=null;
 let copyFeedbackTimer=null,copyAttempt=0;
 let ttsInfo={enabled:false};
-let cachedHealthOverview=null;
+let cachedHealthOverview=null,cachedRuntimeStatus=null;
 let evaluationCapture=null,evaluationResult=null,evaluationBusy=false;
-function tab(which){if(!['ask','systemHealth','diagnostics','evaluation'].includes(which))return;for(const id of ['ask','systemHealth','diagnostics','evaluation']){byId(id).classList.toggle('active',id===which);byId(id+'Tab').classList.toggle('active',id===which)}if(which==='systemHealth')renderSystemHealth(cachedHealthOverview);if(which==='diagnostics')refreshDiagnostics();if(which==='evaluation')byId('evalModel').textContent='Configured model: '+(configuredModel||'not configured');}
+function tab(which){if(!['ask','systemHealth','diagnostics','evaluation'].includes(which))return;for(const id of ['ask','systemHealth','diagnostics','evaluation']){byId(id).classList.toggle('active',id===which);byId(id+'Tab').classList.toggle('active',id===which)}if(which==='systemHealth'){renderSystemHealth(cachedHealthOverview);renderRuntimeHealth(cachedRuntimeStatus);}if(which==='diagnostics')refreshDiagnostics();if(which==='evaluation')byId('evalModel').textContent='Configured model: '+(configuredModel||'not configured');}
 async function readJson(url, init){const r=await fetch(url,{...init,cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.detail||('HTTP '+r.status));return d;}
 
 async function testCloudToolCalling(){
@@ -963,6 +968,8 @@ async function loadStatus(){
   }
   byId('reloadUI').hidden=true;
   configuredModel=d.model;
+  cachedRuntimeStatus=d;
+  renderRuntimeHealth(d);
   byId('evalModel').textContent='Configured model: '+(d.model||'not configured');
   const monitor=d.device_monitor||{};
   byId('monitorSourceStatus').textContent=monitor.configured
@@ -985,7 +992,7 @@ async function loadStatus(){
    +' · Hub: '+(d.hub||'name unavailable from status source')
    +' · Devices: '+byId('overviewDevices').textContent;
   return true;
- }catch(e){byId('state').textContent=String(e.message);return false;}
+ }catch(e){cachedRuntimeStatus=null;renderRuntimeHealth(null);byId('state').textContent=String(e.message);return false;}
 }
 let overviewPending=false;
 function showOverviewNames(id,metric,kind){
@@ -1045,6 +1052,10 @@ function overviewMemberLabel(member,kind){
  if(!member||typeof member.name!=='string')return '';
  const name=member.name.trim().slice(0,100);
  if(!name)return '';
+ if(kind==='activity'&&typeof member.inactive_hours==='number'&&
+    Number.isFinite(member.inactive_hours)&&member.inactive_hours>24){
+  return name+' · '+Math.floor(member.inactive_hours)+'h since recorded activity';
+ }
  if(kind==='battery'&&typeof member.battery_pct==='number'&&
   Number.isFinite(member.battery_pct)&&member.battery_pct>=0&&member.battery_pct<20){
   const pct=Number.isInteger(member.battery_pct)?String(member.battery_pct):member.battery_pct.toFixed(1);
@@ -1111,7 +1122,8 @@ const HEALTH_ATTENTION=[
  ["battery_low","Low batteries","battery"],
  ["contact_open","Open contacts","contact"],
  ["water_wet","Water detected","water"],
- ["reported_offline","Reported offline","health"]
+ ["reported_offline","Reported offline","health"],
+ ["last_activity_over_24h","No recorded activity >24h","activity"]
 ];
 const HEALTH_ACTIVE=[
  ["lights_on","Lights ON","light"],
@@ -1136,7 +1148,7 @@ function healthSnapshotCard(metric,key,label,kind){
  const covered=Number.isInteger(metric?.devices_with_state)?metric.devices_with_state:null;
  const count=Number.isInteger(metric?.count)?metric.count:null;
  value.textContent=covered===null||covered===0||count===null?'—':String(count);
- if(count!==null&&count>0&&covered>0&&["water_wet","reported_offline","battery_low","contact_open"].includes(key))
+ if(count!==null&&count>0&&covered>0&&["water_wet","reported_offline","battery_low","contact_open","last_activity_over_24h"].includes(key))
   article.classList.add('needs-review');
  heading.append(name,value);article.appendChild(heading);
  const scope=document.createElement('p');scope.className='health-card-scope';
@@ -1184,7 +1196,7 @@ function renderSystemHealth(snapshot){
  const stamp=valid?when.toLocaleString('en-GB',{timeZone:'Europe/London',
    day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'time unavailable';
  title.textContent='Snapshot · '+stamp+' UK';
- notes.textContent='No new scan on this tab. Indicators come only from explicit native device state values in the existing inventory snapshot.';
+ notes.textContent='No new scan on this tab. Indicators use explicit native states and lastActivity timestamps; older activity does not prove offline.';
  const returned=Number.isInteger(snapshot.returned_devices)?snapshot.returned_devices:null;
  const declared=Number.isInteger(snapshot.source_declared_total)?snapshot.source_declared_total:null;
  covered.textContent=(returned===null?'Count unavailable':returned+' devices inspected')+
