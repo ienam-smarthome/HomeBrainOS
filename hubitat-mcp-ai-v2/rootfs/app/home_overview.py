@@ -122,7 +122,7 @@ def _last_activity_hours(value, now):
         if stamp.tzinfo is None or stamp.utcoffset() is None:
             return None
         hours = (now - stamp.astimezone(timezone.utc)).total_seconds() / 3600
-        return round(hours, 1) if hours >= 0 else None
+        return hours if hours >= 0 else None
     except (ValueError, TypeError, OverflowError):
         return None
 
