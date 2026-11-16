@@ -125,6 +125,26 @@ class OutcomeFrontierTests(unittest.TestCase):
         self.assertEqual(found["unread_focused_inventory_member_count"], 0)
         self.assertEqual(found["broad_or_oversized_inventories_not_enumerated"], 1)
 
+    def test_broad_inventory_positive_zone_draft_still_checks_output_history(self):
+        broad = original_receipt("hub_list_devices", {}, {
+            "devices": [
+                {"id": f"FX-{i}", "label": f"Fixture {i}"}
+                for i in range(40)
+            ], "count": 40,
+        })
+        scope = causal_outcome_frontier([broad, self.zone])
+        self.assertEqual(scope["unread_focused_inventory_member_count"], 0)
+        self.assertTrue(should_prompt_outcome_history_gap(
+            "Why did the fictional shared source turn on?",
+            review_kind_name="causal", source_frontier=scope,
+            candidate_answer="The zone reported heating at 14:00.",
+        ))
+        self.assertFalse(should_prompt_outcome_history_gap(
+            "Why did the fictional shared source turn on? Do not make new tool calls.",
+            review_kind_name="causal", source_frontier=scope,
+            candidate_answer="The zone reported heating at 14:00.",
+        ))
+
     def test_general_review_conditions_and_no_read_guard(self):
         found = causal_outcome_frontier([self.zone, self.inventory])
         yes = dict(review_kind_name="causal", source_frontier=found,
