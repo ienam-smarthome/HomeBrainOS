@@ -61,6 +61,12 @@ def causal_controller_frontier(receipts: list[dict]) -> dict:
                 if (not isinstance(event_name, str)
                         or not _SAFE_COMMAND.fullmatch(event_name)):
                     if event.get("type") != "command":
+                        # App-emitted events, location events and mixed/mismatched
+                        # scopes must never become device STATE producer leads.
+                        if (native.get("source") != "device"
+                                or str(args.get("deviceId") or "")
+                                != str(native.get("deviceId") or "")):
+                            continue
                         # App attribution on a returned device STATE row is
                         # not the underlying command nor a decision trace.
                         producer = event.get("producedBy")
