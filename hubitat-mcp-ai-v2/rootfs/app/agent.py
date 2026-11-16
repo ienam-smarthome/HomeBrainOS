@@ -62,6 +62,8 @@ from causal_outcome_frontier import (
     causal_outcome_frontier, OUTCOME_FIRST_CHECKPOINT,
 )
 from read_only_receipt_fallback import source_only_partial_answer
+from causal_claim_publication import causal_publication_floor
+from model_inventory_context import compact_inventory_context
 from investigation_review import (
     should_review_completion,
     is_read_only_review_tool, read_only_review_catalog,
@@ -1137,6 +1139,33 @@ class Agent:
             )
             if before_call is not None:
                 verified_answer = unprepared_answer(lifecycle, verified_answer)
+            # The model's own tool-free final claim audit is not enforcement.
+            # For a READ-ONLY historical causal question, fail closed only on
+            # categorical denial / event-specific internal cause claims with
+            # insufficient ORIGINAL source category. Never replay a speculative
+            # draft. Preserve already-returned positive state observations and
+            # mark publication explicitly PARTIAL; this is not causal proof.
+            causal_claim_check = {"status": "not_applicable", "reason": None}
+            if (not native_action_receipts_seen and not current_write_attempted()
+                    and not is_explicit_device_imperative(question)
+                    and review_kind(question) == "causal"
+                    and fallback_status == "not_used"):
+                causal_claim_check = causal_publication_floor(
+                    question, verified_answer, receipts
+                )
+                if causal_claim_check["status"] == "unsafe":
+                    grounded = source_only_partial_answer(
+                        question, receipts, timezone_name=clock_timezone_name
+                    )
+                    verified_answer = grounded or (
+                        "**Investigation incomplete — no verified event "
+                        "history for a categorical causal answer.** The "
+                        "available original reads do not establish the "
+                        "claimed absence or specific initiating decision. "
+                        "The original source receipts remain in Technical JSON."
+                    )
+                    fallback_status = "causal_claim_publication_floor"
+                    audit_status = "source_only_partial_after_claim_verification"
             action_contract_meta = {
                 key: value for key, value in action_contract.items()
                 if key != "answer"
@@ -1155,6 +1184,7 @@ class Agent:
                 "structured_history_verification": verification_meta,
                 "temporal_transition_verification": transition_meta,
                 "action_semantics_verification": action_contract_meta,
+                "causal_claim_verification": causal_claim_check,
                 "action_performance": {
                     "model_reported_ms": round(sum(
                         m["total_ms"] for m in model_round_metrics
@@ -2560,11 +2590,27 @@ class Agent:
                         if contract is not None:
                             error_payload["live_input_contract"] = contract
                     content = json.dumps(error_payload)
-                # Preserve exactly the bounded, redacted source view sent to the model.
+                # PRIVATE Technical JSON retains the FULL original native
+                # result. A model-facing compact identity index may replace
+                # only a large broad inventory in READ-ONLY causal questions,
+                # never the original receipt or an actionable device detail.
                 record["response"] = content
+                model_context_content = content
+                if (record.get("success") is True
+                        and name == "hub_list_devices"
+                        and review_kind(question) == "causal"
+                        and not current_write_attempted()):
+                    index_view = compact_inventory_context(model_result)
+                    if index_view is not None:
+                        candidate_context = compact_tool_result(index_view)
+                        if len(candidate_context) < len(content):
+                            model_context_content = candidate_context
+                            record["model_context_compacted"] = True
+                            record["model_context_characters"] = len(candidate_context)
                 receipts.append(record)
                 messages.append({
-                    "role": "tool", "tool_name": name, "content": content,
+                    "role": "tool", "tool_name": name,
+                    "content": model_context_content,
                 })
             # The original write must be ACCEPTED first. When explicitly
             # enabled by the interactive V2 app, a single bounded READ may
