@@ -89,10 +89,10 @@ def _friendly_time(instant: datetime, tz: ZoneInfo) -> str:
 def source_only_partial_answer(
     question: str, receipts: list[dict], *, timezone_name: str | None = None
 ) -> str | None:
-    """Use only parseable successful original device-state history receipts.
+    """Use only parsed, source-bound original device states and command rows.
 
-    Returns None if no such evidence exists. Cannot infer what the user's
-    'actual' focal actuator is, classify a cause, or deny unseen events.
+    Returns None when no validated event facts exist. This does NOT infer a
+    focal output, controller decision, initiating trigger or physical cause.
     """
     if not isinstance(question, str) or not question.strip():
         return None
