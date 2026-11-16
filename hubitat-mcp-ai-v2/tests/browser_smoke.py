@@ -277,10 +277,13 @@ with sync_playwright() as p:
   assert len(overview_requests)==1,"Startup uses one inventory request"
   page.locator("#systemHealthTab").click()
   assert page.locator("#healthAttention").is_visible()
-  assert page.locator("#healthAttention .health-card").count()==4
+  assert page.locator("#healthAttention .health-card").count()==5
   assert page.locator("#healthActive .health-card").count()==4
   assert "Lab Front Door" in page.locator("#healthAttention").inner_text()
   assert "Lab Mesh Plug" in page.locator("#healthAttention").inner_text()
+  assert page.locator("#healthRuntime .health-card").count()==3
+  assert "App configuration" in page.locator("#healthRuntime").inner_text()
+  assert "Hub diagnostics" in page.locator("#healthRuntime").inner_text()
   assert "Lab TRV" in page.locator("#healthActive").inner_text()
   assert page.locator("#healthSnapshotNotes").inner_text().startswith("No new scan")
   page.locator("#systemHealthTab").click()
