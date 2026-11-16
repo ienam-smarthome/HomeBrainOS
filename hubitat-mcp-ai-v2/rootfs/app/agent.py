@@ -1494,6 +1494,21 @@ class Agent:
                 interaction_status.set_phase(
                     "model", detail=f"AI model round {rounds + 1}"
                 )
+            # Attribution only: never select, skip, retry or reorder any model
+            # round. Record counts rather than prompts, tools, private IDs or
+            # model text. Phase labels enable source-real cost measurement.
+            round_phase = (
+                "deadline_finalization" if deadline_finalization_invoked else
+                "final_claim_audit" if final_claim_audit_invoked else
+                "causal_follow_through" if causal_follow_through_invoked else
+                "source_review" if source_review_invoked else
+                "prewrite_model_review" if prewrite_model_review_invoked else
+                "initial_investigation"
+            )
+            round_receipt_count = len(receipts)
+            round_tools_offered = len(tools)
+            round_message_count = len(messages)
+            round_start = time.monotonic()
             try:
                 message = await self.round(messages, tools, remaining)
             except RuntimeError as exc:
@@ -1532,7 +1547,20 @@ class Agent:
             rounds += 1
             metrics = message.get("_inference_metrics")
             if isinstance(metrics, dict) and len(model_round_metrics) < 40:
-                model_round_metrics.append({"round": rounds, **metrics})
+                # Keep the unmodified provider counters; only append numeric
+                # provenance and an enumerated stage. Provider time and local
+                # elapsed may overlap; do NOT sum them as an exact partition.
+                model_round_metrics.append({
+                    "round": rounds,
+                    **metrics,
+                    "phase": round_phase,
+                    "client_round_elapsed_ms": round(
+                        (time.monotonic() - round_start) * 1000, 2
+                    ),
+                    "source_receipts_before": round_receipt_count,
+                    "tools_offered": round_tools_offered,
+                    "model_messages_before": round_message_count,
+                })
             calls = message.get("tool_calls") or []
             text = str(message.get("content") or "").strip()
             if not isinstance(calls, list):
