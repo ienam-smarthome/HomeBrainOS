@@ -1,5 +1,12 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## 16 November 2026 — V2 alpha.128 merged; installed causal acceptance outstanding
+
+[PR #1692](https://github.com/ienam-smarthome/HomeBrainOS/pull/1692) merged into main at `d8f0e33fb3ecf2ef4fcf6056deca0f6618ca05a8` after **all 5/5 exact-head GitHub Actions workflows green** (V2 pilot tests, release assurance/full Python gate, repository validation, scorecard integrity and command-first UI screenshot fixtures). V2-only: model-led outcome-first review after broad/partial inventory; controller state-app producer distinct from actual command issuer; genuine app-scoped `hub_get_logs(mode=past)` offered as a model-selected source category; compact model inventory while preserving full original PRIVATE receipts; narrow source-only partial publication floor for unsupported categorical absence/causal claims. No hardcoded home device IDs, forced native read, new review round, automatic write, changed approvals, V1 or scheduler changes.
+
+**Do not call this a proved live causal fix**: no installed alpha.128 first-answer capture has been reviewed. Next: update V2 Preview, ask one fresh natural read-only WHY (without prescribing tools), obtain complete first answer + PRIVATE Copy for review JSON. Check controlled-output historical event receipt, app execution log/event-time input selection, verified reporter/issuer/decision distinction, `causal_claim_verification`, `answer_fallback_status`, original read scopes, tool errors, model rounds, provider tokens and elapsed time. A safe partial answer is NOT a completed event-specific cause. [Engineering note](docs/HOMEBRAIN-V2-ALPHA128-CAUSAL-PUBLICATION-FLOOR-20261116.md).
+
+
 ## Next after alpha.128 candidate — source-real cause, not merely safe partial
 
 After exact-head PR #1692 CI passes and V2 Preview alpha.128 is installed,
