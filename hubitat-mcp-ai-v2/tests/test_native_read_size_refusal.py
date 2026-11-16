@@ -120,7 +120,7 @@ class ReadLimitIntegrationTests(unittest.IsolatedAsyncioTestCase):
         model_view = agent.snapshots[1][-1]["content"]
         self.assertIn("client_source_limit", model_view)
         self.assertIn("response_too_large", model_view)
-        self.assertIn("not returned", result["answer"])
+        self.assertIn("no usable device list returned", result["answer"])
 
     async def test_normal_returned_inventory_remains_successful(self):
         hub = FakeMCP(refusal=False)
