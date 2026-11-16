@@ -153,6 +153,7 @@ class FictionalMCP:
                 "deviceId": {"type": "string"},
                 "hoursBack": {"type": "number"},
                 "limit": {"type": "integer"},
+                "attribute": {"type": "string"},
             }},
         }]
 
@@ -180,7 +181,8 @@ class ScriptedAgent(Agent):
             {"content": "", "tool_calls": [{
                 "function": {"name": "hub_list_device_events",
                              "arguments": {"deviceId": "LAB-1",
-                                           "hoursBack": 12, "limit": 20}}
+                                           "hoursBack": 12, "limit": 20,
+                                           "attribute": "switch"}}
             }]},
             {"content": "The fixture reported OFF. Records are bounded.",
              "tool_calls": []},
