@@ -73,7 +73,7 @@ def _stage_boundaries(response: dict) -> dict[str, int]:
 
 def _phase(round_no: int, metric: dict, marks: dict[str, int]) -> tuple[str, str]:
     explicit = metric.get("phase")
-    if explicit in PHASES:
+    if isinstance(explicit, str) and explicit in PHASES:
         return explicit, "recorded_by_agent"
     # Old captures: pre_* stages are checkpoints after the cited model round.
     # Never claim a causally meaningful phase if the boundaries are missing.
