@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from investigation_source_ledger import _SAFE_FIELD
 from native_device_event_receipt import original_device_event_history
+from native_command_provenance import original_command_rows
 
 _MAX_RECEIPTS = 40
 _MAX_EVENTS_PER_RECEIPT = 300
@@ -99,6 +100,7 @@ def source_only_partial_answer(
         zone = ZoneInfo(timezone_name or "Europe/London")
     except (ZoneInfoNotFoundError, KeyError, ValueError):
         zone = ZoneInfo("UTC")
+    command_rows, any_page_at_limit = original_command_rows(receipts)
     records: dict[tuple[str, str], dict] = {}
     for receipt in receipts[:_MAX_RECEIPTS]:
         if not isinstance(receipt, dict) or receipt.get("success") is not True:
@@ -145,7 +147,7 @@ def source_only_partial_answer(
             # Do not count duplicates from overlapping broad/focused reads.
             bucket["rows"][(stamp.isoformat(), value)] = stamp
 
-    if not records:
+    if not records and not command_rows:
         return None
 
     # Prioritise sources showing DIFFERENT reported values, but do not assume
@@ -162,8 +164,9 @@ def source_only_partial_answer(
     lines = [
         "**Investigation incomplete — source-only partial result.** "
         "A reliable complete causal explanation could not be published. The following "
-        "are reported observations from this request's successful read-only "
-        "MCP histories, not an independently verified physical effect.",
+        "are original recorded command rows and reported states from this "
+        "request's successful read-only MCP histories. They do not establish "
+        "a controller's internal trigger or an independent physical effect.",
     ]
     chosen_devices = set()
     chosen_fields = 0
