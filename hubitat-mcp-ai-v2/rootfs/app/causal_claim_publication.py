@@ -38,7 +38,7 @@ _DEFINITE_CAUSE = re.compile(
     r"switched|changed|operated)\s+because\b|"
     r"\b(?:directly|definitively|certainly)\s+(?:caused|triggered)\b|"
     r"\b(?:indicates|proves|confirms)\s+causation\b|"
-    r"\b(?:is|was|therefore)\s+the\s+(?:verifiable\s+)?"
+    r"\b(?:is|was)\s+(?:therefore\s+)?the\s+(?:verifiable\s+)?"
     r"(?:initiator|cause)\b|"
     r"\b(?:demand|cause|reason)\s+(?:came|originated)\s+from\b|"
     r"\b(?:the\s+)?(?:cause|reason)\s+(?:was|is)\s+"
