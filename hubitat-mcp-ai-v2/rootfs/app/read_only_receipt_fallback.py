@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from investigation_source_ledger import _SAFE_FIELD
 from native_device_event_receipt import original_device_event_history
+from native_command_provenance import original_command_rows
 
 _MAX_RECEIPTS = 40
 _MAX_EVENTS_PER_RECEIPT = 300
@@ -88,10 +89,10 @@ def _friendly_time(instant: datetime, tz: ZoneInfo) -> str:
 def source_only_partial_answer(
     question: str, receipts: list[dict], *, timezone_name: str | None = None
 ) -> str | None:
-    """Use only parseable successful original device-state history receipts.
+    """Use only parsed, source-bound original device states and command rows.
 
-    Returns None if no such evidence exists. Cannot infer what the user's
-    'actual' focal actuator is, classify a cause, or deny unseen events.
+    Returns None when no validated event facts exist. This does NOT infer a
+    focal output, controller decision, initiating trigger or physical cause.
     """
     if not isinstance(question, str) or not question.strip():
         return None
@@ -99,6 +100,7 @@ def source_only_partial_answer(
         zone = ZoneInfo(timezone_name or "Europe/London")
     except (ZoneInfoNotFoundError, KeyError, ValueError):
         zone = ZoneInfo("UTC")
+    command_rows, any_page_at_limit = original_command_rows(receipts)
     records: dict[tuple[str, str], dict] = {}
     for receipt in receipts[:_MAX_RECEIPTS]:
         if not isinstance(receipt, dict) or receipt.get("success") is not True:
@@ -144,8 +146,20 @@ def source_only_partial_answer(
             )
             # Do not count duplicates from overlapping broad/focused reads.
             bucket["rows"][(stamp.isoformat(), value)] = stamp
+            producer = event.get("producedBy")
+            if isinstance(producer, dict):
+                source_id = producer.get("deviceId")
+                reporter_name = producer.get("name")
+                # Only a device producer can be a state reporter here.
+                # A source app ID or notified triggered[] listener is not
+                # a bridge/physical reporter and cannot be promoted to one.
+                if (type(source_id) in (str, int) and isinstance(reporter_name, str)
+                        and reporter_name.strip() and producer.get("appId") is None):
+                    bucket.setdefault("reporters", {})[(stamp.isoformat(), value)] = (
+                        _safe_name(reporter_name, "Unlabelled device")
+                    )
 
-    if not records:
+    if not records and not command_rows:
         return None
 
     # Prioritise sources showing DIFFERENT reported values, but do not assume
@@ -162,9 +176,31 @@ def source_only_partial_answer(
     lines = [
         "**Investigation incomplete — source-only partial result.** "
         "A reliable complete causal explanation could not be published. The following "
-        "are reported observations from this request's successful read-only "
-        "MCP histories, not an independently verified physical effect.",
+        "are original recorded command rows and reported states from this "
+        "request's successful read-only MCP histories. They do not establish "
+        "a controller's internal trigger or an independent physical effect.",
     ]
+    if command_rows:
+        lines.append(
+            "**Recorded command issuers from the returned native device histories:** "
+            "These app issuers are native command-row producers, not proof of "
+            "the initiating sensor/button condition, internal app decision, "
+            "command delivery or physical effect."
+        )
+        for row in command_rows:
+            app_id = row["issuer_app_id"]
+            issuer = (
+                f"recorded issuer **{row['issuer_label']}** (app ID {app_id})"
+                if app_id is not None else
+                "issuer not established from this command row"
+            )
+            lines.append(
+                f"- **{row['device_label']}** (ID {row['device_id']}), "
+                f"`{row['command_name']}` at "
+                f"{_friendly_time(row['timestamp'], zone)}; {issuer}."
+            )
+    if records:
+        lines.append("**Returned device state reports:**")
     chosen_devices = set()
     chosen_fields = 0
     for varied, _, bucket, ordered in candidates:
@@ -187,18 +223,38 @@ def source_only_partial_answer(
             selected = ordered[-2:]
         states = "; ".join(
             f"{entry[0][1]} at {_friendly_time(entry[1], zone)}"
+            + (f" (reported by {bucket['reporters'][entry[0]]})"
+               if entry[0] in bucket.get("reporters", {}) else "")
             for entry in selected
         )
         lines.append(
             f"- **{bucket['name']}** (ID {bucket['device_id']}), "
             f"`{bucket['field']}`: {states}."
         )
-    lines.append(
-        "These are bounded returned rows, not exhaustive or continuous history. "
-        "**This partial state-event summary does not independently establish the "
-        "initiating command, controller decision or physical outcome; these remain "
-        "unverified within this partial state-only summary.** Separate original command "
-        "and application-log receipts, if any, remain available for review. "
-        "The original tool receipts and any source errors remain in Technical JSON."
-    )
+    if command_rows:
+        lines.append(
+            "These are bounded returned rows, not exhaustive or continuous history. "
+            "**The initiating command's recorded issuer is not proof of the "
+            "upstream trigger, the internal controller decision or the physical "
+            "outcome. A later state report shows only what the device reported; "
+            "chronological proximity does not prove exclusive causation.** "
+            "Relevant app execution logs and input histories may still be "
+            "unread. The original tool receipts and any source errors remain "
+            "in Technical JSON."
+        )
+    else:
+        lines.append(
+            "These are bounded returned rows, not exhaustive or continuous history. "
+            "**This partial state-event summary does not independently establish the "
+            "initiating command, controller decision or physical outcome; these remain "
+            "unverified within this partial state-only summary.** Separate original command "
+            "and application-log receipts, if any, remain available for review. "
+            "The original tool receipts and any source errors remain in Technical JSON."
+        )
+    if any_page_at_limit:
+        lines.append(
+            "At least one native event-history page reached its requested "
+            "row limit. Earlier unreturned events and overall retention "
+            "coverage remain unknown."
+        )
     return "\n\n".join([lines[0], "\n".join(lines[1:])])
