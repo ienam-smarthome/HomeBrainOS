@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from investigation_source_ledger import _response
+from native_device_event_receipt import original_device_event_history
 
 # These expressions target ASSERTIONS about an event or its cause, not scoped
 # statements such as 'no matching rows were returned in this query'.
@@ -89,15 +90,10 @@ def _has_event_time_execution_source(receipts: list[dict]) -> bool:
     # triggered[] listener is not the initiating application.
     candidates: set[str] = set()
     for row in receipts[:_MAX_RECEIPTS]:
-        if (not isinstance(row, dict) or row.get("success") is not True
-                or row.get("name") != "hub_list_device_events"):
+        validated = original_device_event_history(row)
+        if validated is None:
             continue
-        _, native = _response(row)
-        if not isinstance(native, dict) or native.get("source") != "device":
-            continue
-        events = native.get("events")
-        if not isinstance(events, list):
-            continue
+        _, _, events = validated
         for event in events[:250]:
             if not isinstance(event, dict):
                 continue
