@@ -135,7 +135,8 @@ AUDIT_SELECTORS = {
         "#systemHealth .health-guide h4",
         "#systemHealth .health-guide p",
         "#systemHealth .health-guide button",
-        "#systemHealth .health-inventory-details > summary",
+        "#systemHealth .health-refresh",
+        "#systemHealth #healthRefreshStatus",
     ],
     "diagnostics": [
         "#diagnostics #cards .metric small",
