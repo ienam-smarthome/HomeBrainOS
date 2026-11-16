@@ -1,6 +1,6 @@
 # HomeBrainOS V2 alpha.128 — causal publication floor and inventory context
 
-**Status:** candidate. V2 Preview only; no V1, smart-home scheduler, device, native action policy or approval changes. Installed acceptance remains **unmeasured**.
+**Status:** merged in [PR #1692](https://github.com/ienam-smarthome/HomeBrainOS/pull/1692) at `d8f0e33fb3ecf2ef4fcf6056deca0f6618ca05a8` after all 5 exact-head GitHub Actions workflows passed. Installed source-real first-answer accuracy and performance are still NOT measured. V2 Preview only; no V1, smart-home scheduler, device, native action policy or approval changes. Installed acceptance remains **unmeasured**.
 
 ## Evidence from three PRIVATE installed alpha.127 read-only first answers
 
