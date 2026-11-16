@@ -106,6 +106,20 @@ _CAUSAL_UNRESOLVED = re.compile(
 )
 
 SOURCE_REVIEW_PROMPT = """Evidence-sufficiency checkpoint (internal to this answer).
+Before any causal interpretation, establish the reported HISTORICAL focal
+outcome from the actual controlled output/device. If the user asks WHY
+something turned on, off, started or stopped, do not substitute a related
+sensor/room/zone's operating-state history, a current output snapshot,
+thermostatMode, historical setpoint alone or a mode/schedule change for the
+controlled output's own historical switch/operating-state/command evidence.
+An uninspected candidate actuator remains UNVERIFIED, not known idle.
+Reconcile exactly which inventory candidates were identified and which
+device IDs and output attributes were actually read. A successful read of
+an unrelated device cannot support a categorical denial of the user's event.
+If an appropriate currently-offered READ-ONLY source can fill this gap,
+choose it proportionately during this existing review; do not scan every
+inventory member or force a particular target or tool.
+
 Your previous draft is NOT evidence. Decide independently whether the
 successful source receipts actually answer the user's causal question.
 
@@ -598,6 +612,18 @@ answer first, then concise source limits; leave full originals in PRIVATE
 receipts. Do not claim missing saved bins prove a reporting outage or a
 current switch state proves interval-long continuity.
 
+For causal questions that ask WHY an event occurred, check the ORIGINAL
+device IDs and event attributes actually read for the CONTROLLED OUTPUT,
+not just connected input devices or a room/zone's current idle state.
+A statement that a user-reported historical activation "did not happen",
+"never occurred", "only a setpoint changed" or that the entire system
+remained idle requires outcome-specific historical support. Device-specific
+idle rows, repeated heat-mode reports, an unrelated mode event or a later
+OFF snapshot do not exclude an unread actuator's earlier activation.
+If the focal output was not historically inspected, correct any categorical
+denial to a scoped UNKNOWN. Never promote a broad lack-of-records claim
+from a subset of device IDs, filters or lookback windows. Do not infer an
+unrecorded real-world event merely because the user reports it either.
 For causal questions, distinguish (a) a recorded state change,
 (b) the device/bridge reporting it, (c) a recorded command issuer if present,
 and (d) the internal decision or trigger that may remain unknown.
@@ -1331,6 +1357,24 @@ def should_offer_fresh_source_recovery(
         and not has_action_receipt
     )
 
+
+
+def should_prompt_outcome_history_gap(
+    question: str, *, review_kind_name: str | None,
+    source_frontier: dict, candidate_answer: str,
+    has_action_receipt: bool = False,
+) -> bool:
+    """Guide existing review about outcome evidence, not tool selection."""
+    from causal_outcome_frontier import should_prompt_outcome_first_review
+    return (
+        is_causal_question(question)
+        and not _EXPLICIT_NO_FRESH_READ.search(question)
+        and should_prompt_outcome_first_review(
+            question, review_kind_name=review_kind_name,
+            source_frontier=source_frontier, candidate_answer=candidate_answer,
+            has_action_receipt=has_action_receipt,
+        )
+    )
 
 
 def should_prompt_controller_decision_gap(
