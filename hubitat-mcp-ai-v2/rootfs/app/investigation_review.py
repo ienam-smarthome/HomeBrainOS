@@ -1317,6 +1317,27 @@ def should_offer_fresh_source_recovery(
     )
 
 
+
+def should_prompt_historical_status_gap(
+    question: str, *, review_kind_name: str | None,
+    source_frontier: dict, has_action_receipt: bool = False,
+) -> bool:
+    """Offer source-TYPE clarification inside the EXISTING model review.
+
+    This must NEVER dispatch a tool, add a model round, override explicit
+    no-new-read instructions, or apply to native write/action requests.
+    """
+    return (
+        review_kind_name == "historical_measurement"
+        and isinstance(question, str)
+        and not _WRITE_INTENT_AT_START.search(question)
+        and not _EXPLICIT_NO_FRESH_READ.search(question)
+        and not has_action_receipt
+        and isinstance(source_frontier, dict)
+        and source_frontier.get("status_only_historical_gap_for_model_review") is True
+    )
+
+
 def should_review_completion(
     question: str, *, available_tools: bool, already_reviewed: bool,
     remaining_seconds: float, has_action_receipt: bool = False,
