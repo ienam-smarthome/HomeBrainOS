@@ -1,5 +1,12 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## After alpha.136 — test event-time causal read selection, not prose quality alone
+
+[PR #1709](https://github.com/ienam-smarthome/HomeBrainOS/pull/1709) merged V2 alpha.136, with all four exact-head CI workflows passing. This makes ACTUALLY ADVERTISED safe log/event/config read-tool argument shapes and source-validated command issuers visible in existing model causal source review and bounded follow-through. **No read is forced or selected by the host.** The original alpha.135 heating query failed to identify the real room demand: it did not read scheduler execution evidence or TRV input history and instead asserted an organisational room grouping as the demand source.
+
+**Immediate installed acceptance:** update V2 Preview to `2.0.0-alpha.136`; start a fresh conversation, ask the same read-only question once without coaching, and save the FIRST answer plus full PRIVATE Technical JSON even if it fails. Check whether source review uses a truly advertised event-time issuer-app execution log or relevant participating input-device history, versus repeating original broad inventory or simply drafting more unsupported causation. Verify actual native request `appId`, time window, record identity, row limits and whether the returned source identifies the demanding room; a successful/empty log query does not establish a historical decision. Preserve model-led source choice, explicit unknowns, no writes/extra approval, and original receipts. Record phase token/time changes separately and compare multiple independent lighting/heating/ventilation first answers. Do NOT start another prompt or role-graph patch based on one result. [Engineering note](HOMEBRAIN-V2-ALPHA136-SOURCE-OPPORTUNITIES-20261116.md).
+
+
 ## Next after alpha.135: independently measured review-phase optimization
 
 V2 alpha.135 [PR #1707](https://github.com/ienam-smarthome/HomeBrainOS/pull/1707) merged with all four exact-head CI workflows passing. It adds **passive** model-round phase, elapsed and source-receipt count fields to Technical JSON and `scripts/first_answer_latency_profile.py` for offline privacy-preserving comparison (not a live runtime speed optimization). Source-reviewed original installed alpha.134 capture: 7/8 one bounded first answer, 8 rounds/366,837 input tokens/~191.4 seconds, 5 successful native reads/~7.5 seconds total; source review and final claim audit were materially expensive yet also protected correctness. Do not remove these checkpoints from a single example.

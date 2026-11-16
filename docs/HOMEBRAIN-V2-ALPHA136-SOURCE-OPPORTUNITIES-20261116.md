@@ -1,6 +1,6 @@
 # HomeBrainOS V2 alpha.136 — original-source causal read opportunities
 
-**Status:** PR candidate; exact-head CI and installed first-answer acceptance pending.
+**Status:** merged [PR #1709](https://github.com/ienam-smarthome/HomeBrainOS/pull/1709) at `1178f5e9104f0423d49b38196eabc7b50dde5367`; **all four exact-head CI workflows passed**. Installed source-real alpha.136 acceptance pending.
 
 ## Source-real baseline, 16 November 2026
 
