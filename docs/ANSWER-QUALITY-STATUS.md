@@ -1,5 +1,25 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 16 November 2026 — alpha.128 general causal-fidelity candidate
+
+Installed alpha.127 did finish three new PRIVATE read-only model answers
+without fallback, but all three failed event-specific causal acceptance:
+reported state/setpoint app producer was treated as verified internal
+controller decision; one answer reversed close state/change order; another
+denied earlier shared-output activation after scanning input-zone histories
+without reading the shared output itself. Repeated broad inventory/context
+increased model token cost. Alpha.128 PR #1692 is a candidate for
+a read-only publication floor (no unsupported categorical cause/absence
+claims when original source category cannot support them), an all-ID
+compact model inventory that retains full ORIGINAL receipts in PRIVATE
+Technical JSON, a reporter-app candidate frontier inside the EXISTING
+model-led causal review and correct upstream genuine past app-log source
+distinction. No extra model rounds/tool calls, no deterministic routing,
+native writes, approvals, V1 or scheduler changes. CI and real installed
+quality/efficiency are NOT yet verified. Original question and source
+receipts must still be graded independently. [Note](HOMEBRAIN-V2-ALPHA128-CAUSAL-PUBLICATION-FLOOR-20261116.md).
+
+
 ## 16 November 2026 — alpha.127 merged; installed acceptance outstanding
 
 [PR #1690](https://github.com/ienam-smarthome/HomeBrainOS/pull/1690) merged at `93af6b34bdeb9ca660356ec00168ba746bad72bd` after **11/11 exact-head green CI checks**. Original native read-only event receipts now support a strictly labelled source-only PARTIAL answer if connected model completion is empty, erroneous or deadline exhausted; rather than replay speculative unverified pre-review reasoning. Test sources are fictional; strict per-field state value and numeric validation prevents arbitrary event prose from being promoted as fact. No extra tool/model round, deterministic native tool selection, UI approval bypass, V1/heating change. Skill discourages overlapping broad history scans, but NO measured source-real performance improvement exists. Baseline installed alpha.126 test: **1/8, 10 successful reads, 12 rounds, 1.043M input tokens, 109s**. Next capture alpha.127 first answer + PRIVATE Technical JSON; check normal model completion versus `answer_fallback_status`, original output/decision sources, exact times, roles, rounds and latency. [Engineering note](HOMEBRAIN-V2-ALPHA127-EVIDENCE-PRESERVING-COMPLETION-20261116.md).
