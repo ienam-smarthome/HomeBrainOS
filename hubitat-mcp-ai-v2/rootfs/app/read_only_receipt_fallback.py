@@ -146,6 +146,18 @@ def source_only_partial_answer(
             )
             # Do not count duplicates from overlapping broad/focused reads.
             bucket["rows"][(stamp.isoformat(), value)] = stamp
+            producer = event.get("producedBy")
+            if isinstance(producer, dict):
+                source_id = producer.get("deviceId")
+                reporter_name = producer.get("name")
+                # Only a device producer can be a state reporter here.
+                # A source app ID or notified triggered[] listener is not
+                # a bridge/physical reporter and cannot be promoted to one.
+                if (type(source_id) in (str, int) and isinstance(reporter_name, str)
+                        and reporter_name.strip() and producer.get("appId") is None):
+                    bucket.setdefault("reporters", {})[(stamp.isoformat(), value)] = (
+                        _safe_name(reporter_name, "Unlabelled device")
+                    )
 
     if not records and not command_rows:
         return None
@@ -211,6 +223,8 @@ def source_only_partial_answer(
             selected = ordered[-2:]
         states = "; ".join(
             f"{entry[0][1]} at {_friendly_time(entry[1], zone)}"
+            + (f" (reported by {bucket['reporters'][entry[0]]})"
+               if entry[0] in bucket.get("reporters", {}) else "")
             for entry in selected
         )
         lines.append(
