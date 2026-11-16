@@ -1,6 +1,6 @@
 # HomeBrainOS V2 alpha.129 — scoped causal-publication source integrity
 
-**Status:** proposed implementation, CI and merge pending. V2 Preview only.
+**Status:** merged [PR #1694](https://github.com/ienam-smarthome/HomeBrainOS/pull/1694) at `63fd6f81ee2744521ab3aaf0566b7330cdf9cd0c` after all four exact-head CI workflows passed. V2 Preview only.
 No V1, scheduler, smart-home device, model-provider, native command, approval or
 authorisation changes. The installed first-answer score is NOT established by CI.
 

@@ -1,5 +1,10 @@
 # HomeBrainOS development agent instructions
 
+## V2 alpha.129 merged — 16 November 2026
+
+[PR #1694](https://github.com/ienam-smarthome/HomeBrainOS/pull/1694) merged at `63fd6f81ee2744521ab3aaf0566b7330cdf9cd0c` following green exact-head CI. This V2-only follow-up to alpha.128 extends the publication check to definite historical "turned on today because ..." assertions and prevents unrelated app logs/triggered listeners from satisfying the necessary controller execution-source category. Matching app logs still do NOT prove the exact internal decision. Fictional regressions passed; installed V2 alpha.129 first-answer accuracy, tokens, latency and fallback use remain UNVERIFIED. Keep model-led source/tool choice, V1, scheduler and native approvals unchanged. Next: fresh uncoached read-only WHY with complete PRIVATE original Technical JSON. [Details](docs/HOMEBRAIN-V2-ALPHA129-CAUSAL-SOURCE-SCOPING-20261116.md).
+
+
 ## 16 November 2026 — V2 alpha.128 merged; installed causal acceptance outstanding
 
 [PR #1692](https://github.com/ienam-smarthome/HomeBrainOS/pull/1692) merged into main at `d8f0e33fb3ecf2ef4fcf6056deca0f6618ca05a8` after **all 5/5 exact-head GitHub Actions workflows green** (V2 pilot tests, release assurance/full Python gate, repository validation, scorecard integrity and command-first UI screenshot fixtures). V2-only: model-led outcome-first review after broad/partial inventory; controller state-app producer distinct from actual command issuer; genuine app-scoped `hub_get_logs(mode=past)` offered as a model-selected source category; compact model inventory while preserving full original PRIVATE receipts; narrow source-only partial publication floor for unsupported categorical absence/causal claims. No hardcoded home device IDs, forced native read, new review round, automatic write, changed approvals, V1 or scheduler changes.
