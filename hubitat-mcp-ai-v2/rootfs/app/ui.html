@@ -447,6 +447,8 @@ button,textarea,select{color:var(--hb-text);border-color:var(--hb-edge);backgrou
 #systemHealth .health-heading{display:flex;gap:16px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;margin:5px 0 14px}
 #systemHealth .health-heading h2{font-size:22px;letter-spacing:-.03em;color:var(--hb-text);margin:0 0 5px}
 #systemHealth .health-heading p{font-size:13px;max-width:690px;margin:0;color:var(--hb-sub)}
+#systemHealth .health-refresh{padding:9px 13px;flex-shrink:0;border:1px solid var(--hb-edge);background:var(--hb-panel);color:var(--hb-text);border-radius:9px;font-size:12px}
+#systemHealth .health-refresh:hover{border-color:var(--hb-accent)}
 #systemHealth .health-source-label{font-size:11px;font-weight:650;letter-spacing:.01em;border:1px solid var(--hb-edge);background:var(--hb-panel);border-radius:999px;padding:6px 10px;color:var(--hb-sub)}
 #systemHealth .health-snapshot{background:var(--hb-panel);color:var(--hb-text);border:1px solid var(--hb-edge);padding:14px 17px;border-radius:13px;margin:0 0 19px;box-shadow:none}
 #systemHealth .health-snapshot strong{color:var(--hb-text);font-size:15px}
@@ -531,39 +533,17 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 <section id="systemHealth" aria-label="System Health">
  <header class="health-heading">
   <div><h2>System Health</h2><p>Read-only device observations from one existing inventory snapshot. No additional device queries or Ollama calls.</p></div>
-  <span class="health-source-label">Same source · same refresh</span>
+  <button id="refreshOverview" class="health-refresh" type="button" onclick="refreshOverview()" title="Make one explicit read-only device inventory request. No model calls or device writes.">↻ Refresh devices</button>
  </header>
  <div class="card health-snapshot" role="status">
   <strong id="healthSnapshotTitle">Waiting for the device inventory snapshot</strong>
   <p id="healthSnapshotNotes">The initial page load makes one read-only inventory request. This tab presents that snapshot without a further read.</p>
   <small id="healthCoverage">Inventory coverage not yet available</small>
+  <small id="healthRefreshStatus" role="status" aria-live="polite">Waiting for first read-only inventory snapshot</small>
  </div>
  <h3 class="health-section-title">HomeBrainOS runtime</h3>
  <p class="health-helper">Existing page-start status, not a live connection test. Saved diagnostics use their observation timestamps.</p>
  <div id="healthRuntime" class="health-grid" aria-label="HomeBrainOS setup, diagnostics and optional monitor"></div>
- <details class="health-inventory-details" id="healthInventoryDetails"><summary>Device overview · counts, names and refresh</summary>
-<aside class="overview-aside" aria-label="Read-only home overview"><div class="overview-shell" aria-label="Current hub overview">
- <div class="row overview-head"><div><h2>Device overview</h2><p>Observed native device states · read-only snapshot</p></div>
-  <button id="refreshOverview" type="button" onclick="refreshOverview()" title="One read-only native Hubitat device inventory request; no commands or model calls">↻ Refresh overview</button></div>
- <div class="overview-grid" id="overviewPills" aria-label="Snapshot summary pills, tap to expand names without using AI">
-  <div class="overview-tile overview-expandable"><button class="overview-pill-button" id="overviewLightsToggle" type="button" onclick="toggleOverviewMembers(this)" aria-expanded="false" aria-controls="overviewLightsNames" title="Expand reported device names · local only · no Ollama"><span>Lights ON</span><strong id="overviewLights" aria-live="polite">—</strong><small id="overviewLightsScope">Waiting for source</small><span class="overview-preview" id="overviewLightsPreview"></span></button><div class="overview-names" id="overviewLightsNames" aria-label="Reported members for Lights ON"></div></div>
-  <div class="overview-tile overview-expandable"><button class="overview-pill-button" id="overviewMotionToggle" type="button" onclick="toggleOverviewMembers(this)" aria-expanded="false" aria-controls="overviewMotionNames" title="Expand reported device names · local only · no Ollama"><span>Motion active</span><strong id="overviewMotion" aria-live="polite">—</strong><small id="overviewMotionScope">Waiting for source</small><span class="overview-preview" id="overviewMotionPreview"></span></button><div class="overview-names" id="overviewMotionNames" aria-label="Reported members for Motion active"></div></div>
-  <div class="overview-tile overview-expandable"><button class="overview-pill-button" id="overviewBatteryToggle" type="button" onclick="toggleOverviewMembers(this)" aria-expanded="false" aria-controls="overviewBatteryNames" title="Expand reported device names · local only · no Ollama"><span>Low battery · below 20%</span><strong id="overviewBattery" aria-live="polite">—</strong><small id="overviewBatteryScope">Waiting for source</small><span class="overview-preview" id="overviewBatteryPreview"></span></button><div class="overview-names" id="overviewBatteryNames" aria-label="Reported members for Low battery · below 20%"></div></div>
-  <div class="overview-tile overview-expandable"><button class="overview-pill-button" id="overviewContactsToggle" type="button" onclick="toggleOverviewMembers(this)" aria-expanded="false" aria-controls="overviewContactsNames" title="Expand reported device names · local only · no Ollama"><span>Open contacts</span><strong id="overviewContacts" aria-live="polite">—</strong><small id="overviewContactsScope">Waiting for source</small><span class="overview-preview" id="overviewContactsPreview"></span></button><div class="overview-names" id="overviewContactsNames" aria-label="Reported members for Open contacts"></div></div>
-  <div class="overview-tile overview-expandable"><button class="overview-pill-button" id="overviewWaterToggle" type="button" onclick="toggleOverviewMembers(this)" aria-expanded="false" aria-controls="overviewWaterNames" title="Expand reported device names · local only · no Ollama"><span>Water detected</span><strong id="overviewWater" aria-live="polite">—</strong><small id="overviewWaterScope">Waiting for source</small><span class="overview-preview" id="overviewWaterPreview"></span></button><div class="overview-names" id="overviewWaterNames" aria-label="Reported members for Water detected"></div></div>
-  <div class="overview-tile overview-expandable"><button class="overview-pill-button" id="overviewHeatingToggle" type="button" onclick="toggleOverviewMembers(this)" aria-expanded="false" aria-controls="overviewHeatingNames" title="Expand reported device names · local only · no Ollama"><span>Heating reported</span><strong id="overviewHeating" aria-live="polite">—</strong><small id="overviewHeatingScope">Waiting for source</small><span class="overview-preview" id="overviewHeatingPreview"></span></button><div class="overview-names" id="overviewHeatingNames" aria-label="Reported members for Heating reported"></div></div>
-  <div class="overview-tile overview-expandable"><button class="overview-pill-button" id="overviewOfflineToggle" type="button" onclick="toggleOverviewMembers(this)" aria-expanded="false" aria-controls="overviewOfflineNames" title="Expand reported device names · local only · no Ollama"><span>Reported offline</span><strong id="overviewOffline" aria-live="polite">—</strong><small id="overviewOfflineScope">Waiting for source</small><span class="overview-preview" id="overviewOfflinePreview"></span></button><div class="overview-names" id="overviewOfflineNames" aria-label="Reported members for Reported offline"></div></div>
-  <div class="overview-tile overview-expandable"><button class="overview-pill-button" id="overviewOtherOnToggle" type="button" onclick="toggleOverviewMembers(this)" aria-expanded="false" aria-controls="overviewOtherOnNames" title="Expand reported device names · local only · no Ollama"><span>Other ON switches</span><strong id="overviewOtherOn" aria-live="polite">—</strong><small id="overviewOtherOnScope">Waiting for source</small><span class="overview-preview" id="overviewOtherOnPreview"></span></button><div class="overview-names" id="overviewOtherOnNames" aria-label="Reported members for Other ON switches"></div></div>
-  <div class="overview-tile overview-inventory"><span>Devices inspected</span><strong id="overviewDevices" aria-live="polite">—</strong><small id="overviewDevicesScope">Waiting for source</small></div>
- </div>
- <div class="overview-footer">
-  <small id="overviewStatus" role="status" aria-live="polite">Loading read-only device overview…</small>
-  <small id="overviewRecorder" class="overview-recorder">External diagnostics: checking…</small>
- </div>
- <details class="overview-limits"><summary>About these counts and source coverage</summary><p>All pills and names come from the single read-only Hubitat MCP device inventory used by System Health. Tap a pill to expand its locally stored names; this does not call Ollama or refresh Hubitat. No background refreshes or extra queries are introduced. Counts only cover returned devices with recognised matching states. A dash means no supported state reports, not zero alerts. Lights use positive identification; other ON switches are separately labelled and may be plugs or relays. Offline means explicitly reported healthStatus=offline, not inferred disconnected devices. Heating means explicitly reported heating state, not thermostat demand. Missing attributes are unknown. The >24h card uses lastActivity, not proof of disconnection or a fault. This is a snapshot, not event history or a health guarantee.</p></details>
-</div>
-</aside>
- </details>
  <h3 class="health-section-title">Needs attention</h3>
  <p class="health-helper">Observed states, not independently verified faults. Missing state reports are unknown, not healthy.</p>
  <div id="healthAttention" class="health-grid" aria-label="Potential issues reported by returned attributes"></div>
@@ -978,7 +958,6 @@ async function loadStatus(){
       ? 'Hub & Device Monitor: configuration invalid'
       : 'Hub & Device Monitor: not configured';
   ttsInfo=d.tts||{enabled:false};
-  setRecorderOverview(d.recorder);
   byId('state').textContent=d.configured?'● Configured · '+d.version:'● Setup required · '+d.version;
   const route=d.model_routing||{};
   const mode=route.mode==='paid'?'paid (explicitly enabled)':'free';
@@ -990,64 +969,11 @@ async function loadStatus(){
    +' · Model: '+(d.model||'unknown')+last
    +' · MCP: '+(d.configured?'configured (connection not independently probed)':'not ready')
    +' · Hub: '+(d.hub||'name unavailable from status source')
-   +' · Devices: '+byId('overviewDevices').textContent;
+   +' · Devices: '+healthDeviceCount();
   return true;
  }catch(e){cachedRuntimeStatus=null;renderRuntimeHealth(null);byId('state').textContent=String(e.message);return false;}
 }
 let overviewPending=false;
-function showOverviewNames(id,metric,kind){
- const container=byId(id);
- container.replaceChildren();
- const members=Array.isArray(metric.members)?metric.members:[];
- if(!members.length){
-  const empty=document.createElement('div');
-  empty.className='overview-name empty';
-  empty.textContent=metric.devices_with_state===0?'No supported state reports':
-   metric.count===0?'None reported among covered devices':
-   (Number.isInteger(metric.count)?'Device names unavailable':'');
-  if(empty.textContent)container.appendChild(empty);
-  return;
- }
- for(const item of members){
-  if(!item||typeof item.name!=='string')continue;
-  const name=item.name.trim().slice(0,100);
-  if(!name)continue;
-  const line=document.createElement('div');
-  line.className='overview-name';
-  line.textContent=name;
-  if(kind==='battery'&&typeof item.battery_pct==='number'&&
-      Number.isFinite(item.battery_pct)&&item.battery_pct>=0&&item.battery_pct<20){
-   const value=document.createElement('span');
-   value.className='battery-value';
-   const pct=Number.isInteger(item.battery_pct)?String(item.battery_pct):item.battery_pct.toFixed(1);
-   value.textContent=' · '+pct+'%';
-   line.appendChild(value);
-  }
-  container.appendChild(line);
- }
- if(Number.isInteger(metric.members_omitted)&&metric.members_omitted>0){
-  const limit=document.createElement('div');
-  limit.className='overview-name empty';
-  limit.textContent='+'+metric.members_omitted+' further devices omitted from this bounded list';
-  container.appendChild(limit);
- }
-}
-const OVERVIEW_METRICS=[
- ["lights_on","overviewLights","overviewLightsScope","overviewLightsNames","overviewLightsPreview","light"],
- ["motion_active","overviewMotion","overviewMotionScope","overviewMotionNames","overviewMotionPreview","motion"],
- ["battery_low","overviewBattery","overviewBatteryScope","overviewBatteryNames","overviewBatteryPreview","battery"],
- ["contact_open","overviewContacts","overviewContactsScope","overviewContactsNames","overviewContactsPreview","contact"],
- ["water_wet","overviewWater","overviewWaterScope","overviewWaterNames","overviewWaterPreview","water"],
- ["heating_active","overviewHeating","overviewHeatingScope","overviewHeatingNames","overviewHeatingPreview","heat"],
- ["reported_offline","overviewOffline","overviewOfflineScope","overviewOfflineNames","overviewOfflinePreview","health"],
- ["other_switches_on","overviewOtherOn","overviewOtherOnScope","overviewOtherOnNames","overviewOtherOnPreview","switch"]
-];
-function toggleOverviewMembers(button){
- // This is a DOM-only disclosure; it never calls /api/ask, /api/overview or Ollama.
- if(!button)return;
- const next=button.getAttribute('aria-expanded')!=='true';
- button.setAttribute('aria-expanded',String(next));
-}
 function overviewMemberLabel(member,kind){
  if(!member||typeof member.name!=='string')return '';
  const name=member.name.trim().slice(0,100);
@@ -1073,50 +999,31 @@ function overviewPreview(metric,kind){
  if(!names.length)return count+' reported · names unavailable';
  return names.slice(0,2).join(' · ')+(count>2?' · +'+(count-2)+' more':'');
 }
+function healthDeviceCount(){
+ const n=cachedHealthOverview?.returned_devices;
+ return Number.isInteger(n)&&n>=0?String(n):'—';
+}
+function updateHealthStatusCount(){
+ const meta=byId('statusMeta');
+ meta.textContent=meta.textContent.replace(/ · Devices: [^·]*$/, ' · Devices: '+healthDeviceCount());
+}
 function clearOverviewCounts(){
  cachedHealthOverview=null;
  renderSystemHealth(null);
- for(const [,countId,scopeId,listId,previewId] of OVERVIEW_METRICS){
-  byId(countId).textContent='—';
-  byId(scopeId).textContent='Source scope unavailable';
-  byId(listId).replaceChildren();
-  byId(previewId).textContent='';
- }
- byId('overviewDevices').textContent='—';
- byId('overviewDevicesScope').textContent='Source scope unavailable';
- // A source outage must not leave stale expanded names visible.
- for(const [, , , listId] of OVERVIEW_METRICS){
-  const toggle=byId(listId.replace('Names','Toggle'));
-  if(toggle)toggle.setAttribute('aria-expanded','false');
- }
+ updateHealthStatusCount();
 }
 function setOverviewCounts(data){
  cachedHealthOverview=data;
  renderSystemHealth(data);
- const metrics=data.metrics||{};
- for(const [key,countId,scopeId,listId,previewId,kind] of OVERVIEW_METRICS){
-  const metric=metrics[key]||{};
-  const covered=Number.isInteger(metric.devices_with_state)?metric.devices_with_state:null;
-  const count=Number.isInteger(metric.count)?metric.count:null;
-  byId(countId).textContent=covered===0||count===null?'—':String(count);
-  byId(scopeId).textContent=covered===null?'Source scope unknown':
-   covered===0?'No supported readings':
-   'of '+covered+(kind==='light'?' identified lights reporting':' devices reporting');
-  byId(previewId).textContent=overviewPreview(metric,kind);
-  showOverviewNames(listId,metric,kind);
- }
- byId('overviewDevices').textContent=Number.isInteger(data.returned_devices)
-  ?String(data.returned_devices):'—';
- byId('overviewDevicesScope').textContent=Number.isInteger(data.source_declared_total)
-  ?'of '+data.source_declared_total+' declared':'Returned inventory only';
- const stamp=data.observed_at_utc?new Date(data.observed_at_utc):null;
- const time=stamp&&!Number.isNaN(stamp.getTime())?stamp.toLocaleTimeString('en-GB',
-  {timeZone:'Europe/London',hour:'2-digit',minute:'2-digit'}):'unknown';
- byId('overviewStatus').textContent='Snapshot '+time+' UK · '+
+ updateHealthStatusCount();
+ const time=data.observed_at_utc?new Date(data.observed_at_utc):null;
+ const label=time&&!Number.isNaN(time.getTime())?time.toLocaleTimeString('en-GB',
+  {timeZone:'Europe/London',hour:'2-digit',minute:'2-digit'}):'unknown time';
+ byId('healthRefreshStatus').textContent='Snapshot '+label+' UK · '+
   (data.inventory_full_coverage_verified?'inventory count reconciled':'inventory may be partial')+
-  (Number.isInteger(data.unclassified_on_switches)&&data.unclassified_on_switches>0
-   ?' · '+data.unclassified_on_switches+' ON switches not identified as lights':'')+
-  ' · one read-only inventory request · no device commands or AI';
+  (Number.isInteger(data.unclassified_on_switches)&&data.unclassified_on_switches>0?
+   ' · '+data.unclassified_on_switches+' ON switches not identified as lights':'')+
+  ' · one read-only inventory request · no commands or model calls';
 }
 const HEALTH_ATTENTION=[
  ["battery_low","Low batteries","battery"],
@@ -1254,33 +1161,24 @@ function renderRuntimeHealth(status){
   'Optional historical source. This view does not contact it or verify saved history.',
   m.enabled===true&&m.configured!==true);
 }
-function setRecorderOverview(recorder){
- const r=recorder||{},last=r.last||{};
- let line='External diagnostics: '+String(r.status||'unknown');
- if(typeof last.free_os_mb==='number'&&Number.isFinite(last.free_os_mb))
-  line+=' · '+Math.round(last.free_os_mb)+' MB OS free (saved)';
- if(typeof last.native_load_pct==='number'&&Number.isFinite(last.native_load_pct))
-  line+=' · '+last.native_load_pct.toFixed(1)+'% 5m load equivalent';
- byId('overviewRecorder').textContent=line;
-}
 async function refreshOverview(){
  if(overviewPending)return;
  overviewPending=true;
  const button=byId('refreshOverview');
  button.disabled=true;
- byId('overviewStatus').textContent='Reading native device inventory (read-only)…';
+ byId('healthRefreshStatus').textContent='Reading native device inventory (read-only)…';
  try{
   const data=await readJson('api/overview',
    {headers:{'X-Homebrain-Request':'1'}});
   if(!data.available){
-   byId('overviewStatus').textContent='Overview unavailable · '+(data.reason||'check MCP source');
    clearOverviewCounts();
+   byId('healthRefreshStatus').textContent='Inventory unavailable · '+(data.reason||'check MCP source');
    return;
   }
   setOverviewCounts(data);
  }catch(error){
-  byId('overviewStatus').textContent='Overview unavailable · '+String(error.message);
   clearOverviewCounts();
+  byId('healthRefreshStatus').textContent='Inventory unavailable · '+String(error.message);
  }finally{overviewPending=false;button.disabled=false}
 }
 
@@ -1317,7 +1215,7 @@ function toggleStatusPill(){
  byId('statusPill').setAttribute('aria-expanded',String(!panel.hidden));
  if(!panel.hidden){
   const meta=byId('statusMeta');
-  meta.textContent=meta.textContent.replace(/ · Devices: [^·]*$/, ' · Devices: '+byId('overviewDevices').textContent);
+  meta.textContent=meta.textContent.replace(/ · Devices: [^·]*$/, ' · Devices: '+healthDeviceCount());
   const row=byId('checkMonitor').parentElement;
   if(row){row.hidden=false;byId('statusMonitor').appendChild(row);}
  }
