@@ -1,5 +1,10 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## Next after merged alpha.127 — uncoached normal completion check
+
+[PR #1690](https://github.com/ienam-smarthome/HomeBrainOS/pull/1690) merged after **11/11 exact-head green CI**. Install updated V2 Preview alpha.127. Ask one natural read-only WHY/start/stop question without naming hub device IDs, MCP tools, app IDs or timestamps. Judge (a) actual controlled-output history read, (b) discriminating command and controller decision records if appropriate, (c) earliest/latest bounded chronology versus physical unknown, (d) concise NORMAL model prose, or source-only PARTIAL fallback if completion fails. Inspect PRIVATE `answer_fallback_status` and raw original MCP receipts. Record score 0/1/2 per factual grounding, completeness, causal calibration, usefulness, plus rounds, tokens, latency. Compare installed alpha.126 1/8, 12 rounds, 109s without treating fictional CI as a live quality/efficiency gain. Keep V1/heating controls unchanged.
+
+
 ## Next after alpha.127 candidate: normal model answer, with partial rescue as safety net
 
 Once exact-head CI succeeds and alpha.127 V2 Preview is installed, run ONE uncoached read-only causal WHY query. Check whether model itself obtains event-time controlled-output history, retrieves/assesses discriminating controller decision records as proportionate, and completes concise source-grounded prose. If the model returns empty, the source-only partial result should cite *only* original returned state observations and explicitly show `answer_fallback_status`; this is a safety net, NOT a successful full causal investigation. Inspect source selection, repeated broad scans, time windows, reporter-versus-initiator, rounds/tokens/latency. Baseline alpha.126: **1/8, 10 reads, 12 rounds, ~1.043M input tokens, 109s**. Do not edit V1 or heating control behaviour. [Engineering note](HOMEBRAIN-V2-ALPHA127-EVIDENCE-PRESERVING-COMPLETION-20261116.md).
