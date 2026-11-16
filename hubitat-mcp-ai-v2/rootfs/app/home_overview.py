@@ -109,8 +109,30 @@ def _is_recognised_light(device, label):
     return bool(_LIGHT_WORDS.search(descriptions))
 
 
-def summarize_device_inventory(response):
+def _last_activity_hours(value, now):
+    """Elapsed hours since an explicit timezone-aware native lastActivity.
+
+    Last activity is not an independent online test. Missing/invalid/future
+    timestamps are unknown, never a stale-device alert.
+    """
+    if not isinstance(value, str) or not 15 <= len(value) <= 48:
+        return None
+    try:
+        stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if stamp.tzinfo is None or stamp.utcoffset() is None:
+            return None
+        hours = (now - stamp.astimezone(timezone.utc)).total_seconds() / 3600
+        return round(hours, 1) if hours >= 0 else None
+    except (ValueError, TypeError, OverflowError):
+        return None
+
+
+def summarize_device_inventory(response, *, observed_at=None):
     """Return bounded named observed states, never infer absent readings."""
+    now = observed_at if observed_at is not None else datetime.now(timezone.utc)
+    if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
+        raise ValueError("observed_at must be timezone aware")
+    now = now.astimezone(timezone.utc)
     source = _body(response)
     devices = source["devices"]
     if len(devices) > 3000:
@@ -125,10 +147,12 @@ def summarize_device_inventory(response):
     contact_open = water_wet = heating_active = reported_offline = 0
     contact_covered = water_covered = heating_covered = health_covered = 0
     other_switch_covered = 0
+    last_activity_covered = last_activity_over_24h = 0
     members = {
         "lights_on": [], "motion_active": [], "battery_low": [],
         "contact_open": [], "water_wet": [], "heating_active": [],
         "reported_offline": [], "other_switches_on": [],
+        "last_activity_over_24h": [],
     }
     max_members_per_metric = 250
     for device in devices:
@@ -137,6 +161,15 @@ def summarize_device_inventory(response):
         observed += 1
         states = _states(device)
         label = _safe_label(device)
+        last_age = _last_activity_hours(device.get("lastActivity"), now)
+        if last_age is not None:
+            last_activity_covered += 1
+            if last_age > 24:
+                last_activity_over_24h += 1
+                if len(members["last_activity_over_24h"]) < max_members_per_metric:
+                    members["last_activity_over_24h"].append({
+                        "name": label, "inactive_hours": last_age
+                    })
         switch = states.get("switch")
         if isinstance(switch, str) and switch.strip().lower() in ("on", "off"):
             is_light = _is_recognised_light(device, label)
@@ -206,6 +239,9 @@ def summarize_device_inventory(response):
                 "other_switches_on"):
         members[key].sort(key=lambda item: item["name"].casefold())
     members["battery_low"].sort(key=lambda item: (item["battery_pct"], item["name"].casefold()))
+    members["last_activity_over_24h"].sort(
+        key=lambda item: (-item["inactive_hours"], item["name"].casefold())
+    )
     partial = total is None or total > len(devices) or observed != len(devices)
 
     def metric(key, count, covered, **extra):
@@ -220,7 +256,7 @@ def summarize_device_inventory(response):
     return {
         "read_only": True,
         "source": "native Hubitat MCP device inventory",
-        "observed_at_utc": datetime.now(timezone.utc).isoformat(),
+        "observed_at_utc": now.isoformat(),
         "returned_devices": observed,
         "source_declared_total": total,
         "inventory_full_coverage_verified": not partial,
@@ -234,6 +270,10 @@ def summarize_device_inventory(response):
             "water_wet": metric("water_wet", water_wet, water_covered),
             "heating_active": metric("heating_active", heating_active, heating_covered),
             "reported_offline": metric("reported_offline", reported_offline, health_covered),
+            "last_activity_over_24h": metric(
+                "last_activity_over_24h", last_activity_over_24h,
+                last_activity_covered, threshold_exclusive_hours=24
+            ),
             "other_switches_on": metric(
                 "other_switches_on", unclassified_switch_on, other_switch_covered),
         },
@@ -243,6 +283,8 @@ def summarize_device_inventory(response):
             "Absent or stale attributes are unknown, not confirmed OFF, inactive or healthy.",
             "Contact, water, heating and health counts use only explicit returned attributes with recognised values; an absent reading is unknown, not a clean or healthy status.",
             "ON switches lacking positive light identification are listed separately; they may be plugs, relays or other loads, not necessarily lighting.",
+            "lastActivity older than 24 hours identifies a missing recent recorded activity timestamp, not a proven offline device or failed telemetry. Sleepy/quiet devices may appear.",
+            "Devices without a valid timezone-aware lastActivity are unknown and excluded from the freshness denominator.",
             "A snapshot is not the V1 scheduled system audit or proof of recent device reporting.",
         ],
     }
