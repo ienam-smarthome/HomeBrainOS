@@ -1,5 +1,18 @@
 # HomeBrainOS v2 — Next milestone: source-real first-answer acceptance
 
+## Next after alpha.128 candidate — source-real cause, not merely safe partial
+
+After exact-head PR #1692 CI passes and V2 Preview alpha.128 is installed,
+ask a fresh natural historical WHY question, without prompting tools, IDs or
+specific sources. Verify model actually reads the controlled output and,
+where genuinely available, a discriminating app/controller execution log
+and event-time input history. Inspect `causal_claim_verification` and
+`answer_fallback_status`: a guarded partial is *safer*, but not a full
+causal acceptance pass. Compare rounds, repeated scopes, tokens and
+elapsed times to alpha.127's three PRIVATE failed live attempts. Native
+read/write safety and V1/scheduler remain unchanged. [Note](HOMEBRAIN-V2-ALPHA128-CAUSAL-PUBLICATION-FLOOR-20261116.md).
+
+
 ## Next after merged alpha.127 — uncoached normal completion check
 
 [PR #1690](https://github.com/ienam-smarthome/HomeBrainOS/pull/1690) merged after **11/11 exact-head green CI**. Install updated V2 Preview alpha.127. Ask one natural read-only WHY/start/stop question without naming hub device IDs, MCP tools, app IDs or timestamps. Judge (a) actual controlled-output history read, (b) discriminating command and controller decision records if appropriate, (c) earliest/latest bounded chronology versus physical unknown, (d) concise NORMAL model prose, or source-only PARTIAL fallback if completion fails. Inspect PRIVATE `answer_fallback_status` and raw original MCP receipts. Record score 0/1/2 per factual grounding, completeness, causal calibration, usefulness, plus rounds, tokens, latency. Compare installed alpha.126 1/8, 12 rounds, 109s without treating fictional CI as a live quality/efficiency gain. Keep V1/heating controls unchanged.

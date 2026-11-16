@@ -41,6 +41,33 @@ command versus non-command rows and describes what a `physical` tag or
 `producedBy` field cannot establish. It is client-side context, not a
 second read, proof of full history or a list of tools the model must call.
 
+## Establish the controlled output and actual demand source
+
+For coordinated systems, distinguish the **shared controlled output** from the
+participating sensors, zone controllers, intermediary setpoints and status
+snapshots. Before declaring a historical event absent, ask whether the ACTUAL
+controlled output's event-time history was read. A series of associated
+devices reporting idle is not a substitute for that output's history.
+A controller's written setpoint may explain a subsequent reported actuator
+state, but it does not by itself reveal *which input* made the controller
+decide to write the setpoint. For "which room/sensor/condition caused this?",
+the missing evidence is an event-time decision/trigger or historical input
+receipt, not another unrelated inventory scan.
+
+A native device-event query with an `appId` parameter is still a
+**device-event source**. It must not be described as the application execution
+log unless the original returned source explicitly proves that. An empty or
+repeated query does not establish that app execution logging is empty or
+unavailable. Choose a genuine advertised app-log/decision source only if
+one is offered and proportionate; otherwise identify the input cause as
+unverified.
+
+Use original current-request source scopes already read. Avoid repeated
+identical or overlapping broad history requests when they cannot change the
+event-specific conclusion. Prefer a short answer that separates verified
+output report, recorded command issuer, event-specific decision and physical
+unknown over another round of unsupported source extrapolation.
+
 ## Recorded chronology is not causality
 
 When an explanation relates a command, input, state report or measurement,

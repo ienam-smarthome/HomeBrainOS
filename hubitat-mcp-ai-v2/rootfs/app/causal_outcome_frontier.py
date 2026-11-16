@@ -180,6 +180,15 @@ def should_prompt_outcome_first_review(
             # this is NOT proof the denial is false or that a read is required.
             bool(_NEGATIVE_OUTCOME.search(candidate_answer or ""))
             or bool(source_frontier.get("unread_focused_inventory_member_count"))
+            # A broad source inventory cannot tell the review which output
+            # actually operated. If zone/secondary histories were read from
+            # that inventory, offer the SAME model-led outcome checkpoint even
+            # when the earlier draft sounds confidently positive. The model
+            # still chooses whether and what to read; no new round is added.
+            or bool(
+                source_frontier.get("broad_or_oversized_inventories_not_enumerated")
+                and source_frontier.get("successful_device_history_target_count")
+            )
         )
     )
 
