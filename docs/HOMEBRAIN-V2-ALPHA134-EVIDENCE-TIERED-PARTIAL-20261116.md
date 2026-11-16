@@ -1,6 +1,6 @@
 # HomeBrainOS V2 alpha.134 — evidence-tiered source-only partial answers
 
-**Status:** PR candidate; exact-head CI and installed source-real acceptance pending.
+**Status:** merged [PR #1705](https://github.com/ienam-smarthome/HomeBrainOS/pull/1705) at `28ba99a6fa0906b6dac9a384160482a2558deea4` after **4/4 exact-head CI workflows passed**. Installed source-real acceptance remains pending.
 
 ## Verified problem
 
