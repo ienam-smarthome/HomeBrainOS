@@ -122,7 +122,7 @@ def causal_publication_floor(question: str, answer: str, receipts: list[dict]) -
 
     # Evaluate complete short prose lines, not raw tool text, code/JSON or
     # headings. A qualified uncertainty is not turned into a definite denial.
-    for line in re.split(r'(?<=[.!?])\\s+(?=[A-Z])|\\n', answer):
+    for line in re.split(r'(?<=[.!?])\s+(?=[A-Z])|\n', answer):
         line = line.strip().lstrip("> -*#0123456789. ")
         if not line or line.startswith(("|", "`", "{", "[")):
             continue
