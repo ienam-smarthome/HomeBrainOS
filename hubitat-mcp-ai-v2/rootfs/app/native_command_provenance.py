@@ -66,6 +66,11 @@ def original_command_rows(receipts: list[dict]) -> tuple[list[dict], bool]:
             if (not isinstance(kind, str) or _COMMAND.fullmatch(kind) is None
                     or event.get("type") not in (None, "command")):
                 continue
+            returned_event_id = event.get("deviceId")
+            if (returned_event_id is not None
+                    and (type(returned_event_id) not in (int, str)
+                         or str(returned_event_id) != device_id)):
+                continue
             stamp = _stamp(event.get("date"))
             if stamp is None:
                 continue
