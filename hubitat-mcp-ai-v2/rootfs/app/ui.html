@@ -1209,6 +1209,49 @@ function renderSystemHealth(snapshot){
  for(const [key,label,kind] of HEALTH_ACTIVE)
   active.appendChild(healthSnapshotCard(metrics[key],key,label,kind));
 }
+function renderRuntimeHealth(status){
+ // Read-only view of the cached initial /api/status response. No new calls.
+ const root=byId('healthRuntime');root.replaceChildren();
+ const card=(title,value,scope,needsReview=false)=>{
+  const el=document.createElement('article');el.className='health-card health-runtime-card';
+  if(needsReview)el.classList.add('needs-review');
+  const h=document.createElement('div');h.className='health-card-heading';
+  const label=document.createElement('span');label.textContent=title;h.appendChild(label);
+  const reading=document.createElement('strong');reading.className='health-runtime-value';
+  reading.textContent=value;
+  const explanation=document.createElement('p');explanation.textContent=scope;
+  el.append(h,reading,explanation);root.appendChild(el);
+ };
+ if(!status){
+  card('Runtime status','Unavailable',
+   'No successful initial status response. This alone does not prove a hub outage.',true);
+  return;
+ }
+ card('App configuration',status.configured===true?'Configured':'Needs review',
+  status.configured===true
+   ?'MCP and model configured; no live connection or provider call was tested by this view.'
+   :'At least one required service or configuration is unavailable; inspect Settings. Connectivity is unverified.',
+  status.configured!==true);
+ const r=status.recorder||{},last=r.last||{},recStatus=String(r.status||'unknown');
+ const stamp=typeof last.recorded_at==='string'?Date.parse(last.recorded_at):NaN;
+ const now=Date.now(),probeAge=Number.isFinite(stamp)&&stamp<=now?
+  Math.floor((now-stamp)/60000):null;
+ const recText=recStatus==='online'?'Diagnostics running':recStatus==='disabled'?'Disabled':
+  recStatus==='waiting'?'Awaiting first sample':recStatus==='error'?'Recorder error':'Status unknown';
+ const sampleAge=probeAge===null?'Saved probe timestamp not reported':
+  'Last saved probe '+probeAge+' minutes before this view';
+ const cadence=Number(r.probe_seconds);
+ const staleLimit=Number.isFinite(cadence)&&cadence>0?Math.max(3,Math.ceil(cadence/60)*3):5;
+ card('Hub diagnostics',recText,sampleAge+
+  ' · A saved sample is not an independent current hub connection test.',
+  recStatus==='error'||(recStatus==='online'&&probeAge!==null&&probeAge>staleLimit));
+ const m=status.device_monitor||{};
+ card('Hub & Device Monitor',
+  m.configured===true?'Configured · untested':
+  m.enabled===true?'Configuration issue':'Not enabled',
+  'Optional historical source. This view does not contact it or verify saved history.',
+  m.enabled===true&&m.configured!==true);
+}
 function setRecorderOverview(recorder){
  const r=recorder||{},last=r.last||{};
  let line='External diagnostics: '+String(r.status||'unknown');
