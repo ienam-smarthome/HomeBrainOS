@@ -161,7 +161,7 @@ class ClaimAuditOrchestrationTests(unittest.IsolatedAsyncioTestCase):
         # Valid original device-history rows are now retained even when
         # the upstream envelope omits the explicit source label. Do not
         # replay a potentially speculative earlier model draft.
-        self.assertIn("20:10:01", result["answer"])
+        self.assertIn("8:10:01 pm GMT", result["answer"])
         self.assertIn("Device LAB-4", result["answer"])
         self.assertNotEqual(result["answer"], draft)
         self.assertEqual(result["answer_fallback_status"], "model_or_transport_error")
@@ -189,7 +189,7 @@ class ClaimAuditOrchestrationTests(unittest.IsolatedAsyncioTestCase):
         # An unoffered final tool request may not execute. The source-only
         # partial result is safer than recycling an unaudited draft now
         # that the genuine native state history is available.
-        self.assertIn("20:10:01", result["answer"])
+        self.assertIn("8:10:01 pm GMT", result["answer"])
         self.assertNotEqual(result["answer"], draft)
         self.assertEqual(result["answer_fallback_status"], "unoffered_audit_tool_rejected")
         self.assertEqual(result["final_claim_audit_status"],
