@@ -79,7 +79,7 @@ class EnvelopeContractTests(unittest.TestCase):
         self.assertEqual(
             causal_publication_floor(
                 "Why did the output turn on?",
-                "The output turned on after the fixture controller confirmed demand.",
+                "The output turned on because the fixture controller confirmed demand.",
                 [event, log],
             )["status"], "passed",
         )
