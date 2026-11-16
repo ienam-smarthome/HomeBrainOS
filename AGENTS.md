@@ -1,5 +1,9 @@
 # HomeBrainOS development agent instructions
 
+## V2 alpha.123 merged handoff — 16 November 2026
+
+[PR #1683](https://github.com/ienam-smarthome/HomeBrainOS/pull/1683) merged at `cb936fc26fe90cf1f1bba448a84b1323cac63ffa` after **11/11 exact-head CI checks passed**. Installed V2 alpha.123 user-facing/source-real acceptance remains unmeasured; the owner-provided installed alpha.122 Freezer screenshot/PRIVATE receipt is the motivation, not evidence that the new version fixed the live answer. After install, test one uncoached read-only cross-domain question, assess concise presentation, raw HTML/JSON, original receipts, uncertainty, time labels, model rounds/tokens and elapsed time. V1 and native write/approval paths unchanged. [Engineering note](docs/HOMEBRAIN-V2-ALPHA123-READABLE-ANSWERS-20261116.md).
+
 ## V2 alpha.123 answer readability — 16 November 2026
 
 The installed alpha.122 source-real Freezer power-history capture **did use** Hub & Device Monitor (1 native inventory + 1 monitor read, no writes) and contained useful 1–81 W sampled evidence plus 32/144 null bins, but its final first answer was unreadable: huge evidence table, displayed literal <br> and JSON, repetitive summaries. It also overstated interval-long switch ON, proven telemetry pause and verified compressor causes from a current snapshot/binned power alone. Alpha.123 V2-only candidate improves concise answer-first model guidance at the existing source and final-audit checkpoints, plus safe DOM rendering of legacy <br> and 2-column table wrapping; original receipts and V1 unchanged. Source-real gains are NOT measured. [Engineering note](docs/HOMEBRAIN-V2-ALPHA123-READABLE-ANSWERS-20261116.md).
