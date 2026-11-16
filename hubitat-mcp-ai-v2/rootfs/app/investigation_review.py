@@ -301,6 +301,18 @@ the requested historical measurement.
 
 A device being selected for monitoring and the existence of an archive
 filename do NOT establish the presence of saved samples for that device.
+A successful monitor mode=status read gives a latest/cached value and
+configuration only; it is NOT a mode=history or mode=compare saved-window
+read. Do not turn that timestamp into the last non-zero power reading when
+its numeric value is not present; a stale power_fresh=false status is not a
+fresh sensor measurement. A native 0-row event query plus status ONLY means
+the historic monitor window was NOT CHECKED. It is inaccurate to say no
+samples exist in both sources without an executed historical monitor read.
+If a monitor history source is offered and a status receipt identifies the
+target as selected, consider independently choosing a proportionate read
+using the advertised tool schema and the original requested window.
+Do NOT automatically read, demand additional authorisation for read-only
+history, invent saved-bin values or infer historical inactivity from 0 W now.
 A file chunk with hasMore=true or partial retrieved-character coverage cannot
 justify a claim about contents of unread ranges. Inspect client_file_cumulative_coverage
 and original source receipts before asserting an archive is empty or complete.
@@ -541,6 +553,12 @@ do not claim to have inspected the full requested log interval or to
 exclude commands in the unreturned pages. A log time without an explicit
 UTC offset must not be silently converted to a verified UTC timestamp.
 A hub log echo of a device state is not independent physical confirmation.
+A successful monitor latest-value status read is not a historical archive
+query: it cannot support a six-hour archive-empty verdict, an interval-wide
+zero-power claim, or the numeric value of a last non-zero report from a
+last-power-event TIMESTAMP alone. Treat monitor power_fresh=false as a
+snapshot freshness limitation, not a verified stale interval. Preserve
+readable UK times rather than copying raw ISO into normal prose.
 
 For controller configuration pages, compare the actual selected input
 groups, not just the one sensor or actuator named in the draft. If several
