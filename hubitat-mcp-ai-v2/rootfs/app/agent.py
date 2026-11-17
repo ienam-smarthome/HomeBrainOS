@@ -64,7 +64,10 @@ from causal_outcome_frontier import (
 )
 from read_only_receipt_fallback import source_only_partial_answer
 from native_read_size_refusal import native_read_size_refusal
-from causal_claim_publication import (causal_publication_floor, causal_event_time_source_scope)
+from causal_claim_publication import (
+    causal_publication_floor, causal_event_time_source_scope,
+    causal_original_source_ceiling, causal_requires_initiating_actor_source,
+)
 from model_inventory_context import compact_inventory_context
 from investigation_review import (
     should_review_completion,
@@ -1247,6 +1250,10 @@ class Agent:
                     "no_current_read_attempt"
                 ),
                 "causal_follow_through_invoked": causal_follow_through_invoked,
+                "causal_original_source_ceiling": (
+                    causal_original_source_ceiling(receipts)
+                    if source_review_kind == "causal" else None
+                ),
                 "causal_review_source_delta_at_follow_through": causal_review_delta_at_follow_through,
                 "causal_review_read_receipts_added": (
                     sum(row.get("success") is True
@@ -2097,6 +2104,11 @@ class Agent:
                             has_action_receipt=native_action_receipts_seen > 0,
                             available_read_tools=bool(read_only_review_catalog(tools)),
                             review_read_delta=review_read_delta,
+                            structural_source_gap=(
+                                causal_requires_initiating_actor_source(question)
+                                and not causal_original_source_ceiling(receipts)[
+                                    "minimum_source_categories_for_unrestricted_causal_prose"]
+                            ),
                         )):
                     causal_follow_through_invoked = True
                     causal_review_delta_at_follow_through = review_read_delta
@@ -2119,6 +2131,9 @@ class Agent:
                                      "(not proof of an event or a proposed read):\n"
                                    + json.dumps(review_read_delta,
                                                 ensure_ascii=False)[:1400]
+                                   + "\n\nOriginal causal source ceiling (not proof of cause):\n"
+                                   + json.dumps(causal_original_source_ceiling(receipts),
+                                                ensure_ascii=False)[:1650]
                                    + concrete_sources
                                    + "\n\nReturned-receipt scope index (navigation only):\n"
                                    + final_claim_receipt_scope_index(receipts)

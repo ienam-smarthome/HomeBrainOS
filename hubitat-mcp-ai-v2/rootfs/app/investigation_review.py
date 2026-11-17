@@ -1230,10 +1230,11 @@ def is_causal_question(question: str) -> bool:
 
 
 CAUSAL_FOLLOW_THROUGH_PROMPT = """Unresolved causal-evidence follow-through (internal).
-Your previous reviewed answer still says a material initiating cause or
-historical link is unknown. The preceding source review either made no new
-read or only collected contextual/failed evidence without a potentially
-discriminating historical source. A successful hub metadata, current state,
+The original source-category check still leaves a material causal link
+unverified, regardless of whether your previous answer sounds confident.
+The preceding source review either made no new read or only collected
+contextual/failed evidence without a potentially discriminating historical
+source. The previous answer is NOT independent evidence. A successful hub metadata, current state,
 mode or configuration read is not itself an event-time execution trace.
 The user ALREADY authorised proportionate
 READ-ONLY investigation; do not ask permission to perform a read.
@@ -1373,10 +1374,13 @@ def should_recheck_causal_evidence(
     remaining_seconds: float, has_action_receipt: bool,
     available_read_tools: bool,
     review_read_delta: dict | None = None,
+    structural_source_gap: bool = False,
 ) -> bool:
-    """One optional model-only read decision when causal review stopped unresolved.
+    """One model-selected read opportunity when original causal sources are weak.
 
-    Never calls/selects a tool or creates a causal conclusion. A strict time
+    The evidence gap is derived from native receipt categories, not confidence
+    or phrase patterns in the draft. This does not force any source read.
+    A strict time
     budget avoids turning every straightforward Ask into extra paid rounds.
     """
     return (
@@ -1394,7 +1398,8 @@ def should_recheck_causal_evidence(
                      "only_contextual_or_unsuccessful_reads") is True))
         and remaining_seconds > 25
         and isinstance(candidate_answer, str)
-        and bool(_CAUSAL_UNRESOLVED.search(candidate_answer))
+        and (structural_source_gap
+             or bool(_CAUSAL_UNRESOLVED.search(candidate_answer)))
     )
 
 
