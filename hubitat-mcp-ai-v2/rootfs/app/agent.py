@@ -59,6 +59,7 @@ from causal_decision_frontier import (
     causal_controller_frontier, CONTROLLER_DECISION_CHECKPOINT,
 )
 from causal_read_opportunity import causal_read_opportunities
+from causal_stage_b_frontier import stage_b_read_frontier, stage_b_source_allowed
 from causal_outcome_frontier import (
     causal_outcome_frontier, OUTCOME_FIRST_CHECKPOINT,
 )
@@ -78,7 +79,7 @@ from investigation_review import (
     should_recheck_causal_evidence, causal_review_read_delta, FRESH_SOURCE_RECOVERY_PROMPT,
     should_offer_fresh_source_recovery, should_prompt_historical_status_gap,
     should_prompt_controller_decision_gap,
-    should_prompt_outcome_history_gap,
+    should_prompt_outcome_history_gap, _EXPLICIT_NO_FRESH_READ,
 )
 from config_evidence import config_source_map
 from device_monitor import TOOL_NAME as MONITOR_TOOL, TOOL_DEFINITION as MONITOR_TOOL_DEFINITION
@@ -947,6 +948,10 @@ class Agent:
         causal_follow_through_candidate = ""
         causal_review_delta_at_follow_through = None
         causal_review_receipt_count = -1
+        stage_b_scoped_recovery_invoked = False
+        stage_b_scoped_recovery_frontier = None
+        stage_b_scoped_recovery_attempts = 0
+        stage_b_scoped_recovery_app_attempts = 0
         native_action_receipts_seen = 0
         # Private numeric-only latency breakdown. Native device I/O and
         # human approval time are different; no clocks/polls/readback added.
@@ -1250,6 +1255,16 @@ class Agent:
                     "no_current_read_attempt"
                 ),
                 "causal_follow_through_invoked": causal_follow_through_invoked,
+                "stage_b_scoped_recovery": {
+                    "invoked": stage_b_scoped_recovery_invoked,
+                    "read_attempts": stage_b_scoped_recovery_attempts,
+                    "app_scoped_read_attempts": stage_b_scoped_recovery_app_attempts,
+                    "result": (
+                        "not_invoked" if not stage_b_scoped_recovery_invoked
+                        else "model_declined" if stage_b_scoped_recovery_attempts == 0
+                        else "attempted"
+                    ),
+                },
                 "causal_original_source_ceiling": (
                     causal_original_source_ceiling(receipts)
                     if source_review_kind == "causal" else None
@@ -2023,6 +2038,41 @@ class Agent:
                                 + json.dumps(decision_frontier, ensure_ascii=False)[:3800]
                                 + "\n\n" + guidance
                             )
+                        # Stage B: reuse the V3 source-scope frontier approach
+                        # within this existing MODEL-owned review. ORIGINAL
+                        # complete receipts, not truncated inventory prose,
+                        # supply the candidate IDs and clocks.
+                        ranked_stage_b = stage_b_read_frontier(
+                            receipts, read_only_review_catalog(tools)
+                        )
+                        if ranked_stage_b.get("ranked_reads"):
+                            stage_b_brief = {
+                                key: ranked_stage_b[key]
+                                for key in (
+                                    "focal", "scope_candidates",
+                                    "causal_app_candidates", "ranked_reads",
+                                    "log_retention", "read_limits",
+                                ) if key in ranked_stage_b
+                            }
+                            guidance = (
+                                "Stage B source-grounded next READ options "
+                                "(advisory; NO native read is automatically "
+                                "executed):\n"
+                                + json.dumps(stage_b_brief, ensure_ascii=False)[:6200]
+                                + "\nAn attribute-filtered output history "
+                                  "cannot show other attributes or command rows. "
+                                  "Prefer a relevant SAME-device unfiltered "
+                                  "history when offered; then a recorded issuer "
+                                  "app log (if one is identified), or an "
+                                  "event-notified app log as a separate "
+                                  "unverified candidate. Current-state "
+                                  "capability peers indicate outcome SCOPE, "
+                                  "not an initiating input. The MODEL selects "
+                                  "or declines a proportionate offered read. "
+                                  "A zero-match general log is NOT proof of "
+                                  "missing execution or a retention cutoff.\n\n"
+                                + guidance
+                            )
                         opportunities = causal_read_opportunities(
                             receipts, read_only_review_catalog(tools)
                         )
@@ -2117,6 +2167,19 @@ class Agent:
                     opportunities = causal_read_opportunities(
                         receipts, read_only_review_catalog(tools)
                     )
+                    ranked_stage_b = stage_b_read_frontier(
+                        receipts, read_only_review_catalog(tools)
+                    )
+                    stage_b_navigation = (
+                        "\n\nStage B next-read ranking (advisory only):\n"
+                        + json.dumps({
+                            key: ranked_stage_b[key]
+                            for key in (
+                                "focal", "ranked_reads", "causal_app_candidates",
+                                "log_retention", "read_limits",
+                            ) if key in ranked_stage_b
+                        }, ensure_ascii=False)[:5200]
+                    )
                     concrete_sources = (
                         "\n\nAdvertised read-only tool contract and original state/issuer "
                         "leads (not evidence that logs exist):\n"
@@ -2127,6 +2190,7 @@ class Agent:
                     messages.append({
                         "role": "user",
                         "content": CAUSAL_FOLLOW_THROUGH_PROMPT
+                                   + stage_b_navigation
                                    + "\n\nOriginal review-read source-category delta "
                                      "(not proof of an event or a proposed read):\n"
                                    + json.dumps(review_read_delta,
@@ -2144,6 +2208,60 @@ class Agent:
                                    )[:6500],
                     })
                     continue
+                # One bounded Stage B recovery AFTER an original successful
+                # zero-match unscoped log read. Recover the missing app scope
+                # before the final tool-free audit. The model picks the tool
+                # and source ID; the host only validates that the ID and
+                # incident window came from ORIGINAL MCP receipts.
+                if (enable_source_review
+                        and source_review_kind == "causal"
+                        and not stage_b_scoped_recovery_invoked
+                        and not _EXPLICIT_NO_FRESH_READ.search(question)
+                        and not native_action_receipts_seen
+                        and not current_write_attempted()
+                        and deadline - time.monotonic() > 18):
+                    next_stage_b = stage_b_read_frontier(
+                        receipts, read_only_review_catalog(tools)
+                    )
+                    if next_stage_b.get("empty_broad_log_scoped_recovery_eligible"):
+                        stage_b_scoped_recovery_invoked = True
+                        stage_b_scoped_recovery_frontier = next_stage_b
+                        capture_answer_stage("pre_stage_b_scoped_recovery", text)
+                        stage_b_brief = {
+                            key: next_stage_b[key]
+                            for key in (
+                                "focal", "ranked_reads", "causal_app_candidates",
+                                "log_retention", "read_limits",
+                            ) if key in next_stage_b
+                        }
+                        messages.append({
+                            "role": "user",
+                            "content": (
+                                "Stage B last scoped read opportunity "
+                                "(internal; READ-ONLY, at most two native "
+                                "read attempts, at most two app-scoped reads). "
+                                "The previous unscoped past-log query returned "
+                                "ZERO matching entries. This DOES NOT prove "
+                                "that an app did not execute or that event "
+                                "logs are outside retention. Prefer an "
+                                "unfiltered same-output command history "
+                                "when the prior read was attribute-filtered; "
+                                "then independently consider event-time "
+                                "issuer/app scoped sources. A notified "
+                                "listener is NOT a command issuer. Choose "
+                                "one or two advertised, ORIGINAL-source-bound "
+                                "read-only tools and arguments NOW, or decline "
+                                "if no useful safe read remains. Never retry "
+                                "the same broad query. Candidate frontier:\n"
+                                + json.dumps(stage_b_brief,
+                                             ensure_ascii=False)[:6100]
+                                + "\nThese are unexecuted recommendations, "
+                                  "not evidence of app execution. When source "
+                                  "coverage is lost, state verified outcomes "
+                                  "and the exact remaining unknowns."
+                            ),
+                        })
+                        continue
                 if final_claim_audit_invoked:
                     capture_answer_stage("post_final_audit", text)
                     if not text:
@@ -2162,6 +2280,14 @@ class Agent:
                         and temporal_transition_evidence(
                             question, receipts
                         )["status"] == "not_applicable"
+                        # A tool-free audit cannot fill still-missing
+                        # initiating-actor evidence after scoped recovery.
+                        # Save the model budget and let the existing
+                        # original-receipt publisher produce a safe partial.
+                        and not (stage_b_scoped_recovery_invoked
+                                 and causal_requires_initiating_actor_source(question)
+                                 and not causal_original_source_ceiling(receipts)[
+                                     "minimum_source_categories_for_unrestricted_causal_prose"])
                         and source_review_kind not in ("action_outcome", "current_state")
                         and not may_skip_unchanged_final_audit(
                             receipts, review_kind=source_review_kind,
@@ -2243,6 +2369,24 @@ class Agent:
                         raise MCPError("Request deadline reached before this operation")
                     if "_invalid_arguments" in args:
                         raise MCPError(args["_invalid_arguments"])
+                    if stage_b_scoped_recovery_invoked:
+                        # Stage B only validates MODEL-selected original
+                        # source targets and bounded read scopes. No writes
+                        # or unrelated broad log repetitions can occur.
+                        if (stage_b_scoped_recovery_attempts >= 2
+                                or (name == "hub_get_logs"
+                                    and stage_b_scoped_recovery_app_attempts >= 2)):
+                            raise MCPError("Stage B scoped recovery read cap reached")
+                        if not stage_b_source_allowed(
+                            stage_b_scoped_recovery_frontier, name, args
+                        ):
+                            raise MCPError(
+                                "Stage B read outside original source scope "
+                                "or advertised safe historical source family"
+                            )
+                        stage_b_scoped_recovery_attempts += 1
+                        if name == "hub_get_logs":
+                            stage_b_scoped_recovery_app_attempts += 1
                     if (source_review_invoked
                             and not is_read_only_review_tool(name)
                             and not is_native_rule_read(name, args)):
