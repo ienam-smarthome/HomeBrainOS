@@ -1,5 +1,9 @@
 # HomeBrainOS development agent instructions
 
+## 17 November 2026 — V2 alpha.144 transport fallback candidate
+
+A live alpha.143 request obtained filtered thermostat and TRV histories before a model or transport failure prevented Stage B from being reached. Alpha.144 records that phase in Technical JSON and highlights the latest returned heating report for each device in the source-only fallback. The fictional replay verifies no extra tool calls or writes. Installed first-answer acceptance remains pending. See [PR #1723](https://github.com/ienam-smarthome/HomeBrainOS/pull/1723).
+
 ## 17 November 2026 — V2 alpha.143 Stage B recovery candidate
 
 Stage B now offers the model a bounded read-only recovery checkpoint when the cause remains unresolved and a source-grounded read remains eligible. An empty broad log is no longer required. Technical JSON records candidate disposition. Synthetic alpha.142 replay covers broad inventory, filtered output history and focused inventory alongside the alpha.141 empty-log case. The two-read cap and causal follow-through opt-out apply. Installed first-answer acceptance remains pending. See [PR #1722](https://github.com/ienam-smarthome/HomeBrainOS/pull/1722).
