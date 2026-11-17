@@ -1,6 +1,6 @@
 # HomeBrainOS V2 alpha.140 — material causal-source follow-through
 
-**Status:** code PR candidate, exact-head CI pending. Independent installed live first-answer acceptance remains outstanding.
+**Status:** [PR #1717](https://github.com/ienam-smarthome/HomeBrainOS/pull/1717) merged as `2e2d28f6ff6e82d63faa17cca9fab6427cbfaa2e`, after **5/5 exact-head CI workflows passed**. Independent installed source-real first-answer acceptance remains outstanding.
 
 ## Source-real baseline (private)
 
