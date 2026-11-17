@@ -954,6 +954,7 @@ class Agent:
         stage_b_recovery_suppression = None
         stage_b_recovery_declined = False
         stage_b_recovery_rejections = 0
+        stage_b_unreached_model_error_phase = None
         stage_b_scoped_recovery_attempts = 0
         stage_b_scoped_recovery_app_attempts = 0
         native_action_receipts_seen = 0
@@ -1264,12 +1265,14 @@ class Agent:
                     "read_attempts": stage_b_scoped_recovery_attempts,
                     "app_scoped_read_attempts": stage_b_scoped_recovery_app_attempts,
                     "result": (
-                        "not_invoked" if not stage_b_scoped_recovery_invoked
+                        "not_reached" if stage_b_unreached_model_error_phase
+                        else "not_invoked" if not stage_b_scoped_recovery_invoked
                         else "attempted" if stage_b_scoped_recovery_attempts
                         else "model_declined" if stage_b_recovery_declined
                         else "no_valid_selection"
                     ),
                     "suppression_reason": stage_b_recovery_suppression,
+                    "unreached_model_error_phase": stage_b_unreached_model_error_phase,
                     "candidates": stage_b_recovery_candidates,
                     "rejected_selections": stage_b_recovery_rejections,
                 },
@@ -1431,7 +1434,8 @@ class Agent:
                     ) or is_explicit_device_imperative(question)):
                 return None
             grounded = source_only_partial_answer(
-                question, receipts, timezone_name=clock_timezone_name
+                question, receipts, timezone_name=clock_timezone_name,
+                lead_with_latest_heating=status == "model_or_transport_error",
             )
             if not grounded:
                 return None
@@ -1545,6 +1549,11 @@ class Agent:
             try:
                 message = await self.round(messages, tools, remaining)
             except RuntimeError as exc:
+                if (enable_source_review and enable_causal_follow_through
+                        and review_kind(question) == "causal"
+                        and not stage_b_scoped_recovery_invoked
+                        and stage_b_recovery_suppression is None):
+                    stage_b_unreached_model_error_phase = round_phase
                 partial = original_source_partial("model_or_transport_error")
                 if partial is not None:
                     partial["model_error_kind"] = model_error_kind(exc)

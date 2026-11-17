@@ -110,8 +110,9 @@ class FallbackUnitTests(unittest.TestCase):
 
 
 class FakeMCP:
-    def __init__(self):
+    def __init__(self, history=None):
         self.calls = []
+        self.history = {"FX-OUT": SOURCE} if history is None else history
 
     async def list_tools(self, refresh=False):
         return [
@@ -127,8 +128,8 @@ class FakeMCP:
 
     async def call(self, name, args):
         self.calls.append((name, args))
-        if name == "hub_list_device_events" and args == ARGS_OUT:
-            return json.loads(wrapped(SOURCE))
+        if name == "hub_list_device_events" and args["deviceId"] in self.history:
+            return json.loads(wrapped(self.history[args["deviceId"]]))
         raise AssertionError("No additional read/write is authorized")
 
 
@@ -194,6 +195,53 @@ class ReadOnlyAgentIntegrationTests(unittest.IsolatedAsyncioTestCase):
                          "model_or_transport_error")
         self.assertIn("Fixture Main Output", result["answer"])
         self.assertEqual(len(hub.calls), 1)
+
+    async def test_alpha143_transport_failure_before_stage_b_preserves_heating_scope(self):
+        thermostat = {**SOURCE, "device": "Fixture Wall Thermostat"}
+        trv = {
+            **ZONE, "device": "Fixture Bedroom TRV",
+            "events": [*ZONE["events"], {
+                "name": "thermostatOperatingState", "value": "heating",
+                "date": "2030-11-16T13:00:01.100+0000",
+                "producedBy": {"name": "Fixture Bridge", "deviceId": "FX-BRIDGE"},
+            }],
+        }
+        hub = FakeMCP({"FX-OUT": thermostat, "FX-ZONE": trv})
+        agent = ScriptedAgent(
+            {"content": "", "tool_calls": [
+                *tool_call("hub_list_device_events", ARGS_OUT)["tool_calls"],
+                *tool_call("hub_list_device_events", ARGS_ZONE)["tool_calls"],
+            ]},
+            RuntimeError("Fictional transport failure"),
+        )
+        try:
+            result = await agent.answer(
+                "Why did heating turn on, and which room demanded heat? "
+                "Do not change anything.", [], hub, 90,
+            )
+        finally:
+            await agent.close()
+
+        self.assertEqual(result["answer_fallback_status"], "model_or_transport_error")
+        self.assertFalse(result["source_review_invoked"])
+        stage_b = result["stage_b_scoped_recovery"]
+        self.assertEqual(stage_b["result"], "not_reached")
+        self.assertEqual(stage_b["unreached_model_error_phase"], "initial_investigation")
+        self.assertEqual(stage_b["candidates"], [])
+        self.assertEqual(stage_b["read_attempts"], 0)
+        lead, _, _ = result["answer"].partition("**Returned device state reports:**")
+        self.assertIn("Fixture Bedroom TRV", lead)
+        self.assertIn("1:00:01 pm", lead)
+        self.assertIn("Fixture Bridge", lead)
+        self.assertIn("Fixture Wall Thermostat", lead)
+        self.assertIn("11:32:53 am", lead)
+        self.assertNotIn("8:08:35 am", lead)
+        self.assertIn("requested heat and physical boiler operation remain unverified", lead)
+        self.assertEqual(hub.calls, [
+            ("hub_list_device_events", ARGS_OUT),
+            ("hub_list_device_events", ARGS_ZONE),
+        ])
+        self.assertFalse(result["action_lifecycle"]["native_write_submitted"])
 
     async def test_no_evidence_empty_does_not_fake_success(self):
         agent = ScriptedAgent({"content": ""})

@@ -210,7 +210,8 @@ def _original_nearby_past_app_logs(
 
 
 def source_only_partial_answer(
-    question: str, receipts: list[dict], *, timezone_name: str | None = None
+    question: str, receipts: list[dict], *, timezone_name: str | None = None,
+    lead_with_latest_heating: bool = False,
 ) -> str | None:
     """Use only parsed, source-bound original device states and command rows.
 
@@ -303,6 +304,33 @@ def source_only_partial_answer(
         "request's successful read-only MCP histories. They do not establish "
         "a controller's internal trigger or an independent physical effect.",
     ]
+    if lead_with_latest_heating:
+        latest_heating = []
+        for _, _, bucket, ordered in candidates:
+            if bucket["field"] != "thermostatOperatingState":
+                continue
+            latest = next(
+                (entry for entry in reversed(ordered)
+                 if entry[0][1].lower() == "heating"),
+                None,
+            )
+            if latest is not None:
+                latest_heating.append((latest, bucket))
+        if latest_heating:
+            latest_heating.sort(key=lambda item: item[0][1], reverse=True)
+            lines.append("**Latest heating reports in the returned history, by device**")
+            for (key, stamp), bucket in latest_heating[:_MAX_DEVICES]:
+                reporter = bucket.get("reporters", {}).get(key)
+                attribution = f" (reported by {reporter})" if reporter else ""
+                lines.append(
+                    f"- **{bucket['name']}** (ID {bucket['device_id']}) "
+                    f"reported state `heating` at {_friendly_time(stamp, zone)}"
+                    f"{attribution}."
+                )
+            lines.append(
+                "These are individual device state reports. The room that "
+                "requested heat and physical boiler operation remain unverified."
+            )
     if command_rows:
         lines.append(
             "**Recorded command issuers from the returned native device histories:** "
