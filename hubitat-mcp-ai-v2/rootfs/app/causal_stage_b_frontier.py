@@ -95,6 +95,9 @@ def _args(spec: dict, ident: str, begin: datetime, end: datetime,
             arguments[key2] = value
     if fields.get("limit", {}).get("type") == "integer":
         arguments["limit"] = 30 if not logs else 60
+    if (not logs and "since" not in arguments
+            and fields.get("hoursBack", {}).get("type") in ("integer", "number")):
+        arguments["hoursBack"] = 24
     # Never silently omit required arguments not derivable from original
     # identity, mode, source clock or the actual advertised field schema.
     if any(row["required"] and key2 not in arguments
@@ -374,3 +377,58 @@ def stage_b_read_frontier(receipts: list[dict], read_catalog: list[dict],
         "model_must_select_or_decline": True,
         "candidate_not_proof_of_actual_trigger_or_physical_effect": True,
     }
+
+
+
+def stage_b_source_allowed(frontier: dict, name: str, args: dict) -> bool:
+    """Validate a model CHOSEN Stage B recovery against original source IDs.
+
+    Additional native MCP schema validation still applies. This check only
+    stops an ungrounded source target, accidental broad retry or write.
+    The ranker never dispatches a request.
+    """
+    if (not isinstance(frontier, dict) or not isinstance(name, str)
+            or not isinstance(args, dict)
+            or name not in ("hub_list_device_events", "hub_get_logs")):
+        return False
+    for proposal in frontier.get("ranked_reads", []):
+        if not isinstance(proposal, dict) or proposal.get("leaf") != name:
+            continue
+        expected = proposal.get("arguments")
+        if not isinstance(expected, dict):
+            continue
+        id_field = "appId" if name == "hub_get_logs" else "deviceId"
+        actual = args.get(id_field)
+        required = expected.get(id_field)
+        if str(actual) != str(required) or actual is None:
+            continue
+        if name == "hub_get_logs":
+            if args.get("mode") != "past":
+                continue
+        elif args.get("attribute") not in (None, ""):
+            # This Stage B specific recovery seeks unfiltered output commands,
+            # not an arbitrarily selected sibling or numeric input query.
+            continue
+        if "limit" in args and (type(args["limit"]) is not int
+                                or not 1 <= args["limit"] <= 100):
+            continue
+        # Never silently expand a sourced bounded incident window.
+        valid = True
+        for field in ("since", "until"):
+            if field in args:
+                stamp = _source_clock(args[field])
+                floor = _source_clock(frontier.get("source_window_start"))
+                ceil = _source_clock(frontier.get("source_window_end"))
+                if stamp is None or floor is None or ceil is None:
+                    valid = False
+                    break
+                if field == "since" and stamp < floor:
+                    valid = False
+                    break
+                if field == "until" and stamp > ceil:
+                    valid = False
+                    break
+        if valid and ("since" not in args or "until" not in args
+                      or _source_clock(args["since"]) <= _source_clock(args["until"])):
+            return True
+    return False
