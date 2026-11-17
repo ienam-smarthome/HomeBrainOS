@@ -1,0 +1,20 @@
+# HomeBrainOS V2 alpha.138 — bounded original execution-log partials
+
+**Status:** PR candidate; exact-head CI and installed source-real acceptance pending.
+
+## Source-real motivation (private, 17 November 2026)
+
+An uncoached installed alpha.137 read-only first answer used 3/3 original successful native reads, including a bounded `hub_get_logs(mode=past, appId=...)` source. Unlike alpha.136 it found an event-time controller decision and a specific participating input in the **pre-final-audit draft**, rather than inventing the room from the output's Hubitat room grouping. The final claim audit then returned prose rejected by the existing conservative publication floor as `unbounded_historical_absence`; the **exact rejected final prose is not retained**, so it cannot be declared a false-positive guard. The fallthrough device-history-only partial discarded the successful original execution-log observations. Qualitative published first-answer score: **5/8**, with cause omitted. This is one source-real sample, not proof of overall model accuracy. No private app, device, sensor or household log text is committed.
+
+## General bounded improvement
+
+- Reuse the existing `read_only_receipt_fallback.py` source-only partial path. When a source-validated device history contains at least two distinct reported states, choose the two latest different state values as *time anchors*, not as a verified initiating event or physical operation. No new discovery/model/source/host tool call.
+- Preserve up to eight **original, successful, app-scoped native past-log entries** within three minutes of those observed state reports. Require an original `hub_get_logs` read, `mode=past`, numeric requested `appId`, bounded aware `since`/`until`, a matching returned `mode=past`, an app entry and `app|same-id|label|body` prefix, sane source time inside the actual query bounds, bounded rows and safe sanitized text. Invalid/malformed, failed, unscoped, unrelated-app or untrusted credential/instruction-style data must not become user-facing claims.
+- Quote excerpts explicitly as **what the app logged**, distinct from device reporter, actual command issuer, event-time controller decision and independent physical effect. Application-log timestamps without offsets are interpreted using the configured hub timezone and labelled accordingly; chronological proximity is not proof of a causal link to the controlled output.
+- Preserve the existing `causal_claim_publication` safety veto, `causal_claim_verification` and `answer_fallback_status` metadata. Unsafe final prose is **never** selectively reused or silently passed. This is *positive-evidence retention*, not a deterministic root-cause reasoner or exemption from approval.
+- V2 only. V1, native writes, command authorisation, Rule Machine safety, thermostat scheduler, source dispatch, model/provider routing, all original receipts and the existing 53-case benchmark remain unchanged. No extra token/model/provider calls are introduced by the new fallback.
+- Fictional cross-domain unit and end-to-end tests verify source-bounded log survival after an unsafe historical-denial final, failed or mismatched app identity, unsafe text, out-of-window rows, unrelated device/history, no invented physical cause and zero write calls.
+
+## Acceptance
+
+Run exact-head V2 pilot tests, full Python/release, repository validation, answer-quality scorecard integrity and UI screenshot fixtures. After a green merge, run fresh **uncoached private original** read-only first-answer captures in lighting, heating and another domain. Separately grade native source choice, final causal publication, positive evidence preservation, temporal fidelity, issuer versus listener, factual uncertainty and response latency/tokens. A passing fictional test or published excerpt does not prove correct causal inference. Installed acceptance is pending; revert to alpha.137 if the new source-only rendering proves misleading or lossy.
