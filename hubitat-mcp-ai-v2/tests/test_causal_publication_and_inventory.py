@@ -49,7 +49,7 @@ class ClaimFloorUnitTests(unittest.TestCase):
             "Why did fixture output turn on?",
             "The output turned on because the fictional controller raised its setpoint.",
             [history_receipt()])
-        self.assertEqual(r["reason"], "controller_decision_unverified")
+        self.assertEqual(r["reason"], "original_event_time_causal_sources_insufficient")
 
     def test_unbounded_absence_and_false_exclusivity_are_not_published(self):
         for answer in (
@@ -73,7 +73,7 @@ class ClaimFloorUnitTests(unittest.TestCase):
         self.assertEqual(
             causal_publication_floor("Why did it turn on?", answer,
                                      [history_receipt()])["reason"],
-            "controller_decision_unverified",
+            "original_event_time_causal_sources_insufficient",
         )
 
     def test_unverified_initiator_assertion_does_not_pass(self):
@@ -81,7 +81,7 @@ class ClaimFloorUnitTests(unittest.TestCase):
             "Why did the fictional relay activate?",
             "The controller is therefore the verifiable initiator of the relay event.",
             [history_receipt()],
-        )["reason"] == "controller_decision_unverified"
+        )["reason"] == "original_event_time_causal_sources_insufficient"
 
     def test_intervening_words_do_not_hide_definite_causation(self):
         for answer in (
@@ -95,7 +95,7 @@ class ClaimFloorUnitTests(unittest.TestCase):
                         "Why did the fixture output start?", answer,
                         [history_receipt()],
                     )["reason"],
-                    "controller_decision_unverified",
+                    "original_event_time_causal_sources_insufficient",
                 )
 
     def test_unrelated_app_log_is_not_causal_execution_evidence(self):
@@ -115,7 +115,7 @@ class ClaimFloorUnitTests(unittest.TestCase):
                 "The output turned on because the app executed a rule.",
                 [related, unrelated],
             )["reason"],
-            "controller_decision_unverified",
+            "original_event_time_causal_sources_insufficient",
         )
         # A listener isn't the issuer: triggered[] cannot make logs relevant.
         no_producer = history_receipt()
@@ -128,10 +128,10 @@ class ClaimFloorUnitTests(unittest.TestCase):
                 "The output turned on because a timer fired.",
                 [no_producer, unrelated],
             )["reason"],
-            "controller_decision_unverified",
+            "original_event_time_causal_sources_insufficient",
         )
 
-    def test_scoped_source_limit_and_cautious_hypothesis_unchanged(self):
+    def test_cautious_wording_cannot_establish_an_unsupported_event_time_chain(self):
         for answer in (
             "No matching rows were returned in this query.",
             "The controller might have triggered the change, but that is unverified.",
@@ -142,8 +142,8 @@ class ClaimFloorUnitTests(unittest.TestCase):
             with self.subTest(answer=answer):
                 self.assertEqual(
                     causal_publication_floor("Why did output turn on?", answer,
-                                             [history_receipt()])["status"],
-                    "passed",
+                                             [history_receipt()])["reason"],
+                    "original_event_time_causal_sources_insufficient",
                 )
 
     def test_app_id_filter_in_device_events_does_not_become_app_log(self):
@@ -155,7 +155,7 @@ class ClaimFloorUnitTests(unittest.TestCase):
             "Why did fixture change?",
             "The fixture changed because the controller commanded it.",
             [filtered])
-        self.assertEqual(r["reason"], "controller_decision_unverified")
+        self.assertEqual(r["reason"], "original_event_time_causal_sources_insufficient")
 
     def test_successful_nonempty_event_execution_log_is_different_source_type(self):
         related = history_receipt()
@@ -267,7 +267,7 @@ class PublicationIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["answer_fallback_status"],
                          "causal_claim_publication_floor")
         self.assertEqual(result["causal_claim_verification"]["reason"],
-                         "controller_decision_unverified")
+                         "original_event_time_causal_sources_insufficient")
         self.assertIn("Fixture Output", result["answer"])
         self.assertIn("8:10:00", result["answer"])
         self.assertNotIn("scheduled", result["answer"])
