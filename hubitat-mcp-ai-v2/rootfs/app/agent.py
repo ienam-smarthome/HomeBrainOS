@@ -2208,6 +2208,60 @@ class Agent:
                                    )[:6500],
                     })
                     continue
+                # One bounded Stage B recovery AFTER an original successful
+                # zero-match unscoped log read. Recover the missing app scope
+                # before the final tool-free audit. The model picks the tool
+                # and source ID; the host only validates that the ID and
+                # incident window came from ORIGINAL MCP receipts.
+                if (enable_source_review
+                        and source_review_kind == "causal"
+                        and not stage_b_scoped_recovery_invoked
+                        and not _EXPLICIT_NO_FRESH_READ.search(question)
+                        and not native_action_receipts_seen
+                        and not current_write_attempted()
+                        and deadline - time.monotonic() > 18):
+                    next_stage_b = stage_b_read_frontier(
+                        receipts, read_only_review_catalog(tools)
+                    )
+                    if next_stage_b.get("empty_broad_log_scoped_recovery_eligible"):
+                        stage_b_scoped_recovery_invoked = True
+                        stage_b_scoped_recovery_frontier = next_stage_b
+                        capture_answer_stage("pre_stage_b_scoped_recovery", text)
+                        stage_b_brief = {
+                            key: next_stage_b[key]
+                            for key in (
+                                "focal", "ranked_reads", "causal_app_candidates",
+                                "log_retention", "read_limits",
+                            ) if key in next_stage_b
+                        }
+                        messages.append({
+                            "role": "user",
+                            "content": (
+                                "Stage B last scoped read opportunity "
+                                "(internal; READ-ONLY, at most two native "
+                                "read attempts, at most two app-scoped reads). "
+                                "The previous unscoped past-log query returned "
+                                "ZERO matching entries. This DOES NOT prove "
+                                "that an app did not execute or that event "
+                                "logs are outside retention. Prefer an "
+                                "unfiltered same-output command history "
+                                "when the prior read was attribute-filtered; "
+                                "then independently consider event-time "
+                                "issuer/app scoped sources. A notified "
+                                "listener is NOT a command issuer. Choose "
+                                "one or two advertised, ORIGINAL-source-bound "
+                                "read-only tools and arguments NOW, or decline "
+                                "if no useful safe read remains. Never retry "
+                                "the same broad query. Candidate frontier:\n"
+                                + json.dumps(stage_b_brief,
+                                             ensure_ascii=False)[:6100]
+                                + "\nThese are unexecuted recommendations, "
+                                  "not evidence of app execution. When source "
+                                  "coverage is lost, state verified outcomes "
+                                  "and the exact remaining unknowns."
+                            ),
+                        })
+                        continue
                 if final_claim_audit_invoked:
                     capture_answer_stage("post_final_audit", text)
                     if not text:
@@ -2226,6 +2280,14 @@ class Agent:
                         and temporal_transition_evidence(
                             question, receipts
                         )["status"] == "not_applicable"
+                        # A tool-free audit cannot fill still-missing
+                        # initiating-actor evidence after scoped recovery.
+                        # Save the model budget and let the existing
+                        # original-receipt publisher produce a safe partial.
+                        and not (stage_b_scoped_recovery_invoked
+                                 and causal_requires_initiating_actor_source(question)
+                                 and not causal_original_source_ceiling(receipts)[
+                                     "minimum_source_categories_for_unrestricted_causal_prose"])
                         and source_review_kind not in ("action_outcome", "current_state")
                         and not may_skip_unchanged_final_audit(
                             receipts, review_kind=source_review_kind,
@@ -2307,6 +2369,24 @@ class Agent:
                         raise MCPError("Request deadline reached before this operation")
                     if "_invalid_arguments" in args:
                         raise MCPError(args["_invalid_arguments"])
+                    if stage_b_scoped_recovery_invoked:
+                        # Stage B only validates MODEL-selected original
+                        # source targets and bounded read scopes. No writes
+                        # or unrelated broad log repetitions can occur.
+                        if (stage_b_scoped_recovery_attempts >= 2
+                                or (name == "hub_get_logs"
+                                    and stage_b_scoped_recovery_app_attempts >= 2)):
+                            raise MCPError("Stage B scoped recovery read cap reached")
+                        if not stage_b_source_allowed(
+                            stage_b_scoped_recovery_frontier, name, args
+                        ):
+                            raise MCPError(
+                                "Stage B read outside original source scope "
+                                "or advertised safe historical source family"
+                            )
+                        stage_b_scoped_recovery_attempts += 1
+                        if name == "hub_get_logs":
+                            stage_b_scoped_recovery_app_attempts += 1
                     if (source_review_invoked
                             and not is_read_only_review_tool(name)
                             and not is_native_rule_read(name, args)):
