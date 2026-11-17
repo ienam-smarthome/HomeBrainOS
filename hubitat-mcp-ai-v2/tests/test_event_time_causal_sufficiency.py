@@ -102,10 +102,10 @@ class SourceCategoryTests(unittest.TestCase):
                 self.assertEqual(
                     causal_publication_floor(
                         "Why did the fixture output start?", answer, STATE_ONLY
-                    )["reason"], "original_event_time_causal_sources_insufficient",
+                    )["reason"], "controller_decision_unverified",
                 )
 
-    def test_bounded_observations_alone_do_not_complete_the_causal_chain(self):
+    def test_scoped_observations_and_uncertainty_remain_publishable(self):
         samples = [
             "At 20:10:02 the output reported off.",
             "App 201 is currently configured with an output device.",
@@ -121,7 +121,7 @@ class SourceCategoryTests(unittest.TestCase):
             with self.subTest(answer=answer):
                 self.assertEqual(causal_publication_floor(
                     "Why did fixture output turn on?", answer, STATE_ONLY
-                )["reason"], "original_event_time_causal_sources_insufficient")
+                )["status"], "passed")
 
     def test_unrelated_or_failed_logs_do_not_satisfy_floor(self):
         log = receipt("hub_get_logs", {"appId": "201", "mode": "past"},
@@ -135,7 +135,7 @@ class SourceCategoryTests(unittest.TestCase):
                         "Why did fixture output turn on?",
                         "This satisfies a trigger threshold, causing the "
                         "output to switch off.", STATE_ONLY + [extra]
-                    )["reason"], "original_event_time_causal_sources_insufficient")
+                    )["reason"], "controller_decision_unverified")
 
 
 class FakeMCP:
@@ -199,7 +199,7 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await model.close()
         self.assertEqual(answer["causal_claim_verification"]["reason"],
-                         "original_event_time_causal_sources_insufficient")
+                         "controller_decision_unverified")
         self.assertEqual(answer["answer_fallback_status"],
                          "causal_claim_publication_floor")
         self.assertNotIn("satisfies a historical trigger", answer["answer"])
@@ -225,10 +225,8 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
             )
         finally:
             await model.close()
-        self.assertEqual(answer["causal_claim_verification"]["reason"],
-                         "original_event_time_causal_sources_insufficient")
-        self.assertEqual(answer["answer_fallback_status"],
-                         "causal_claim_publication_floor")
+        self.assertEqual(answer["causal_claim_verification"]["status"], "passed")
+        self.assertEqual(answer["answer_fallback_status"], "not_used")
         self.assertEqual(len(hub.calls), 1)
         self.assertIn("initiating input remains unverified", answer["answer"])
         self.assertFalse(answer["action_lifecycle"]["native_write_submitted"])
