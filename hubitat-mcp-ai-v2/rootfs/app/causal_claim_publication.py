@@ -35,19 +35,9 @@ _UNBOUNDED_COMMAND_ABSENCE = re.compile(
     r"(?:occurred|started|happened)\b", re.I,
 )
 
-_DEFINITE_CAUSE = re.compile(
-    r"\b(?:turned\s+(?:on|off)|started|stopped|activated|deactivated|"
-    r"switched|changed|operated)\b[^\n.!?]{0,110}\bbecause\b|"
-    r"\b(?:directly|definitively|certainly)\s+(?:caused|triggered)\b|"
-    r"\b(?:indicates|proves|confirms)\s+causation\b|"
-    r"\b(?:is|was)\s+(?:therefore\s+)?the\s+(?:verifiable\s+)?"
-    r"(?:initiator|cause)\b|"
-    r"\b(?:demand|cause|reason)\s+(?:came|originated)\s+from\b|"
-    r"\b(?:the\s+)?(?:cause|reason)\s+(?:was|is)\s+"
-    r"(?!(?:observed|established|unverified|unknown|uncertain|not)\b)", re.I,
-)
-# Only explanatory assertions, not explicitly *unverified* hypotheses or
-# statements that a fact cannot be established, are eligible.
+# Historically the publisher used multiple phrase-specific causal assertion
+# regexes. They were brittle: confident wrong causes can be phrased without
+# any recognized trigger verb. The source ceiling below replaces them.
 _UNCERTAIN = re.compile(
     r"\b(?:unverified|uncertain|unknown|cannot|can't|could\s+not|"
     r"not\s+(?:verified|proven|established|known)|might|may|could|"
@@ -60,20 +50,8 @@ _SCOPED = re.compile(
     r"inspected\s+(?:rows|window)|"
     r"queried\s+(?:source|window)|no\s+matching\s+rows)\b", re.I,
 )
-# A definite HISTORICAL decision/trigger may be phrased without "because".
-# Treat these as causal assertions, not source-derived observations; e.g.
-# "the controller reported a setpoint" alone is still permitted.
-_EVENT_TIME_DECISION = re.compile(
-    r"\b(?:this|that|it)\s+(?:satisf(?:ies|ied)|meet(?:s)?|met|"
-    r"cross(?:es|ed))\b[^\n.!?]{0,125}\b(?:threshold|condition|demand)\b|"
-    r"\b(?:caus(?:ed|ing)|trigger(?:ed|ing)|result(?:ed|ing)\s+in|"
-    r"led\s+to)\b[^\n.!?]{0,125}\b(?:switch|turn|start|stop|run|"
-    r"operat(?:e|ion)|chang(?:e|ed)|activat(?:e|ion)|heating|cooling)\b|"
-    r"\bexplains?\s+why\b[^\n.!?]{0,110}\b(?:demand|"
-    r"decision|trigger|activat|turn|switch|start|stop)\b|"
-    r"\b(?:was|were|is|are)\s+(?:directly\s+)?(?:triggered|caused|initiated)\s+by\b",
-    re.I,
-)
+# Event-time causation is now checked by ORIGINAL source categories, not
+# an expanding list of threshold/trigger/causing wording patterns.
 _LOG_TOOL = re.compile(r"(?:^|_)(?:app|rule|controller)[a-z0-9_-]*(?:log|execution)(?:s|_|$)|"
                        r"(?:^|_)(?:log|execution)[a-z0-9_-]*(?:app|rule|controller)(?:s|_|$)", re.I)
 _MAX_RECEIPTS = 80
@@ -360,8 +338,12 @@ def causal_publication_floor(question: str, answer: str, receipts: list[dict]) -
                 or _UNBOUNDED_COMMAND_ABSENCE.search(line)):
             if not _UNCERTAIN.search(line) and not _SCOPED.search(line):
                 return {"status": "unsafe", "reason": "unbounded_historical_absence"}
-        if _DEFINITE_CAUSE.search(line) or _EVENT_TIME_DECISION.search(line):
-            if not _UNCERTAIN.search(line):
-                if not _has_event_time_execution_source(receipts):
-                    return {"status": "unsafe", "reason": "controller_decision_unverified"}
+    # All causal prose is bounded by the same original receipt contract,
+    # regardless of how certain the final model sounds. This does not
+    # manufacture a cause or certify the quality of app execution logs.
+    if not causal_original_source_ceiling(receipts)[
+        "minimum_source_categories_for_unrestricted_causal_prose"
+    ]:
+        return {"status": "unsafe",
+                "reason": "original_event_time_causal_sources_insufficient"}
     return {"status": "passed", "reason": None}
