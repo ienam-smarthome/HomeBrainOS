@@ -1159,20 +1159,6 @@ class Agent:
                 causal_claim_check = causal_publication_floor(
                     question, verified_answer, receipts
                 )
-                # Structural publication ceiling: a model's confident or
-                # cautiously worded explanation cannot substitute for a
-                # reported output transition and event-time command/execution
-                # provenance. Read-only receipts, not answer phrases, decide
-                # whether an unrestricted causal narrative can be published.
-                # A partial preserves original source facts if still missing.
-                original_ceiling = causal_original_source_ceiling(receipts)
-                if (causal_claim_check["status"] != "unsafe"
-                        and not original_ceiling[
-                            "minimum_source_categories_for_unrestricted_causal_prose"]):
-                    causal_claim_check = {
-                        "status": "unsafe",
-                        "reason": "original_event_time_causal_sources_insufficient",
-                    }
                 if causal_claim_check["status"] == "unsafe":
                     grounded = source_only_partial_answer(
                         question, receipts, timezone_name=clock_timezone_name
