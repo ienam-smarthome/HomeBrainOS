@@ -1,8 +1,11 @@
 # HomeBrainOS V2 alpha.145 — prospective acceptance gate
 
-**Status:** offline gate prepared; no new live/model/MCP calls and no quality
-result. Runtime alpha.145 remains frozen pending installed capture and
-independent source review.
+**Status:** offline gate merged in
+[PR #1725](https://github.com/ienam-smarthome/HomeBrainOS/pull/1725) as
+`9a6b4e6286d615f866ef8171b1b2e5075c82d2c0` after all four path-triggered
+exact-head workflows passed. No new live/model/MCP calls and no quality result.
+Runtime alpha.145 remains frozen pending installed capture and independent
+source review.
 
 ## Why this gate exists
 

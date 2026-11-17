@@ -20,6 +20,13 @@ model prompt, native tool, V1, installed add-on, hub or cloud call changed in
 this measurement-only milestone. Capture, independent source review and all
 permanent quality rates remain pending. See
 [the alpha.145 prospective acceptance gate](HOMEBRAIN-V2-ALPHA145-PROSPECTIVE-ACCEPTANCE-20261117.md).
+[PR #1725](https://github.com/ienam-smarthome/HomeBrainOS/pull/1725)
+passed all four path-triggered workflows on exact head
+`7fc3182d4425b13a97c593454735ed36dbe75287` and merged as
+`9a6b4e6286d615f866ef8171b1b2e5075c82d2c0`. The command-first UI screenshot
+workflow correctly did not trigger because the PR changed no UI/runtime
+fixture. This merge establishes the offline gate only; it does not establish
+installed alpha.145 quality, read-only enforcement or promotion readiness.
 
 ## 16 November 2026 — alpha.127 merged, read-only answer resilience
 
