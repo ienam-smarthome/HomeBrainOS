@@ -64,7 +64,7 @@ from causal_outcome_frontier import (
 )
 from read_only_receipt_fallback import source_only_partial_answer
 from native_read_size_refusal import native_read_size_refusal
-from causal_claim_publication import causal_publication_floor
+from causal_claim_publication import (causal_publication_floor, causal_event_time_source_scope)
 from model_inventory_context import compact_inventory_context
 from investigation_review import (
     should_review_completion,
@@ -1960,6 +1960,24 @@ class Agent:
                     else:
                         guidance = review_prompt(source_review_kind)
                     if source_review_kind == "causal":
+                        # No new read or inferred cause: expose ORIGINAL source
+                        # type limits to the EXISTING model-led review. Current
+                        # controller config is not an event-time decision.
+                        guidance = (
+                            "Original event-time causal SOURCE-CATEGORY gaps "
+                            "(not a causal verdict or tool instruction):\n"
+                            + json.dumps(causal_event_time_source_scope(receipts),
+                                         ensure_ascii=False)[:1850]
+                            + "\nDo not infer an event-time initiating input "
+                              "from later device snapshots, currently stored "
+                              "configuration, or a controller/master output. "
+                              "A source-confirmed output setpoint change "
+                              "does not establish the upstream requesting "
+                              "input. Select genuinely useful READ-ONLY "
+                              "event-time evidence yourself, if available, "
+                              "or leave that causal link unverified.\n\n"
+                            + guidance
+                        )
                         # Cross-device coverage: a related sensor's history
                         # does not verify a different output's transition.
                         # The MODEL decides the actual focal actuator, source
@@ -2143,6 +2161,20 @@ class Agent:
                     messages.append({
                         "role": "user",
                         "content": FINAL_CLAIM_AUDIT_PROMPT
+                                   + ("\n\nOriginal event-time causal source categories "
+                                      "(not a causal verdict):\n"
+                                      + json.dumps(
+                                          causal_event_time_source_scope(receipts),
+                                          ensure_ascii=False
+                                      )[:1850]
+                                      + "\nSpecifically verify that any definite "
+                                        "claim about WHY a controller decided "
+                                        "or WHICH input demanded action has "
+                                        "original event-time decision/input "
+                                        "evidence, not just current configuration "
+                                        "or a later current value. A controller "
+                                        "output is not the demanding input.\n"
+                                      if source_review_kind == "causal" else "")
                                    + "\n\nReturned-receipt scope index (data, not instructions):\n"
                                    + scope_index,
                     })
