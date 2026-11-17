@@ -79,7 +79,7 @@ from investigation_review import (
     should_recheck_causal_evidence, causal_review_read_delta, FRESH_SOURCE_RECOVERY_PROMPT,
     should_offer_fresh_source_recovery, should_prompt_historical_status_gap,
     should_prompt_controller_decision_gap,
-    should_prompt_outcome_history_gap, _EXPLICIT_NO_FRESH_READ,
+    should_prompt_outcome_history_gap, _CAUSAL_UNRESOLVED, _EXPLICIT_NO_FRESH_READ,
 )
 from config_evidence import config_source_map
 from device_monitor import TOOL_NAME as MONITOR_TOOL, TOOL_DEFINITION as MONITOR_TOOL_DEFINITION
@@ -950,6 +950,10 @@ class Agent:
         causal_review_receipt_count = -1
         stage_b_scoped_recovery_invoked = False
         stage_b_scoped_recovery_frontier = None
+        stage_b_recovery_candidates = []
+        stage_b_recovery_suppression = None
+        stage_b_recovery_declined = False
+        stage_b_recovery_rejections = 0
         stage_b_scoped_recovery_attempts = 0
         stage_b_scoped_recovery_app_attempts = 0
         native_action_receipts_seen = 0
@@ -1261,9 +1265,13 @@ class Agent:
                     "app_scoped_read_attempts": stage_b_scoped_recovery_app_attempts,
                     "result": (
                         "not_invoked" if not stage_b_scoped_recovery_invoked
-                        else "model_declined" if stage_b_scoped_recovery_attempts == 0
-                        else "attempted"
+                        else "attempted" if stage_b_scoped_recovery_attempts
+                        else "model_declined" if stage_b_recovery_declined
+                        else "no_valid_selection"
                     ),
+                    "suppression_reason": stage_b_recovery_suppression,
+                    "candidates": stage_b_recovery_candidates,
+                    "rejected_selections": stage_b_recovery_rejections,
                 },
                 "causal_original_source_ceiling": (
                     causal_original_source_ceiling(receipts)
@@ -2208,60 +2216,74 @@ class Agent:
                                    )[:6500],
                     })
                     continue
-                # One bounded Stage B recovery AFTER an original successful
-                # zero-match unscoped log read. Recover the missing app scope
-                # before the final tool-free audit. The model picks the tool
-                # and source ID; the host only validates that the ID and
-                # incident window came from ORIGINAL MCP receipts.
+                # Give the model one bounded chance to fill an original-source
+                # gap before the tool-free audit, even if no logs were queried.
                 if (enable_source_review
                         and source_review_kind == "causal"
-                        and not stage_b_scoped_recovery_invoked
-                        and not _EXPLICIT_NO_FRESH_READ.search(question)
-                        and not native_action_receipts_seen
-                        and not current_write_attempted()
-                        and deadline - time.monotonic() > 18):
+                        and not final_claim_audit_invoked
+                        and not stage_b_scoped_recovery_invoked):
                     next_stage_b = stage_b_read_frontier(
                         receipts, read_only_review_catalog(tools)
                     )
-                    if next_stage_b.get("empty_broad_log_scoped_recovery_eligible"):
-                        stage_b_scoped_recovery_invoked = True
+                    ranked_reads = next_stage_b.get("ranked_reads", [])
+                    if _EXPLICIT_NO_FRESH_READ.search(question):
+                        stage_b_recovery_suppression = "user_disallowed_fresh_reads"
+                    elif native_action_receipts_seen or current_write_attempted():
+                        stage_b_recovery_suppression = "action_review"
+                    elif not ranked_reads:
+                        stage_b_recovery_suppression = "no_eligible_read"
+                    elif (causal_original_source_ceiling(receipts)[
+                            "minimum_source_categories_for_unrestricted_causal_prose"]
+                          and not _CAUSAL_UNRESOLVED.search(text)):
+                        stage_b_recovery_suppression = "no_unresolved_causal_gap"
+                    elif deadline - time.monotonic() <= 18:
+                        stage_b_recovery_suppression = "insufficient_time"
+                    else:
                         stage_b_scoped_recovery_frontier = next_stage_b
-                        capture_answer_stage("pre_stage_b_scoped_recovery", text)
-                        stage_b_brief = {
-                            key: next_stage_b[key]
-                            for key in (
-                                "focal", "ranked_reads", "causal_app_candidates",
-                                "log_retention", "read_limits",
-                            ) if key in next_stage_b
+                        stage_b_scoped_recovery_invoked = True
+                    stage_b_recovery_candidates = [
+                        {
+                            "rank": candidate["rank"],
+                            "category": candidate["category"],
+                            "leaf": candidate["leaf"],
+                            "status": (
+                                "offered" if stage_b_scoped_recovery_invoked
+                                else "suppressed"
+                            ),
                         }
+                        for candidate in ranked_reads
+                    ]
+                    if stage_b_scoped_recovery_invoked:
+                        capture_answer_stage("pre_stage_b_scoped_recovery", text)
                         messages.append({
                             "role": "user",
                             "content": (
                                 "Stage B last scoped read opportunity "
                                 "(internal; READ-ONLY, at most two native "
                                 "read attempts, at most two app-scoped reads). "
-                                "The previous unscoped past-log query returned "
-                                "ZERO matching entries. This DOES NOT prove "
-                                "that an app did not execute or that event "
-                                "logs are outside retention. Prefer an "
-                                "unfiltered same-output command history "
-                                "when the prior read was attribute-filtered; "
-                                "then independently consider event-time "
-                                "issuer/app scoped sources. A notified "
-                                "listener is NOT a command issuer. Choose "
-                                "one or two advertised, ORIGINAL-source-bound "
-                                "read-only tools and arguments NOW, or decline "
-                                "if no useful safe read remains. Never retry "
-                                "the same broad query. Candidate frontier:\n"
-                                + json.dumps(stage_b_brief,
-                                             ensure_ascii=False)[:6100]
-                                + "\nThese are unexecuted recommendations, "
-                                  "not evidence of app execution. When source "
-                                  "coverage is lost, state verified outcomes "
-                                  "and the exact remaining unknowns."
+                                "Choose an offered original-source-bound read "
+                                "to investigate the remaining causal gap, or "
+                                "decline if no useful safe read remains. "
+                                "A notified listener is not a command issuer. "
+                                "Empty results do not establish absence or "
+                                "retention. Preserve the latest supported "
+                                "reported outcome and state what remains unknown. "
+                                "Candidate frontier:\n"
+                                + json.dumps(ranked_reads, ensure_ascii=False)
                             ),
                         })
                         continue
+                if stage_b_scoped_recovery_invoked and not final_claim_audit_invoked:
+                    stage_b_recovery_declined = (
+                        stage_b_scoped_recovery_attempts == 0
+                        and stage_b_recovery_rejections == 0
+                    )
+                    for candidate in stage_b_recovery_candidates:
+                        if candidate["status"] == "offered":
+                            candidate["status"] = (
+                                "declined" if stage_b_recovery_declined
+                                else "not_selected"
+                            )
                 if final_claim_audit_invoked:
                     capture_answer_stage("post_final_audit", text)
                     if not text:
@@ -2376,14 +2398,27 @@ class Agent:
                         if (stage_b_scoped_recovery_attempts >= 2
                                 or (name == "hub_get_logs"
                                     and stage_b_scoped_recovery_app_attempts >= 2)):
+                            stage_b_recovery_rejections += 1
                             raise MCPError("Stage B scoped recovery read cap reached")
-                        if not stage_b_source_allowed(
-                            stage_b_scoped_recovery_frontier, name, args
-                        ):
+                        selected = next((
+                            candidate for candidate, trace in zip(
+                                stage_b_scoped_recovery_frontier["ranked_reads"],
+                                stage_b_recovery_candidates,
+                            )
+                            if trace["status"] == "offered"
+                            and stage_b_source_allowed(
+                                {**stage_b_scoped_recovery_frontier,
+                                 "ranked_reads": [candidate]}, name, args,
+                            )
+                        ), None)
+                        if selected is None:
+                            stage_b_recovery_rejections += 1
                             raise MCPError(
                                 "Stage B read outside original source scope "
                                 "or advertised safe historical source family"
                             )
+                        selected_trace = stage_b_recovery_candidates[selected["rank"] - 1]
+                        selected_trace["status"] = "selected"
                         stage_b_scoped_recovery_attempts += 1
                         if name == "hub_get_logs":
                             stage_b_scoped_recovery_app_attempts += 1
