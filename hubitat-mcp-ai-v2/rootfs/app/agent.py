@@ -2218,7 +2218,7 @@ class Agent:
                     continue
                 # Give the model one bounded chance to fill an original-source
                 # gap before the tool-free audit, even if no logs were queried.
-                if (enable_source_review
+                if (enable_source_review and enable_causal_follow_through
                         and source_review_kind == "causal"
                         and not final_claim_audit_invoked
                         and not stage_b_scoped_recovery_invoked):

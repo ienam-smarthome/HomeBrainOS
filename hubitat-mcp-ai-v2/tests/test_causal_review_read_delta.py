@@ -204,6 +204,8 @@ class ModelLedIntegrationTests(unittest.IsolatedAsyncioTestCase):
             {"content": "The output reported off. The fixture controller "
                         "logged a decision near that report. Which input "
                         "prompted it remains unverified."},
+            {"content": "The output reported off and a controller decision was logged. "
+                        "The initiating input remains unverified."},
         )
         try:
             result = await agent.answer(
@@ -213,7 +215,8 @@ class ModelLedIntegrationTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await agent.close()
         self.assertTrue(result["causal_follow_through_invoked"])
-        self.assertEqual(result["rounds"], 6)
+        self.assertEqual(result["rounds"], 7)
+        self.assertEqual(result["stage_b_scoped_recovery"]["result"], "model_declined")
         self.assertEqual([c[0] for c in hub.calls],
                          ["hub_list_device_events", "hub_get_info", "hub_get_logs"])
         self.assertEqual(result["causal_review_source_delta_at_follow_through"][
@@ -232,6 +235,7 @@ class ModelLedIntegrationTests(unittest.IsolatedAsyncioTestCase):
             {"content": "The initiator is unknown."},
             {"content": "The output reported off; the initiating cause "
                         "remains unverified."},
+            {"content": "The output reported off; the cause remains unverified."},
         )
         try:
             result = await agent.answer(
@@ -240,7 +244,8 @@ class ModelLedIntegrationTests(unittest.IsolatedAsyncioTestCase):
             )
         finally:
             await agent.close()
-        self.assertEqual(result["rounds"], 5)
+        self.assertEqual(result["rounds"], 6)
+        self.assertEqual(result["stage_b_scoped_recovery"]["result"], "model_declined")
         self.assertTrue(result["causal_follow_through_invoked"])
         self.assertEqual(len(hub.calls), 2)
         self.assertFalse(result["action_lifecycle"]["native_write_submitted"])
@@ -253,6 +258,7 @@ class ModelLedIntegrationTests(unittest.IsolatedAsyncioTestCase):
             tool("hub_get_logs", LOGARGS),
             {"content": "An app execution was reported; the exact cause "
                         "remains unverified."},
+            {"content": "An execution was reported. The exact cause remains unverified."},
         )
         try:
             result = await agent.answer(
@@ -262,7 +268,8 @@ class ModelLedIntegrationTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await agent.close()
         self.assertFalse(result["causal_follow_through_invoked"])
-        self.assertEqual(result["rounds"], 4)
+        self.assertEqual(result["rounds"], 5)
+        self.assertEqual(result["stage_b_scoped_recovery"]["result"], "model_declined")
         self.assertEqual(len(hub.calls), 2)
         self.assertFalse(result["action_lifecycle"]["native_write_submitted"])
 
