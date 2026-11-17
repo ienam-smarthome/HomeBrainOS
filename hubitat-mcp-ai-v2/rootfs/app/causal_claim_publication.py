@@ -69,7 +69,8 @@ _EVENT_TIME_DECISION = re.compile(
     r"led\s+to)\b[^\n.!?]{0,125}\b(?:switch|turn|start|stop|run|"
     r"operat(?:e|ion)|chang(?:e|ed)|activat(?:e|ion)|heating|cooling)\b|"
     r"\bexplains?\s+why\b[^\n.!?]{0,110}\b(?:demand|"
-    r"decision|trigger|activat|turn|switch|start|stop)\b",
+    r"decision|trigger|activat|turn|switch|start|stop)\b|"
+    r"\b(?:was|were|is|are)\s+(?:directly\s+)?(?:triggered|caused|initiated)\s+by\b",
     re.I,
 )
 _LOG_TOOL = re.compile(r"(?:^|_)(?:app|rule|controller)[a-z0-9_-]*(?:log|execution)(?:s|_|$)|"
