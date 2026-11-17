@@ -1,6 +1,6 @@
 # HomeBrainOS V2 alpha.138 — bounded original execution-log partials
 
-**Status:** PR candidate; exact-head CI and installed source-real acceptance pending.
+**Status:** merged [PR #1713](https://github.com/ienam-smarthome/HomeBrainOS/pull/1713) at `bc82c15646bb0a00adb1eb2703f8e85a8b6e0c73` after **5/5 exact-head CI workflows passed**. Installed source-real first-answer acceptance remains pending.
 
 ## Source-real motivation (private, 17 November 2026)
 
