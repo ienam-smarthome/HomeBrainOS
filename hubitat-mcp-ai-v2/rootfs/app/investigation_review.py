@@ -101,7 +101,8 @@ _CAUSAL_UNRESOLVED = re.compile(
     r"insufficient\s+(?:evidence|source|information)|"
     r"missing\s+(?:evidence|sources?|records?|logs?|link)|"
     r"(?:further|additional)\s+(?:read|source|evidence|log|investigation)|"
-    r"no\s+(?:direct|decisive|clear)\s+evidence|"\n    r"(?:still\s+)?(?:requires?|needs?)\s+(?:further\s+)?(?:investigation|execution\s+logs?))\b",
+    r"no\s+(?:direct|decisive|clear)\s+evidence|"
+    r"(?:still\s+)?(?:requires?|needs?)\s+(?:further\s+)?(?:investigation|execution\s+logs?))\b",
     re.IGNORECASE,
 )
 
