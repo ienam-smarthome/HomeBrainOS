@@ -1,6 +1,6 @@
 # HomeBrainOS V2 alpha.141 — original-source causal evidence ceiling
 
-**Status:** code PR candidate, exact-head CI and installed source-real first-answer acceptance pending.
+**Status:** [Code PR #1719](https://github.com/ienam-smarthome/HomeBrainOS/pull/1719) merged as `aa3e24e471b861766bf39d13ead91f1738f962a7` after **5/5 exact-head CI workflows passed**. Fresh installed source-real first-answer acceptance and 53-case benchmark validation remain pending.
 
 ## Motivation and protected benchmark boundary
 
