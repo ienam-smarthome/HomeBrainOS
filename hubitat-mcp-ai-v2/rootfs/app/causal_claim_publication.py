@@ -66,7 +66,7 @@ _SCOPED = re.compile(
 # Intent is part of the user's QUESTION, not model-answer phrasing.
 # Who/which-input investigations must not be answered from a current room
 # grouping, a sensor snapshot or a numeric output setpoint alone.
-_ACTOR_INTERROGATIVE = re.compile(r"\\b(?:which|who)\\b", re.I)
+_ACTOR_INTERROGATIVE = re.compile(r"\b(?:which|who)\b", re.I)
 
 
 def causal_requires_initiating_actor_source(question: str) -> bool:
@@ -350,6 +350,14 @@ def causal_publication_floor(question: str, answer: str, receipts: list[dict]) -
     if not isinstance(question, str) or not question.strip():
         return {"status": "not_applicable", "reason": None}
 
+    # Source-dependent actor identification is based on QUESTION intent,
+    # never the model\'s chosen causal wording or confidence.
+    if (causal_requires_initiating_actor_source(question)
+            and not causal_original_source_ceiling(receipts)[
+                "minimum_source_categories_for_unrestricted_causal_prose"]):
+        return {"status": "unsafe",
+                "reason": "original_event_time_causal_sources_insufficient"}
+
     # Evaluate complete short prose lines, not raw tool text, code/JSON or
     # headings. A qualified uncertainty is not turned into a definite denial.
     for line in re.split(r'(?<=[.!?])\s+(?=[A-Z])|\n', answer):
@@ -367,12 +375,4 @@ def causal_publication_floor(question: str, answer: str, receipts: list[dict]) -
         if _DEFINITE_CAUSE.search(line) and not _UNCERTAIN.search(line):
             if not _has_event_time_execution_source(receipts):
                 return {"status": "unsafe", "reason": "controller_decision_unverified"}
-    # A separate positive-source requirement applies to explicit initiator
-    # questions. It does not discard calibrated answers to simpler WHAT/WHEN
-    # questions and ordinary WHY requests that already state the gap.
-    if (causal_requires_initiating_actor_source(question)
-            and not causal_original_source_ceiling(receipts)[
-                "minimum_source_categories_for_unrestricted_causal_prose"]):
-        return {"status": "unsafe",
-                "reason": "original_event_time_causal_sources_insufficient"}
     return {"status": "passed", "reason": None}
