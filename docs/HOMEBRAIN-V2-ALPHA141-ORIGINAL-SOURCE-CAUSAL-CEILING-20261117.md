@@ -1,0 +1,23 @@
+# HomeBrainOS V2 alpha.141 — original-source causal evidence ceiling
+
+**Status:** code PR candidate, exact-head CI and installed source-real first-answer acceptance pending.
+
+## Motivation and protected benchmark boundary
+
+The independently reviewed uncoached installed alpha.140 first answer (2/8) published a definite *demanding room* and a heating-on time based on a historical shared-output **setpoint** report and a later current temperature and Hubitat room grouping. Its six original successful MCP reads included two input TRV `thermostatOperatingState` histories consisting of idle reports and a main thermostat `heatingSetpoint` history, but **no main output operating-state history**, native command issuer or event-time application execution logs. The final claim audit reported `passed`, and the existing model-led follow-through did not run because the model believed it had found the cause. Separate owner-provided past controller logs identifying the actual demand source were **not** retrieved by alpha.140 and do not count as original first-answer receipts.
+
+This is not proof of a general model-quality regression from any one earlier alpha, and a full live acceptance sample remains necessary.
+
+## General source-contract improvement, not an incident patch
+
+1. Introduce one bounded, original successful **device-event receipt** source ceiling in the existing `causal_claim_publication.py`. Categorise original, timezone-aware categorical output reports separately from numeric setpoint targets and native command rows. A reported event and a recorded command issuer on the same device are an eligible *proximal provenance* pair; alternatively, two distinct reported output states plus a related original app execution-log source category constitute a possible model-investigation chain. **Neither category independently establishes the upstream trigger or physical effect.** A current hub inventory, a currently stored room/configuration, a later reading, a device reporter or a `triggered[]` listener cannot qualify as that evidence.
+2. Use this exact original-receipt structural gap to offer the **existing single optional** model-led causal follow-through even when a drafted answer confidently asserts a cause. Keep the existing >25s time budget, no-further-read instruction restrictions, already-used guard, read-only catalog, model-selected tool and model-selected decision to stop; no automated read or additional forced pass.
+3. If the original source ceiling still fails at publication, publish the established evidence-tiered **source-only partial** instead of any model-authored complete causal explanation. Preserve original event rows, command provenance where available, application-log observations where validated, and explicit remaining uncertainty. Return a typed `original_event_time_causal_sources_insufficient` reason in the ordinary Technical JSON.
+4. Remove the alpha.139 addition `_EVENT_TIME_DECISION` and earlier `_DEFINITE_CAUSE` escalating phrase-by-phrase detection from the causal publication path. The publication decision must not depend on whether the model said “because,” “satisfies,” “causing,” or rephrased a confident origin. Retain the separate broad historical-absence safeguard for unsupported “no event/no command anywhere” denials and explicit bounded-read disclosures.
+5. Keep V1, user device state, thermostat scheduler, native write/approval safety, provider selection, actual original receipts, and the permanent 53-case benchmark unchanged. No repository code may infer Bedroom 3, a room grouping, or particular local device/app IDs.
+
+## Explicit limitations and acceptance
+
+This is a **necessary original source-type check, not a sufficiency proof of the model's specific causal claim**. Matching source categories permit the model to present a bounded analysis; they do not prove a specific app input, physical outcome or historical relationship. Extra conservative partials are a known tradeoff; the separate cross-domain light/button and ventilation tests guard against losing valid proximal native command attribution.
+
+Require exact-final-head V2 pilot tests, full Python/release, repository validation, scorecard integrity and UI screenshots before merge. Then install the green version and capture fresh uncoached PRIVATE read-only first answers and full original Technical JSON across heating, lighting and ventilation. Grade source choice, timing, origin versus listener, internal cause calibration, evidence preservation, user usefulness, token usage, and response duration independently. Passing synthetic tests is **not** live model reasoning acceptance.
