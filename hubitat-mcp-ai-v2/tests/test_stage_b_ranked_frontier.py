@@ -257,6 +257,40 @@ class StageBOriginalSourceReplayTests(unittest.TestCase):
         self.assertNotIn(613, [
             a["arguments"].get("appId") for a in y["ranked_reads"]])
 
+    def test_empty_broad_log_recovers_recorded_issuer_even_without_listeners(self):
+        historical = receipt("hub_list_device_events",
+            {"deviceId":"FX-LAMP","attribute":"switch","limit":10},
+            {"source":"device","deviceId":"FX-LAMP","device":"Fixture lamp",
+             "events":[
+                {"name":"switch","value":"off","type":"event",
+                 "date":"2030-11-17T07:58:47.423+00:00"},
+                {"name":"switch","value":"on","type":"event",
+                 "date":"2030-11-17T07:57:47.423+00:00"},
+                {"name":"command-off","type":"command",
+                 "date":"2030-11-17T07:58:46.423+00:00",
+                 "producedBy":{"appId":613}},
+             ]})
+        result=stage_b_read_frontier([historical,zero_broad()],CATALOG)
+        self.assertTrue(result["empty_broad_log_scoped_recovery_eligible"])
+        self.assertEqual(result["causal_app_candidates"][
+            "notified_listener_candidates_not_issuers"],[])
+        self.assertEqual(result["causal_app_candidates"][
+            "recorded_command_issuers"],["613"])
+        self.assertEqual(result["ranked_reads"][1]["category"],
+                         "recorded_command_issuer_app_log")
+
+    def test_scoped_app_retention_boundary_does_not_prove_global_aging(self):
+        a=receipt("hub_get_logs",
+            {"appId":613,"mode":"past",
+             "since":"2030-11-17T07:50:00+00:00",
+             "until":"2030-11-17T08:10:00+00:00"},
+            {"mode":"past","matched":0,"entries":[],
+             "oldestRetainedTimestamp":"2030-11-17T11:00:00+00:00"})
+        result=stage_b_read_frontier([output_history(),zero_broad(),a],CATALOG)
+        self.assertEqual(result["log_retention"]["classification"],
+                         "empty_result_scope_or_retention_unknown")
+        self.assertTrue(result["empty_broad_log_scoped_recovery_eligible"])
+
     def test_unfiltered_read_already_attempted_suppresses_duplicate(self):
         original = alpha141_replay()
         unfiltered = output_history()
