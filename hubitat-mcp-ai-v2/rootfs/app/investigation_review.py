@@ -96,12 +96,12 @@ _CAUSAL_RECONSTRUCTION = re.compile(
 )
 _CAUSAL_UNRESOLVED = re.compile(
     r"\b(?:unknown|unverified|undetermined|unresolved|uncertain|"
-    r"not\s+(?:established|verified|determined|confirmed)|"
-    r"cannot\s+(?:determine|verify|confirm|attribute|establish)|"
+    r"not\s+(?:established|verified|determined|confirmed|captured|identified)|"
+    r"cannot\s+(?:determine|verify|confirm|attribute|establish|identify)|"
     r"insufficient\s+(?:evidence|source|information)|"
     r"missing\s+(?:evidence|sources?|records?|logs?|link)|"
     r"(?:further|additional)\s+(?:read|source|evidence|log|investigation)|"
-    r"no\s+(?:direct|decisive|clear)\s+evidence)\b",
+    r"no\s+(?:direct|decisive|clear)\s+evidence|"\n    r"(?:still\s+)?(?:requires?|needs?)\s+(?:further\s+)?(?:investigation|execution\s+logs?))\b",
     re.IGNORECASE,
 )
 
@@ -1230,8 +1230,11 @@ def is_causal_question(question: str) -> bool:
 
 CAUSAL_FOLLOW_THROUGH_PROMPT = """Unresolved causal-evidence follow-through (internal).
 Your previous reviewed answer still says a material initiating cause or
-historical link is unknown. You did not make a further native source read
-during the first source review. The user ALREADY authorised proportionate
+historical link is unknown. The preceding source review either made no new
+read or only collected contextual/failed evidence without a potentially
+discriminating historical source. A successful hub metadata, current state,
+mode or configuration read is not itself an event-time execution trace.
+The user ALREADY authorised proportionate
 READ-ONLY investigation; do not ask permission to perform a read.
 
 Before accepting this unresolved conclusion, inspect the ORIGINAL receipts
@@ -1261,12 +1264,114 @@ Do not mention this internal checkpoint.
 """
 
 
+
+# Only classify well-known metadata/current-configuration reads as contextual.
+# An unknown read-only tool could be genuinely discriminating and must NOT
+# be declared useless by a name heuristic. No app/device/argument selection,
+# causal inference, extra MCP read, or write occurs in this index.
+_CONTEXT_ONLY_CAUSAL_READS = frozenset({
+    "hub_get_info", "hub_list_modes", "hub_list_devices",
+    "hub_get_device", "hub_list_apps", "hub_get_app_config",
+})
+_EVENT_TIME_CAUSAL_READS = frozenset({
+    "hub_list_device_events", "hub_get_logs", "homebrain_read_device_monitor",
+})
+_CAUSAL_DELTA_MAX_RECEIPTS = 32
+
+
+def causal_review_read_delta(receipts: list[dict], first_review_receipt_count: int) -> dict:
+    """Describe whether the *extra* review reads could contain event-time facts.
+
+    A nonempty original history or past application execution-log receipt is
+    a potentially discriminating source TYPE; neither proves a relevant event,
+    initiating app, input or physical outcome. Context-only metadata does not
+    resolve an event-time causal gap. Unrecognized tools are conservatively
+    counted as possibly material to avoid penalizing new MCP capabilities.
+    """
+    if (not isinstance(receipts, list) or type(first_review_receipt_count) is not int
+            or first_review_receipt_count < 0
+            or first_review_receipt_count > len(receipts)):
+        return {"status": "unavailable", "only_contextual_or_unsuccessful_reads": False}
+    from investigation_source_ledger import _response
+    from native_device_event_receipt import original_device_event_history
+
+    extra = receipts[first_review_receipt_count:]
+    if len(extra) > _CAUSAL_DELTA_MAX_RECEIPTS:
+        return {"status": "too_many_reads", "only_contextual_or_unsuccessful_reads": False}
+    context_names: list[str] = []
+    potential = 0
+    unknown = 0
+    failures = 0
+    for receipt in extra:
+        if not isinstance(receipt, dict):
+            unknown += 1
+            continue
+        name = receipt.get("name")
+        if not isinstance(name, str):
+            unknown += 1
+            continue
+        if receipt.get("success") is not True:
+            failures += 1
+            continue
+        if name in _CONTEXT_ONLY_CAUSAL_READS:
+            if name not in context_names:
+                context_names.append(name)
+            continue
+        if name == "hub_list_device_events":
+            validated = original_device_event_history(receipt)
+            if validated is not None and any(
+                isinstance(item, dict) for item in validated[2][:250]
+            ):
+                potential += 1
+            else:
+                # A zero-row or unverifiable history is not event-time proof.
+                if name not in context_names:
+                    context_names.append(name)
+            continue
+        if name == "hub_get_logs":
+            args = receipt.get("arguments")
+            args = args if isinstance(args, dict) else {}
+            _, data = _response(receipt)
+            if (args.get("mode") == "past" and args.get("appId") is not None
+                    and isinstance(data, dict) and data.get("mode") == "past"
+                    and isinstance(data.get("entries"), list)
+                    and any(isinstance(item, dict) and item.get("type") == "app"
+                            for item in data["entries"][:250])):
+                potential += 1
+            elif name not in context_names:
+                context_names.append(name)
+            continue
+        if name == "homebrain_read_device_monitor":
+            args = receipt.get("arguments")
+            if isinstance(args, dict) and args.get("mode") in ("history", "compare"):
+                potential += 1
+            elif name not in context_names:
+                context_names.append(name)
+            continue
+        # Future/third-party READ-ONLY contracts must not be blanket-scored
+        # as useless without a validated source interpretation.
+        unknown += 1
+
+    return {
+        "status": "assessed",
+        "review_receipts": len(extra),
+        "contextual_read_names": context_names[:8],
+        "failed_attempt_count": failures,
+        "potential_event_time_read_count": potential,
+        "unclassified_read_count": unknown,
+        "only_contextual_or_unsuccessful_reads": potential == 0 and unknown == 0,
+        "contextual_does_not_prove_no_event_time_source_exists": True,
+        "potential_source_type_is_not_causal_proof": True,
+    }
+
+
 def should_recheck_causal_evidence(
     question: str, *, review_kind_name: str | None,
     first_review_receipt_count: int, receipt_count: int,
     already_rechecked: bool, candidate_answer: str,
     remaining_seconds: float, has_action_receipt: bool,
     available_read_tools: bool,
+    review_read_delta: dict | None = None,
 ) -> bool:
     """One optional model-only read decision when causal review stopped unresolved.
 
@@ -1281,7 +1386,11 @@ def should_recheck_causal_evidence(
         and available_read_tools
         and not has_action_receipt
         and first_review_receipt_count > 0
-        and receipt_count == first_review_receipt_count
+        and (receipt_count == first_review_receipt_count
+             or (isinstance(review_read_delta, dict)
+                 and review_read_delta.get("status") == "assessed"
+                 and review_read_delta.get(
+                     "only_contextual_or_unsuccessful_reads") is True))
         and remaining_seconds > 25
         and isinstance(candidate_answer, str)
         and bool(_CAUSAL_UNRESOLVED.search(candidate_answer))
