@@ -1,5 +1,9 @@
 # HomeBrainOS development agent instructions
 
+## 17 November 2026 — V2 alpha.145 Stage B upstream decision recovery
+
+The alpha.144 live capture found a setpoint command issuer and later TRV state report, but Stage B suppressed an eligible issuer log before publication flagged the upstream controller decision as unverified. Alpha.145 keeps the bounded read-only checkpoint available when an eligible issuer-scoped event-time log can address that gap. A fictional replay covers the issuer and configuration reads followed by model selection of the scoped log. Installed acceptance remains pending. See [PR #1724](https://github.com/ienam-smarthome/HomeBrainOS/pull/1724).
+
 ## 17 November 2026 — V2 alpha.144 transport fallback candidate
 
 A live alpha.143 request obtained filtered thermostat and TRV histories before a model or transport failure prevented Stage B from being reached. Alpha.144 records that phase in Technical JSON and highlights the latest returned heating report for each device in the source-only fallback. The fictional replay verifies no extra tool calls or writes. Installed first-answer acceptance remains pending. See [PR #1723](https://github.com/ienam-smarthome/HomeBrainOS/pull/1723).
