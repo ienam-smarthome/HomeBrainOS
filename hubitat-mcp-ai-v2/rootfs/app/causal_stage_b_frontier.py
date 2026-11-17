@@ -178,7 +178,8 @@ def _log_coverage(receipts: list[dict], anchor: datetime | None) -> dict:
             continue
         date = native.get("oldestRetainedTimestamp")
         boundary = _source_clock(date)
-        if boundary is not None:
+        if boundary is not None and args.get("appId") is None:
+            # An app-specific oldest entry is not a GLOBAL retention bound.
             explicit_boundaries.append(boundary)
         if (not isinstance(native.get("entries"), list)
                 or len(native["entries"]) != 0
@@ -367,9 +368,11 @@ def stage_b_read_frontier(receipts: list[dict], read_catalog: list[dict],
         "ranked_reads": proposals[:max(1, min(_MAX_PROPOSALS, max_choices))],
         "ranked_choices_omitted": max(0, len(proposals)-max(1,min(_MAX_PROPOSALS,max_choices))),
         "empty_broad_log_scoped_recovery_eligible": bool(
-            unscoped_empty and candidates and app_spec is not None
+            unscoped_empty and (candidates or issuer_ids) and app_spec is not None
             and coverage["classification"] != "outside_retention_source_explicit"
-            and any(x["category"] == "notified_listener_app_log" for x in proposals)
+            and any(x["category"] in (
+                "recorded_command_issuer_app_log",
+                "notified_listener_app_log") for x in proposals)
         ),
         "read_limits": {"max_stage_b_recovery_reads": 2,
                         "max_stage_b_recovery_app_scoped_reads": 2},
