@@ -14,8 +14,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "rootfs" / "app"))
 
 from agent import Agent
 from test_stage_b_ranked_frontier import (
-    EVENTS, LOGS, WRITER, receipt, output_history, zero_broad,
+    EVENTS, LOGS, WRITER, inventory, receipt, output_history, zero_broad,
 )
+
+
+INVENTORY = {
+    "type": "function", "function": {
+        "name": "hub_list_devices",
+        "parameters": {"type": "object", "properties": {
+            "format": {"type": "string"},
+            "labelFilter": {"type": "string"},
+        }},
+    },
+}
 
 
 def tool(name, args):
@@ -29,13 +40,24 @@ class FakeHub:
 
     async def list_tools(self, refresh=False):
         tools = []
-        for tooldef in (EVENTS, LOGS, WRITER):
+        for tooldef in (INVENTORY, EVENTS, LOGS, WRITER):
             f = tooldef["function"]
             tools.append({"name": f["name"], "inputSchema": f["parameters"]})
         return tools
 
     async def call(self, name, args):
         self.calls.append((name, args))
+        if name == "hub_list_devices":
+            wrapper = json.loads(inventory()["response"])
+            if args.get("labelFilter"):
+                data = json.loads(wrapper["content"][0]["text"])
+                data["devices"] = [
+                    device for device in data["devices"]
+                    if device["label"].startswith("Fixture sensor")
+                ]
+                data["count"] = len(data["devices"])
+                wrapper["content"][0]["text"] = json.dumps(data)
+            return wrapper
         if name == "hub_list_device_events":
             original = output_history()
             if "attribute" not in args:
@@ -139,6 +161,50 @@ class ModelSelectedRecoveryTests(unittest.IsolatedAsyncioTestCase):
             for m in round_messages
         ))
 
+    async def test_alpha142_inventory_history_inventory_replay(self):
+        hub = FakeHub()
+        initial_inventory = {"format": "summary"}
+        focused_inventory = {"labelFilter": "Fixture sensor", "format": "summary"}
+        model = FakeAgent(
+            tool("hub_list_devices", initial_inventory),
+            tool("hub_list_device_events", FILTERED),
+            tool("hub_list_devices", focused_inventory),
+            {"content": "The grouping initiated the request."},
+            {"content": "The grouping was the input."},
+            {"content": "The thermostat reported heating; the input is unknown."},
+            tool("hub_list_device_events", UNFILTERED),
+            {"content": "The latest thermostat heating report was at 07:58:47 UTC. "
+                        "The initiating input remains unknown."},
+        )
+        try:
+            answer = await model.answer(
+                "Why did the fixture thermostat report heating, and which "
+                "input requested it? Do not change anything.",
+                [], hub, 120, enable_final_claim_audit=False,
+            )
+        finally:
+            await model.close()
+
+        self.assertEqual(hub.calls, [
+            ("hub_list_devices", initial_inventory),
+            ("hub_list_device_events", FILTERED),
+            ("hub_list_devices", focused_inventory),
+            ("hub_list_device_events", UNFILTERED),
+        ])
+        recovery = answer["stage_b_scoped_recovery"]
+        self.assertTrue(recovery["invoked"])
+        self.assertEqual(recovery["read_attempts"], 1)
+        self.assertEqual(recovery["app_scoped_read_attempts"], 0)
+        self.assertEqual(recovery["candidates"][0], {
+            "rank": 1,
+            "category": "same_output_unfiltered_command_and_state_history",
+            "leaf": "hub_list_device_events",
+            "status": "selected",
+        })
+        self.assertTrue(all(candidate["status"] == "not_selected"
+                            for candidate in recovery["candidates"][1:]))
+        self.assertFalse(answer["action_lifecycle"]["native_write_submitted"])
+
     async def test_model_can_decline_recovery_without_fabricating_cause(self):
         hub = FakeHub()
         model = FakeAgent(
@@ -162,6 +228,9 @@ class ModelSelectedRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(answer["stage_b_scoped_recovery"]["invoked"])
         self.assertEqual(answer["stage_b_scoped_recovery"]["read_attempts"],0)
         self.assertEqual(len(hub.calls),2)
+        self.assertEqual(answer["stage_b_scoped_recovery"]["result"], "model_declined")
+        self.assertEqual(answer["stage_b_scoped_recovery"]["candidates"][0]["status"],
+                         "declined")
         self.assertEqual(answer["causal_claim_verification"]["reason"],
                          "original_event_time_causal_sources_insufficient")
         self.assertEqual(answer["answer_fallback_status"],
@@ -187,7 +256,10 @@ class ModelSelectedRecoveryTests(unittest.IsolatedAsyncioTestCase):
             )
         finally:
             await model.close()
-        self.assertFalse(answer["stage_b_scoped_recovery"]["invoked"])
+        recovery = answer["stage_b_scoped_recovery"]
+        self.assertFalse(recovery["invoked"])
+        self.assertEqual(recovery["suppression_reason"], "user_disallowed_fresh_reads")
+        self.assertEqual(recovery["candidates"][0]["status"], "suppressed")
         self.assertEqual(len(hub.calls),2)
         self.assertFalse(answer["action_lifecycle"]["native_write_submitted"])
 
