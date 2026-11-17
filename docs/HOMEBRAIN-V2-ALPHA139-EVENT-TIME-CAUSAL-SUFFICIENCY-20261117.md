@@ -1,6 +1,6 @@
 # HomeBrainOS V2 alpha.139 — event-time causal source sufficiency
 
-**Status:** PR candidate. Green exact-head CI and installed first-answer acceptance are separate gates.
+**Status:** [PR #1715](https://github.com/ienam-smarthome/HomeBrainOS/pull/1715) merged as `cc4bdf6b35ff0bd924fc366e4f0ac3224d4f134e`, with **all 5/5 exact-head CI workflows passing**. Fresh installed source-real first-answer acceptance is still pending.
 
 ## Motivation: source-real alpha.138 benchmark
 
