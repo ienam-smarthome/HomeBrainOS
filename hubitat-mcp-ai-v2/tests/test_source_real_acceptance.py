@@ -28,6 +28,19 @@ def config():
     }}
 
 
+def alpha145_config():
+    return {"labels": {
+        "light": "PRIVATE-TEST-LIGHT",
+        "second_light": "PRIVATE-TEST-SECOND-LIGHT",
+        "thermostat": "PRIVATE-TEST-THERMOSTAT",
+        "trv": "PRIVATE-TEST-TRV",
+        "automation": "PRIVATE-TEST-RULE",
+        "metered_plug": "PRIVATE-TEST-PLUG",
+        "offline_device": "PRIVATE-TEST-OFFLINE",
+        "contact_sensor": "PRIVATE-TEST-CONTACT",
+    }}
+
+
 def export(question, ident, *, prior=0, success=True):
     return {
         "ui_version": "2.0.0-alpha.26",
@@ -306,6 +319,108 @@ class SourceRealAcceptanceTests(unittest.TestCase):
         fail = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
         self.assertNotEqual(fail.returncode, 0)
         self.assertNotIn("PRIVATE-", fail.stderr)
+
+
+class Alpha145ProspectiveAcceptanceTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.config_path = self.root / "private-config.json"
+        self.config_path.write_text(json.dumps(alpha145_config()), encoding="utf-8")
+        self.directory = self.root / "private-study"
+        result = acceptance.init(
+            self.config_path, self.directory, pack=acceptance.ALPHA145_PACK
+        )
+        self.assertEqual(result["benchmark_pack"], acceptance.ALPHA145_PACK)
+        self.assertEqual(result["expected_addon_version"], acceptance.ALPHA145_VERSION)
+        self.manifest = json.loads(
+            (self.directory / acceptance.MANIFEST).read_text(encoding="utf-8")
+        )
+
+    def put(self, index, *, version=acceptance.ALPHA145_VERSION,
+            permission=False):
+        case = self.manifest["cases"][index]
+        payload = export(case["question"], case["id"])
+        payload["ui_version"] = version
+        if permission:
+            payload["response"]["tool_calls"].append({
+                "name": "hub_get_info", "arguments": {},
+                "success": True, "result_kind": "tool_result",
+                "response": json.dumps({"content": [{
+                    "type": "text", "text": json.dumps({
+                        "readEnabled": True, "writeEnabled": True,
+                        "clientAccess": {
+                            "client": "PRIVATE-EVALUATION-CLIENT",
+                            "readEnabled": True, "writeEnabled": False,
+                        },
+                    }),
+                }]}),
+            })
+        path = self.directory / acceptance.EXPORT_DIRECTORY / (case["id"] + ".json")
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        return path
+
+    def fill(self, *, permission=True):
+        for index in range(len(self.manifest["cases"])):
+            self.put(index, permission=permission and index == 0)
+
+    def reviews(self):
+        path = self.root / "private-review.json"
+        path.write_text(json.dumps({
+            "schema": "homebrain-v2-source-real-human-review.v1",
+            "reviews": [review()],
+        }), encoding="utf-8")
+        return path
+
+    def test_pack_is_distinct_frozen_and_contains_no_answer_key(self):
+        self.assertEqual(len(self.manifest["cases"]), 10)
+        self.assertEqual(
+            [row["id"] for row in self.manifest["cases"]],
+            [f"a145-{number:02d}" for number in range(1, 11)],
+        )
+        self.assertEqual(self.manifest["benchmark_pack"], acceptance.ALPHA145_PACK)
+        self.assertEqual(self.manifest["expected_addon_version"],
+                         acceptance.ALPHA145_VERSION)
+        serialized = json.dumps(self.manifest)
+        self.assertNotIn("sr-01", serialized)
+        self.assertNotIn("answer_key", serialized)
+        self.assertNotIn("expected_answer", serialized)
+        self.assertTrue(all(row["question"].endswith("Do not change anything.")
+                            for row in self.manifest["cases"]))
+
+    def test_wrong_installed_version_is_visible_and_cannot_be_scored(self):
+        self.fill()
+        self.put(4, version="2.0.0-alpha.144")
+        result = acceptance.verify(self.directory)
+        self.assertFalse(result["expected_addon_version_match"])
+        self.assertEqual(result["addon_version_mismatch_case_ids"], ["a145-05"])
+        self.assertEqual(result["review_eligibility"],
+                         "requires_expected_addon_version")
+        with self.assertRaises(acceptance.AcceptanceError):
+            acceptance.verify(self.directory, reviews=self.reviews())
+
+    def test_scoring_requires_source_reported_per_client_read_only_access(self):
+        self.fill(permission=False)
+        result = acceptance.verify(self.directory)
+        self.assertEqual(result["review_eligibility"],
+                         "requires_source_reported_read_only_client")
+        with self.assertRaises(acceptance.AcceptanceError):
+            acceptance.verify(self.directory, reviews=self.reviews())
+
+    def test_exact_version_and_read_only_client_make_pack_review_eligible(self):
+        self.fill(permission=True)
+        result = acceptance.verify(self.directory, reviews=self.reviews())
+        self.assertTrue(result["expected_addon_version_match"])
+        self.assertEqual(result["addon_version_mismatch_case_ids"], [])
+        self.assertEqual(result["permission_evidence"][
+            "per_client_read_enabled_reported"], True)
+        self.assertEqual(result["permission_evidence"][
+            "per_client_write_enabled_reported"], False)
+        self.assertEqual(result["review_eligibility"],
+                         "needs_operator_source_and_first_attempt_attestation")
+        self.assertFalse(result["read_only_permission_independently_verified"])
+        self.assertNotIn("PRIVATE-", json.dumps(result))
 
 
 if __name__ == "__main__":

@@ -71,6 +71,62 @@ CASES = (
 LABEL_FIELDS = ("light", "temperature_sensor", "trv", "automation",
                 "metered_plug", "contact_sensor")
 
+# The original sr-01..sr-10 pack was captured and reviewed against alpha.26.
+# It is therefore exposed and must not be reused as an unseen post-change
+# acceptance set.  This second pack was frozen only after alpha.145 runtime
+# code had merged; it contains no answer key, source transcript or household
+# identity and must not be used to tune alpha.145 before its first capture.
+ALPHA145_PACK = "alpha145-prospective-v1"
+ALPHA145_VERSION = "2.0.0-alpha.145"
+ALPHA145_CASES = (
+    ("a145-01", "hub_status",
+     "Report the hub's current uptime, temperature, free memory and any "
+     "directly returned health warnings. Separate current observations from "
+     "historical or unavailable evidence. Do not change anything."),
+    ("a145-02", "battery_aggregation",
+     "Across the complete device inventory, how many devices report a battery "
+     "value, how many do not, and which reported values are low? State any "
+     "pagination or coverage limit. Do not change anything."),
+    ("a145-03", "multi_device_status",
+     "Compare the current switch state and brightness of {light} and "
+     "{second_light}. Verify both identities and say when a requested "
+     "attribute is unavailable. Do not change anything."),
+    ("a145-04", "lighting_cause",
+     "Investigate the most recent recorded OFF transition of {light}. "
+     "Distinguish the state reporter, recorded command issuer, upstream "
+     "decision and any notified listener. Do not change anything."),
+    ("a145-05", "heating_cause",
+     "Why did {thermostat} most recently report heating, and which input, if "
+     "any, was demanding heat at that event time? Check {trv} where relevant "
+     "and keep current configuration separate from historical cause. Do not "
+     "change anything."),
+    ("a145-06", "automation_execution",
+     "For {automation}, compare its currently installed trigger configuration "
+     "with the latest bounded execution evidence. What decision is actually "
+     "supported and what remains unknown? Do not change anything."),
+    ("a145-07", "energy_history",
+     "For {metered_plug}, report the latest three recorded energy-total values "
+     "and timestamps. Calculate only source-supported differences and do not "
+     "infer continuous intervening load. Do not change anything."),
+    ("a145-08", "offline_telemetry",
+     "Why does {offline_device} currently appear offline or stale? Separate "
+     "broker or transport status, last genuine device data, watchdog reports "
+     "and unverified physical or network causes. Do not change anything."),
+    ("a145-09", "contact_history",
+     "Did {contact_sensor} report an open event during the last 48 hours? "
+     "Verify its contact capability and state the exact returned history "
+     "window, pagination and absence limitations. Do not change anything."),
+    ("a145-10", "diagnostic_scope",
+     "Review warning and error diagnostics from the past 24 hours. State the "
+     "filters, returned versus matched counts and retention limits, and do not "
+     "treat an application's stated intention as proof that an action occurred. "
+     "Do not change anything."),
+)
+ALPHA145_LABEL_FIELDS = (
+    "light", "second_light", "thermostat", "trv", "automation",
+    "metered_plug", "offline_device", "contact_sensor",
+)
+
 
 class AcceptanceError(ValueError):
     pass
@@ -99,33 +155,45 @@ def _read_json(path: Path) -> dict:
     return doc
 
 
-def _validate_labels(labels: Any) -> dict[str, str]:
-    if not isinstance(labels, dict) or set(labels) != set(LABEL_FIELDS):
-        _fail("Provide exactly the six documented private device/app labels")
+def _validate_labels(labels: Any, fields: tuple[str, ...] = LABEL_FIELDS) -> dict[str, str]:
+    if not isinstance(labels, dict) or set(labels) != set(fields):
+        _fail("Provide exactly the documented private device/app labels")
     for value in labels.values():
         if (not isinstance(value, str) or not value.strip() or
                 len(value) > 120 or any(ord(ch) < 32 for ch in value) or
                 "{" in value or "}" in value or "\u2028" in value or
                 "\u2029" in value):
             _fail("Each device/app label must be a short single-line name")
-    return {key: labels[key].strip() for key in LABEL_FIELDS}
+    return {key: labels[key].strip() for key in fields}
 
 
-def init(config: Path, directory: Path) -> dict:
-    labels = _validate_labels(_read_json(config).get("labels"))
+def init(config: Path, directory: Path, *, pack: str = "source-real-v1") -> dict:
+    if pack == "source-real-v1":
+        cases_source = CASES
+        label_fields = LABEL_FIELDS
+        expected_version = None
+    elif pack == ALPHA145_PACK:
+        cases_source = ALPHA145_CASES
+        label_fields = ALPHA145_LABEL_FIELDS
+        expected_version = ALPHA145_VERSION
+    else:
+        _fail("Unknown private acceptance pack")
+    labels = _validate_labels(_read_json(config).get("labels"), label_fields)
     if directory.exists() and any(directory.iterdir()):
         _fail("The private acceptance directory must start empty")
     if directory.exists() and not directory.is_dir():
         _fail("Acceptance destination is not a directory")
     directory.mkdir(parents=True, exist_ok=True)
     cases = []
-    for ident, domain, template in CASES:
+    for ident, domain, template in cases_source:
         question = template.format_map(labels)
         cases.append({
             "id": ident, "domain": domain, "question": question,
             "question_sha256": _hash(question.encode("utf-8")),
         })
     document = {"schema": SCHEMA, "cases": cases,
+                "benchmark_pack": pack,
+                "expected_addon_version": expected_version,
                 "source_provenance": "requires later human verification",
                 "benchmark_type": "unseen-source-real-baseline-first-answers"}
     digest = _hash(_canonical(document))
@@ -133,6 +201,8 @@ def init(config: Path, directory: Path) -> dict:
     (directory / SEAL).write_text(digest + "\n", encoding="ascii")
     (directory / EXPORT_DIRECTORY).mkdir()
     return {"manifest_sha256": digest, "cases_frozen": len(cases),
+            "benchmark_pack": pack,
+            "expected_addon_version": expected_version,
             "model_calls": 0, "hub_calls": 0}
 
 
@@ -145,17 +215,27 @@ def _load_manifest(directory: Path) -> tuple[dict, str]:
     if not re.fullmatch(r"[a-f0-9]{64}", saved) or _hash(_canonical(doc)) != saved:
         _fail("Frozen manifest differs from its original SHA256 seal")
     cases = doc.get("cases")
+    pack = doc.get("benchmark_pack", "source-real-v1")
+    if pack == "source-real-v1":
+        expected_cases = CASES
+        expected_version = None
+    elif pack == ALPHA145_PACK:
+        expected_cases = ALPHA145_CASES
+        expected_version = ALPHA145_VERSION
+    else:
+        _fail("Unrecognised frozen benchmark pack")
     if (doc.get("schema") != SCHEMA or not isinstance(cases, list) or
-            len(cases) != len(CASES)):
+            len(cases) != len(expected_cases) or
+            doc.get("expected_addon_version") != expected_version):
         _fail("Unrecognised or incomplete frozen manifest")
-    expected = [x[0] for x in CASES]
+    expected = [x[0] for x in expected_cases]
     if [case.get("id") for case in cases if isinstance(case, dict)] != expected:
         _fail("Frozen case identifiers or ordering changed")
     for case in cases:
         if (not isinstance(case, dict) or set(case) !=
                 {"id", "domain", "question", "question_sha256"} or
                 not isinstance(case["question"], str) or
-                case["domain"] != next(row[1] for row in CASES
+                case["domain"] != next(row[1] for row in expected_cases
                                        if row[0] == case["id"]) or
                 _hash(case["question"].encode("utf-8")) != case["question_sha256"] or
                 not case["question"].endswith("Do not change anything.")):
@@ -273,6 +353,7 @@ def verify(directory: Path, *, reviews: Path | None = None) -> dict:
     failed_responses: list[str] = []
     model_hashes: set[str] = set()
     versions: set[str] = set()
+    version_mismatches: list[str] = []
     request_ids: set[str] = set()
     for case in manifest["cases"]:
         ident = case["id"]
@@ -308,6 +389,9 @@ def verify(directory: Path, *, reviews: Path | None = None) -> dict:
             failed_responses.append(ident)
         model_hashes.add(record["build"]["model_sha256_prefix"])
         versions.add(record["build"]["version"])
+        expected_version = manifest.get("expected_addon_version")
+        if expected_version and record["build"]["version"] != expected_version:
+            version_mismatches.append(ident)
         records.append(record)
         source_exports.append(document)
         ids.append(ident)
@@ -316,8 +400,14 @@ def verify(directory: Path, *, reviews: Path | None = None) -> dict:
         _fail("Complete all frozen cases before applying positional reviews")
     if reviews is not None and (carryover or attempted_commands):
         _fail("Do not rate a study with reported prior context or a device-command attempt")
-    if reviews is not None and (len(model_hashes) != 1 or len(versions) != 1):
+    if reviews is not None and (len(model_hashes) != 1 or len(versions) != 1 or
+                                version_mismatches):
         _fail("Do not combine different models or add-on versions in a scored study")
+    permission_evidence = _permission_evidence(source_exports)
+    if (reviews is not None and manifest.get("benchmark_pack") == ALPHA145_PACK and
+            not (permission_evidence["per_client_read_enabled_reported"] is True and
+                 permission_evidence["per_client_write_enabled_reported"] is False)):
+        _fail("Alpha.145 scoring requires source-reported per-client Read ON and Write OFF")
     human_review = _read_json(reviews) if reviews else None
     try:
         outcome = summarize(records, human_reviews=human_review)
@@ -327,6 +417,8 @@ def verify(directory: Path, *, reviews: Path | None = None) -> dict:
     return {
         "schema": REPORT_SCHEMA,
         "manifest_sha256": sealed_digest,
+        "benchmark_pack": manifest.get("benchmark_pack", "source-real-v1"),
+        "expected_addon_version": manifest.get("expected_addon_version"),
         "cases_expected": len(manifest["cases"]),
         "cases_captured": len(ids),
         "captured_case_ids_in_review_order": ids,
@@ -336,15 +428,27 @@ def verify(directory: Path, *, reviews: Path | None = None) -> dict:
         "failed_first_answer_case_ids": failed_responses,
         "model_id_fingerprint_consistent": len(model_hashes) == 1 if records else None,
         "addon_version_consistent": len(versions) == 1 if records else None,
+        "expected_addon_version_match": (not version_mismatches
+                                           if records and manifest.get("expected_addon_version")
+                                           else None),
+        "addon_version_mismatch_case_ids": version_mismatches,
         "real_source_verified_from_export": False,
         "first_attempt_independently_verified": False,
         "read_only_permission_independently_verified": False,
-        "permission_evidence": _permission_evidence(source_exports),
+        "permission_evidence": permission_evidence,
         "new_cloud_calls": 0,
         "new_mcp_calls": 0,
-        "review_eligibility": ("needs_operator_source_and_first_attempt_attestation"
-                               if not carryover and not attempted_commands else
-                               "requires_safety_or_context_review"),
+        "review_eligibility": (
+            "requires_safety_or_context_review"
+            if carryover or attempted_commands else
+            "requires_expected_addon_version"
+            if version_mismatches else
+            "requires_source_reported_read_only_client"
+            if (manifest.get("benchmark_pack") == ALPHA145_PACK and
+                not (permission_evidence["per_client_read_enabled_reported"] is True and
+                     permission_evidence["per_client_write_enabled_reported"] is False)) else
+            "needs_operator_source_and_first_attempt_attestation"
+        ),
         "summary": outcome,
         "privacy": "No raw questions, device labels, original model names, "
                    "raw answers, arguments, logs or private review text included",
@@ -357,6 +461,8 @@ def main(argv: list[str] | None = None) -> int:
     make = commands.add_parser("init", help="Freeze ten new private questions")
     make.add_argument("--config", required=True, type=Path)
     make.add_argument("--directory", required=True, type=Path)
+    make.add_argument("--pack", choices=("source-real-v1", ALPHA145_PACK),
+                      default="source-real-v1")
     read = commands.add_parser("verify", help="Check first-answer exports offline")
     read.add_argument("--directory", required=True, type=Path)
     read.add_argument("--reviews", type=Path)
@@ -364,7 +470,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.command == "init":
-            result = init(args.config, args.directory)
+            result = init(args.config, args.directory, pack=args.pack)
         else:
             result = verify(args.directory, reviews=args.reviews)
     except (AcceptanceError, OSError, ValueError):

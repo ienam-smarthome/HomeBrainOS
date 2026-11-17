@@ -1,5 +1,18 @@
 # HomeBrainOS development agent instructions
 
+## 17 November 2026 — alpha.145 prospective acceptance gate
+
+Runtime changes are frozen after alpha.145 until its new prospective pack is
+captured and independently source-reviewed, except for a demonstrated safety
+or build failure. The earlier `sr-01`–`sr-10` pack is exposed and must not be
+reused as unseen evidence. The offline verifier now provides a distinct
+`alpha145-prospective-v1` pack, requires exact alpha.145 exports and refuses to
+apply human scores unless a successful native permission receipt reports the
+dedicated client as Read ON / Write OFF. This is still source-reported, not an
+independent permission-enforcement test. No runtime, model prompt, native tool,
+V1 or installed system changed. See
+[the alpha.145 acceptance gate](docs/HOMEBRAIN-V2-ALPHA145-PROSPECTIVE-ACCEPTANCE-20261117.md).
+
 ## 17 November 2026 — V2 alpha.145 Stage B upstream decision recovery
 
 The alpha.144 live capture found a setpoint command issuer and later TRV state report, but Stage B suppressed an eligible issuer log before publication flagged the upstream controller decision as unverified. Alpha.145 keeps the bounded read-only checkpoint available when an eligible issuer-scoped event-time log can address that gap. A fictional replay covers the issuer and configuration reads followed by model selection of the scoped log. Installed acceptance remains pending. See [PR #1724](https://github.com/ienam-smarthome/HomeBrainOS/pull/1724).

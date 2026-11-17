@@ -1,5 +1,14 @@
 # Hubitat MCP AI v2 — native MCP client
 
+**Current candidate: alpha.145 (17 November 2026).** Alpha.145 preserves the
+bounded model-selected Stage B recovery checkpoint when a recorded proximal
+issuer still leaves its upstream event-time decision unresolved. All five
+exact-head workflows passed. Installed first-answer quality is not yet
+accepted: runtime development is frozen pending the distinct prospective,
+server-read-only alpha.145 cohort described in the
+[acceptance gate](../docs/HOMEBRAIN-V2-ALPHA145-PROSPECTIVE-ACCEPTANCE-20261117.md).
+Synthetic tests and green scorecard-integrity CI are not answer-quality scores.
+
 **Alpha.119 (15 November 2026) — source-derived latest state transitions and causal restraint.** An installed alpha.118 heating-history test retrieved six successful native reads, but the model asserted an unverified focal TRV transition at a time taken from a separate thermostat and overlooked a later thermostat cycle. V2 now supplies a compact verified target/attribute/returned-window chronology index in its existing read-only source review, and protects explicit "when did device last change from A to B" final answers with a typed source-derived proof. Truncated histories, repeated identical states, peer-device events and command issuers cannot become a definite focal transition or cause. No new automatic historian calls, AI rounds or native writes; the redundant tool-free final audit is skipped only for this narrowly typed source publication. [Engineering note](../docs/HOMEBRAIN-V2-ALPHA119-TEMPORAL-TRANSITION-EVIDENCE-20261115.md).
 
 **Alpha.118 (15 November 2026) — model-led recovery after failed source reads.** A failed/denied native READ is not an empty history or completed evidence collection. The existing read-only model review now distinguishes successful current-request observation receipts from failed read attempts and can select another **advertised** source during that same review round. If no observation read succeeds, the final audit does not spend another AI round polishing unsupported conclusions. PRIVATE `current_read_source_progress` records read attempts, failures, successes and distinct successful argument scopes without asserting history coverage or physical proof. V1, the fast routine control and native authorisation are unchanged. Synthetic CI is not measured first-answer accuracy. [Engineering note](../docs/HOMEBRAIN-V2-ALPHA118-FAILURE-AWARE-SOURCE-RECOVERY-20261115.md).

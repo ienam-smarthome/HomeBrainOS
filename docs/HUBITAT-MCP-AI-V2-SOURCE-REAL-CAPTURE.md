@@ -1,6 +1,11 @@
 # HomeBrainOS v2 — Frozen source-real first-answer capture (offline)
 
-**Date:** 9 November 2026. **Status:** prepared and offline-verifiable; genuine hub captures have **not** yet been collected or judged.
+**Date:** 9 November 2026. **Historical status:** this original
+`sr-01`–`sr-10` pack was subsequently captured and provisionally reviewed, so
+it is now **exposed** and must not be reused as an unseen post-change study.
+For the runtime-frozen alpha.145 candidate, use the distinct
+[alpha.145 prospective acceptance gate](HOMEBRAIN-V2-ALPHA145-PROSPECTIVE-ACCEPTANCE-20261117.md)
+and `--pack alpha145-prospective-v1`.
 
 This next milestone is distinct from the already-unblinded six fictional `hold-..` cases. It freezes ten new, cross-domain questions with private user-selected device/app labels, then validates **first-attempt Technical JSON** from the existing v2 Ask interface. The capture checker makes **no** MCP, Home Assistant, model or network calls and cannot turn anything on/off. Source-real accuracy remains **not measured** until an operator runs the new questions against a real connected server and a reviewer checks the receipts.
 
