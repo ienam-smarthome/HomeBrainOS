@@ -72,7 +72,7 @@ from investigation_review import (
     review_kind, review_prompt, is_current_state_question,
     FINAL_CLAIM_AUDIT_PROMPT, should_audit_completion,
     final_claim_receipt_scope_index, CAUSAL_FOLLOW_THROUGH_PROMPT,
-    should_recheck_causal_evidence, FRESH_SOURCE_RECOVERY_PROMPT,
+    should_recheck_causal_evidence, causal_review_read_delta, FRESH_SOURCE_RECOVERY_PROMPT,
     should_offer_fresh_source_recovery, should_prompt_historical_status_gap,
     should_prompt_controller_decision_gap,
     should_prompt_outcome_history_gap,
@@ -942,6 +942,7 @@ class Agent:
         fresh_source_recovery_invoked = False
         causal_follow_through_invoked = False
         causal_follow_through_candidate = ""
+        causal_review_delta_at_follow_through = None
         causal_review_receipt_count = -1
         native_action_receipts_seen = 0
         # Private numeric-only latency breakdown. Native device I/O and
@@ -1246,6 +1247,7 @@ class Agent:
                     "no_current_read_attempt"
                 ),
                 "causal_follow_through_invoked": causal_follow_through_invoked,
+                "causal_review_source_delta_at_follow_through": causal_review_delta_at_follow_through,
                 "causal_review_read_receipts_added": (
                     sum(row.get("success") is True
                         and is_read_only_review_tool(row.get("name", ""))
@@ -2072,10 +2074,16 @@ class Agent:
                         )
                     messages.append({"role": "user", "content": guidance})
                     continue
-                # If the causal source review still ends at an unresolved
-                # cause without any fresh evidence read, give the model ONE
-                # additional bounded chance to choose a relevant READ-ONLY
-                # discriminating source. No tool is selected or auto-called.
+                # A metadata/current-state read is not a discriminating
+                # HISTORICAL causal source. Keep the existing ONE optional
+                # model-owned follow-through even if such a read occurred.
+                # Never force a tool or replay a follow-through twice.
+                review_read_delta = (
+                    causal_review_read_delta(receipts, causal_review_receipt_count)
+                    if source_review_kind == "causal"
+                    and causal_review_receipt_count >= 0
+                    and not causal_follow_through_invoked else None
+                )
                 # The original model+native write-approval loop is preserved.
                 if (enable_source_review and enable_causal_follow_through
                         and should_recheck_causal_evidence(
@@ -2088,8 +2096,10 @@ class Agent:
                             remaining_seconds=deadline - time.monotonic(),
                             has_action_receipt=native_action_receipts_seen > 0,
                             available_read_tools=bool(read_only_review_catalog(tools)),
+                            review_read_delta=review_read_delta,
                         )):
                     causal_follow_through_invoked = True
+                    causal_review_delta_at_follow_through = review_read_delta
                     causal_follow_through_candidate = text
                     capture_answer_stage("pre_causal_follow_through", text)
                     opportunities = causal_read_opportunities(
@@ -2105,6 +2115,10 @@ class Agent:
                     messages.append({
                         "role": "user",
                         "content": CAUSAL_FOLLOW_THROUGH_PROMPT
+                                   + "\n\nOriginal review-read source-category delta "
+                                     "(not proof of an event or a proposed read):\n"
+                                   + json.dumps(review_read_delta,
+                                                ensure_ascii=False)[:1400]
                                    + concrete_sources
                                    + "\n\nReturned-receipt scope index (navigation only):\n"
                                    + final_claim_receipt_scope_index(receipts)
