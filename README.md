@@ -12,11 +12,18 @@ HomeBrainOS development is now **benchmark-first**. Target Claude-quality natura
 
 Run `python scripts/answer_quality_scorecard.py` for an honest `not_measured` baseline. Add independently reviewed, source-referenced answers before reporting scores. User assistance is needed primarily for specific HomeBrain read-only question/answer captures.
 
-## Component
+## Components and release status
 
 | Component | Version | Status | Purpose |
 | --- | --- | --- | --- |
 | [Hubitat MCP AI](hubitat-mcp-ai/README.md) | 0.18.460 | Maintained | Capability-grounded semantic smart-home agent with AI intent planning, deterministic verified execution, bounded history, and grounded synthesis |
+| [Hubitat MCP AI v2 Preview](hubitat-mcp-ai-v2/README.md) | 2.0.0-alpha.145 | Experimental; installed acceptance pending | Clean model-led native MCP assistant for investigation, control and administration within connected server permissions |
+
+V1 is the maintained installation path. V2 is the active architecture
+candidate, not yet a promoted replacement: exact-head CI is green, while its
+permanent 53-case production quality targets and installed alpha.145
+prospective source-real acceptance remain unmeasured. See the
+[alpha.145 acceptance gate](docs/HOMEBRAIN-V2-ALPHA145-PROSPECTIVE-ACCEPTANCE-20261117.md).
 
 The legacy/alternate HomeBrain OS dashboard (Maker API-based, `homebrainos/`)
 has been retired and removed from this repository. All assistant development is

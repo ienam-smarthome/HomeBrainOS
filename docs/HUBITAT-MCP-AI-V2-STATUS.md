@@ -1,5 +1,26 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 17 November 2026 — alpha.145 runtime freeze and prospective gate
+
+Alpha.145 is the current V2 Preview candidate after PR #1724 merged at
+`342bf9869272c523a13505d31094725d63a1fb35`; all five final-head workflows
+passed. This establishes build/regression health, not installed answer quality.
+The alpha.135–145 runtime sequence was informed by already observed private
+causal/heating failures, and the original `sr-01`–`sr-10` alpha.26 cohort is
+exposed. Runtime changes are therefore frozen pending a distinct prospective
+alpha.145 source-real cohort.
+
+The offline source-real verifier now supports
+`--pack alpha145-prospective-v1`: ten new cross-domain questions frozen after
+the candidate runtime, exact `2.0.0-alpha.145` export enforcement, and a
+fail-closed rule that refuses to apply human scores without a successful native
+permission receipt reporting the dedicated client Read ON / Write OFF. The
+report still marks independent permission enforcement false. No V2 runtime,
+model prompt, native tool, V1, installed add-on, hub or cloud call changed in
+this measurement-only milestone. Capture, independent source review and all
+permanent quality rates remain pending. See
+[the alpha.145 prospective acceptance gate](HOMEBRAIN-V2-ALPHA145-PROSPECTIVE-ACCEPTANCE-20261117.md).
+
 ## 16 November 2026 — alpha.127 merged, read-only answer resilience
 
 [PR #1690](https://github.com/ienam-smarthome/HomeBrainOS/pull/1690) merged at `93af6b34bdeb9ca660356ec00168ba746bad72bd` after **11/11 exact-head CI successes**. Native read-only source-event fallback responds with bounded positive original facts if the model later returns empty; clearly labelled partial with no proved cause/physical outcome. No recycling of unsound model draft, no fresh tool call or added AI round, no native write approval change, no V1 or scheduler edits. Model skill also avoids redundant broad history when a source-scoped answer is possible. Real installed alpha.127 validation pending; source-only fallback should remain exceptional, not replace a complete model-led investigation. [Engineering note](HOMEBRAIN-V2-ALPHA127-EVIDENCE-PRESERVING-COMPLETION-20261116.md).
