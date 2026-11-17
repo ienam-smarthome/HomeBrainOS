@@ -210,8 +210,8 @@ def causal_original_source_ceiling(receipts: list[dict]) -> dict:
     # This admits the *possibility* of a causal explanation from original
     # sources, not proof. No event-specific trigger is manufactured here.
     possible_event_time_chain = bool(
-        multiple_states_on_same_output and
-        (recorded_command_with_output or related_execution)
+        (recorded_command_with_output and observed_reports > 0)
+        or (multiple_states_on_same_output and related_execution)
     )
     return {
         "scope": "current_request_original_successful_receipts_only",
