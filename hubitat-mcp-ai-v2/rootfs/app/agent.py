@@ -59,6 +59,7 @@ from causal_decision_frontier import (
     causal_controller_frontier, CONTROLLER_DECISION_CHECKPOINT,
 )
 from causal_read_opportunity import causal_read_opportunities
+from causal_stage_b_frontier import stage_b_read_frontier, stage_b_source_allowed
 from causal_outcome_frontier import (
     causal_outcome_frontier, OUTCOME_FIRST_CHECKPOINT,
 )
@@ -78,7 +79,7 @@ from investigation_review import (
     should_recheck_causal_evidence, causal_review_read_delta, FRESH_SOURCE_RECOVERY_PROMPT,
     should_offer_fresh_source_recovery, should_prompt_historical_status_gap,
     should_prompt_controller_decision_gap,
-    should_prompt_outcome_history_gap,
+    should_prompt_outcome_history_gap, _EXPLICIT_NO_FRESH_READ,
 )
 from config_evidence import config_source_map
 from device_monitor import TOOL_NAME as MONITOR_TOOL, TOOL_DEFINITION as MONITOR_TOOL_DEFINITION
@@ -947,6 +948,10 @@ class Agent:
         causal_follow_through_candidate = ""
         causal_review_delta_at_follow_through = None
         causal_review_receipt_count = -1
+        stage_b_scoped_recovery_invoked = False
+        stage_b_scoped_recovery_frontier = None
+        stage_b_scoped_recovery_attempts = 0
+        stage_b_scoped_recovery_app_attempts = 0
         native_action_receipts_seen = 0
         # Private numeric-only latency breakdown. Native device I/O and
         # human approval time are different; no clocks/polls/readback added.
@@ -1250,6 +1255,16 @@ class Agent:
                     "no_current_read_attempt"
                 ),
                 "causal_follow_through_invoked": causal_follow_through_invoked,
+                "stage_b_scoped_recovery": {
+                    "invoked": stage_b_scoped_recovery_invoked,
+                    "read_attempts": stage_b_scoped_recovery_attempts,
+                    "app_scoped_read_attempts": stage_b_scoped_recovery_app_attempts,
+                    "result": (
+                        "not_invoked" if not stage_b_scoped_recovery_invoked
+                        else "model_declined" if stage_b_scoped_recovery_attempts == 0
+                        else "attempted"
+                    ),
+                },
                 "causal_original_source_ceiling": (
                     causal_original_source_ceiling(receipts)
                     if source_review_kind == "causal" else None
