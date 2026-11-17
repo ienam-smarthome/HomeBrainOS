@@ -59,6 +59,20 @@ _SCOPED = re.compile(
     r"inspected\s+(?:rows|window)|"
     r"queried\s+(?:source|window)|no\s+matching\s+rows)\b", re.I,
 )
+# A definite HISTORICAL decision/trigger may be phrased without "because".
+# Treat these as causal assertions, not source-derived observations; e.g.
+# "the controller reported a setpoint" alone is still permitted.
+_EVENT_TIME_DECISION = re.compile(
+    r"\b(?:this|that|it)\s+(?:satisf(?:ies|ied)|meet(?:s)?|met|"
+    r"cross(?:es|ed))\b[^\n.!?]{0,125}\b(?:threshold|condition|demand)\b|"
+    r"\b(?:caus(?:ed|ing)|trigger(?:ed|ing)|result(?:ed|ing)\s+in|"
+    r"led\s+to)\b[^\n.!?]{0,125}\b(?:switch|turn|start|stop|run|"
+    r"operat(?:e|ion)|chang(?:e|ed)|activat(?:e|ion)|heating|cooling)\b|"
+    r"\bexplains?\s+why\b[^\n.!?]{0,110}\b(?:demand|"
+    r"decision|trigger|activat|turn|switch|start|stop)\b|"
+    r"\b(?:was|were|is|are)\s+(?:directly\s+)?(?:triggered|caused|initiated)\s+by\b",
+    re.I,
+)
 _LOG_TOOL = re.compile(r"(?:^|_)(?:app|rule|controller)[a-z0-9_-]*(?:log|execution)(?:s|_|$)|"
                        r"(?:^|_)(?:log|execution)[a-z0-9_-]*(?:app|rule|controller)(?:s|_|$)", re.I)
 _MAX_RECEIPTS = 80
@@ -135,6 +149,86 @@ def _has_event_time_execution_source(receipts: list[dict]) -> bool:
     return False
 
 
+
+def causal_event_time_source_scope(receipts: list[dict]) -> dict:
+    """Small, source-category-only navigation index; NEVER a proof engine.
+
+    Current snapshots and installed app configurations do not reconstruct
+    event-time participant decisions. A command issuer is a proximal actor,
+    not its upstream input, and a notified listener is not an issuer. This
+    function cannot select an actuator/app or dispatch a read.
+    """
+    counts = {
+        "current_device_inventory_reads": 0,
+        "current_installed_app_configuration_reads": 0,
+        "original_device_history_reads": 0,
+        "original_command_rows": 0,
+        "original_state_rows": 0,
+        "command_rows_with_app_issuer": 0,
+        "state_rows_with_app_producer_not_issuer": 0,
+        "successful_app_scoped_past_log_reads": 0,
+    }
+    for receipt in receipts[:_MAX_RECEIPTS]:
+        if not isinstance(receipt, dict) or receipt.get("success") is not True:
+            continue
+        name = receipt.get("name")
+        if name == "hub_list_devices":
+            counts["current_device_inventory_reads"] += 1
+        elif name == "hub_get_app_config":
+            counts["current_installed_app_configuration_reads"] += 1
+        native_history = original_device_event_history(receipt)
+        if native_history is not None:
+            counts["original_device_history_reads"] += 1
+            for event in native_history[2][:250]:
+                if not isinstance(event, dict):
+                    continue
+                name = event.get("name")
+                if isinstance(name, str) and name.startswith("command-"):
+                    counts["original_command_rows"] += 1
+                    produced = event.get("producedBy")
+                    if (isinstance(produced, dict)
+                            and isinstance(produced.get("appId"), (str, int))
+                            and re.fullmatch(r"[0-9]{1,9}", str(produced["appId"]))):
+                        counts["command_rows_with_app_issuer"] += 1
+                else:
+                    counts["original_state_rows"] += 1
+                    produced = event.get("producedBy")
+                    if (isinstance(produced, dict)
+                            and isinstance(produced.get("appId"), (str, int))
+                            and re.fullmatch(r"[0-9]{1,9}", str(produced["appId"]))):
+                        counts["state_rows_with_app_producer_not_issuer"] += 1
+        if receipt.get("name") != "hub_get_logs":
+            continue
+        args = receipt.get("arguments")
+        if not isinstance(args, dict) or args.get("mode") != "past":
+            continue
+        app_id = args.get("appId")
+        if type(app_id) not in (int, str) or not re.fullmatch(
+            r"[0-9]{1,9}", str(app_id)
+        ):
+            continue
+        _, native = _response(receipt)
+        if (isinstance(native, dict) and native.get("mode") == "past"
+                and isinstance(native.get("entries"), list)
+                and any(isinstance(item, dict) and item.get("type") == "app"
+                        for item in native["entries"][:250])):
+            counts["successful_app_scoped_past_log_reads"] += 1
+
+    return {
+        "scope": "successful_original_current_request_source_categories_only",
+        **counts,
+        "related_execution_source_category_present": (
+            _has_event_time_execution_source(receipts)
+        ),
+        "current_configuration_or_snapshot_not_historical_decision": True,
+        "controller_or_master_output_not_necessarily_input_that_triggered_it": True,
+        "state_producer_and_triggered_listeners_not_command_issuers": True,
+        "command_issuer_not_upstream_trigger": True,
+        "offered_or_successful_read_not_event_time_decision_proof": True,
+        "unread_execution_sources_not_proven_unavailable": True,
+    }
+
+
 def causal_publication_floor(question: str, answer: str, receipts: list[dict]) -> dict:
     """Flag unqualified historical absence or causation missing execution proof.
 
@@ -162,7 +256,7 @@ def causal_publication_floor(question: str, answer: str, receipts: list[dict]) -
                 or _UNBOUNDED_COMMAND_ABSENCE.search(line)):
             if not _UNCERTAIN.search(line) and not _SCOPED.search(line):
                 return {"status": "unsafe", "reason": "unbounded_historical_absence"}
-        if _DEFINITE_CAUSE.search(line):
+        if _DEFINITE_CAUSE.search(line) or _EVENT_TIME_DECISION.search(line):
             if not _UNCERTAIN.search(line):
                 if not _has_event_time_execution_source(receipts):
                     return {"status": "unsafe", "reason": "controller_decision_unverified"}
