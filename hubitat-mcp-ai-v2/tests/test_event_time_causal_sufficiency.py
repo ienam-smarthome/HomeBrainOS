@@ -86,7 +86,7 @@ class SourceCategoryTests(unittest.TestCase):
         self.assertEqual(result["successful_app_scoped_past_log_reads"], 1)
         self.assertFalse(result["related_execution_source_category_present"])
 
-    def test_false_current_value_historical_trigger_phrases_rejected(self):
+    def test_explicit_actor_identity_needs_original_sources_regardless_of_wording(self):
         examples = [
             "This satisfies the controller threshold, so the motor started.",
             "The current value satisfies the start condition, causing "
@@ -101,8 +101,9 @@ class SourceCategoryTests(unittest.TestCase):
             with self.subTest(answer=answer):
                 self.assertEqual(
                     causal_publication_floor(
-                        "Why did the fixture output start?", answer, STATE_ONLY
-                    )["reason"], "controller_decision_unverified",
+                        "Why did the fixture output start and which input requested it?",
+                        answer, STATE_ONLY
+                    )["reason"], "original_event_time_causal_sources_insufficient",
                 )
 
     def test_scoped_observations_and_uncertainty_remain_publishable(self):
@@ -132,10 +133,10 @@ class SourceCategoryTests(unittest.TestCase):
             with self.subTest(extra=extra):
                 self.assertEqual(
                     causal_publication_floor(
-                        "Why did fixture output turn on?",
+                        "Why did fixture output turn on, and which input initiated it?",
                         "This satisfies a trigger threshold, causing the "
                         "output to switch off.", STATE_ONLY + [extra]
-                    )["reason"], "controller_decision_unverified")
+                    )["reason"], "original_event_time_causal_sources_insufficient")
 
 
 class FakeMCP:
@@ -192,14 +193,14 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         hub = FakeMCP()
         try:
             answer = await model.answer(
-                "Why did the fictional output switch off? Do not change anything.",
+                "Why did the fictional output switch off, and which input initiated it? Do not change anything.",
                 [], hub, 90, enable_final_claim_audit=False,
                 enable_causal_follow_through=False,
             )
         finally:
             await model.close()
         self.assertEqual(answer["causal_claim_verification"]["reason"],
-                         "controller_decision_unverified")
+                         "original_event_time_causal_sources_insufficient")
         self.assertEqual(answer["answer_fallback_status"],
                          "causal_claim_publication_floor")
         self.assertNotIn("satisfies a historical trigger", answer["answer"])
