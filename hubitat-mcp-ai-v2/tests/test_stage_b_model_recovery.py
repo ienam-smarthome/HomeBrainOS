@@ -29,6 +29,16 @@ INVENTORY = {
 }
 
 
+APP_CONFIG = {
+    "type": "function", "function": {
+        "name": "hub_get_app_config",
+        "parameters": {"type": "object", "properties": {
+            "appId": {"type": "integer"},
+        }, "required": ["appId"]},
+    },
+}
+
+
 def tool(name, args):
     return {"content": "", "tool_calls": [
         {"function": {"name": name, "arguments": args}}]}
@@ -40,7 +50,7 @@ class FakeHub:
 
     async def list_tools(self, refresh=False):
         tools = []
-        for tooldef in (INVENTORY, EVENTS, LOGS, WRITER):
+        for tooldef in (INVENTORY, EVENTS, LOGS, APP_CONFIG, WRITER):
             f = tooldef["function"]
             tools.append({"name": f["name"], "inputSchema": f["parameters"]})
         return tools
@@ -71,6 +81,10 @@ class FakeHub:
                 wrapper["content"][0]["text"] = json.dumps(data)
                 return wrapper
             return json.loads(original["response"])
+        if name == "hub_get_app_config":
+            return json.loads(receipt(name, args, {
+                "app": {"id": args["appId"], "label": "Fixture demand coordinator"},
+            })["response"])
         if name == "hub_get_logs":
             if args.get("appId") is None:
                 return json.loads(zero_broad()["response"])
@@ -203,6 +217,51 @@ class ModelSelectedRecoveryTests(unittest.IsolatedAsyncioTestCase):
         })
         self.assertTrue(all(candidate["status"] == "not_selected"
                             for candidate in recovery["candidates"][1:]))
+        self.assertFalse(answer["action_lifecycle"]["native_write_submitted"])
+
+    async def test_alpha144_issuer_known_but_upstream_demand_unresolved(self):
+        hub = FakeHub()
+        initial_inventory = {"format": "summary"}
+        config_args = {"appId": 613}
+        model = FakeAgent(
+            tool("hub_list_devices", initial_inventory),
+            tool("hub_list_device_events", FILTERED),
+            {"content": "The fixture thermostat reported heating."},
+            {"content": "The demand source remains unknown."},
+            tool("hub_list_device_events", UNFILTERED),
+            tool("hub_get_app_config", config_args),
+            {"content": "Application 613 triggered heating because Input A demanded it."},
+            tool("hub_get_logs", SCOPED),
+            {"content": "The fixture thermostat reported heating. App 613 issued a "
+                        "setpoint command. Its past log recorded a request by Input A."},
+        )
+        try:
+            answer = await model.answer(
+                "Why did the fixture thermostat report heating, and which input "
+                "requested it? Do not change anything.",
+                [], hub, 120, enable_final_claim_audit=False,
+            )
+        finally:
+            await model.close()
+
+        self.assertEqual(hub.calls, [
+            ("hub_list_devices", initial_inventory),
+            ("hub_list_device_events", FILTERED),
+            ("hub_list_device_events", UNFILTERED),
+            ("hub_get_app_config", config_args),
+            ("hub_get_logs", SCOPED),
+        ])
+        recovery = answer["stage_b_scoped_recovery"]
+        self.assertTrue(recovery["invoked"])
+        self.assertIsNone(recovery["suppression_reason"])
+        self.assertEqual(recovery["read_attempts"], 1)
+        self.assertEqual(recovery["app_scoped_read_attempts"], 1)
+        self.assertEqual(recovery["candidates"][0], {
+            "rank": 1,
+            "category": "recorded_command_issuer_app_log",
+            "leaf": "hub_get_logs",
+            "status": "selected",
+        })
         self.assertFalse(answer["action_lifecycle"]["native_write_submitted"])
 
     async def test_model_can_decline_recovery_without_fabricating_cause(self):

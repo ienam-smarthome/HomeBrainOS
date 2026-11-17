@@ -2235,14 +2235,28 @@ class Agent:
                         receipts, read_only_review_catalog(tools)
                     )
                     ranked_reads = next_stage_b.get("ranked_reads", [])
+                    source_ceiling = causal_original_source_ceiling(receipts)
+                    # A proximal issuer and an output report can satisfy the
+                    # source ceiling while the upstream decision is still open.
+                    issuer_execution_gap = (
+                        any(candidate["category"] == "recorded_command_issuer_app_log"
+                            for candidate in ranked_reads)
+                        and not source_ceiling["related_app_execution_source_category"]
+                        and (
+                            causal_requires_initiating_actor_source(question)
+                            or causal_publication_floor(question, text, receipts)["reason"]
+                            == "controller_decision_unverified"
+                        )
+                    )
                     if _EXPLICIT_NO_FRESH_READ.search(question):
                         stage_b_recovery_suppression = "user_disallowed_fresh_reads"
                     elif native_action_receipts_seen or current_write_attempted():
                         stage_b_recovery_suppression = "action_review"
                     elif not ranked_reads:
                         stage_b_recovery_suppression = "no_eligible_read"
-                    elif (causal_original_source_ceiling(receipts)[
+                    elif (source_ceiling[
                             "minimum_source_categories_for_unrestricted_causal_prose"]
+                          and not issuer_execution_gap
                           and not _CAUSAL_UNRESOLVED.search(text)):
                         stage_b_recovery_suppression = "no_unresolved_causal_gap"
                     elif deadline - time.monotonic() <= 18:
