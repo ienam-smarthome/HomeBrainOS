@@ -1,6 +1,6 @@
 # HomeBrainOS V2 alpha.137 — outcome-first causal source opportunities
 
-**Status:** code PR candidate; exact-head CI and installed live acceptance pending.
+**Status:** merged [PR #1711](https://github.com/ienam-smarthome/HomeBrainOS/pull/1711) at `74eec0f5cc60de9e0dd2052971ab3e82877bcc04` after **5/5 exact-head GitHub Actions workflows passed**. Fresh installed live first-answer acceptance remains pending.
 
 ## Private benchmark motivation
 
