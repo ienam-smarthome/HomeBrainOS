@@ -12,6 +12,13 @@ dedicated client as Read ON / Write OFF. This is still source-reported, not an
 independent permission-enforcement test. No runtime, model prompt, native tool,
 V1 or installed system changed. See
 [the alpha.145 acceptance gate](docs/HOMEBRAIN-V2-ALPHA145-PROSPECTIVE-ACCEPTANCE-20261117.md).
+[PR #1725](https://github.com/ienam-smarthome/HomeBrainOS/pull/1725)
+passed all four triggered exact-head workflows (release assurance, V2 pilot,
+repository validation and scorecard integrity) at
+`7fc3182d4425b13a97c593454735ed36dbe75287` and merged as
+`9a6b4e6286d615f866ef8171b1b2e5075c82d2c0`. The UI screenshot workflow did
+not trigger because no UI/runtime fixture changed. Installed capture and human
+review remain pending; CI did not create an answer-quality score.
 
 ## 17 November 2026 — V2 alpha.145 Stage B upstream decision recovery
 
