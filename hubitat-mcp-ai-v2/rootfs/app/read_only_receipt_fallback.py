@@ -8,11 +8,11 @@ model did not return usable prose. No writes, tool calls or additional AI rounds
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 import re
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from investigation_source_ledger import _SAFE_FIELD
+from investigation_source_ledger import _SAFE_FIELD, _response
 from native_device_event_receipt import original_device_event_history
 from native_command_provenance import original_command_rows
 
@@ -27,6 +27,22 @@ _SAFE_LABEL = re.compile(r"[^\w\s().,\-\u00b0%/]+", re.UNICODE)
 _SAFE_VALUE = re.compile(r"^[\w .,%+\-\u00b0/%]+$", re.UNICODE)
 _SAFE_NUMERIC = re.compile(r"^-?(?:\d{1,9})(?:\.\d{1,6})?$")
 _NUMERIC_FIELDS = frozenset({"temperature", "level", "heatingSetpoint", "power"})
+_SAFE_APP_ID = re.compile(r"[0-9]{1,9}\Z")
+_LOG_SECRET = re.compile(
+    r"(?i)(?:https?://|www\.|@|\b(?:token|password|secret|bearer|"
+    r"credential|api[_-]?key|private[_-]?key)\b)"
+)
+_LOG_INSTRUCTION = re.compile(
+    r"(?i)\b(?:ignore\s+(?:all\s+)?previous|system\s+prompt|"
+    r"developer\s+message|assistant\s+instructions|"
+    r"do\s+not\s+follow\s+instructions)\b"
+)
+_MAX_LOG_SCANNED_RECEIPTS = 40
+_MAX_LOG_ROWS_PER_RECEIPT = 150
+_MAX_LOG_PER_EVENT = 4
+_MAX_LOG_EXCERPTS = 8
+_MAX_LOG_MESSAGE_CHARACTERS = 500
+
 _STATE_VALUES = {
     "switch": frozenset({"on", "off"}),
     "thermostatOperatingState": frozenset({
@@ -84,6 +100,113 @@ def _friendly_time(instant: datetime, tz: ZoneInfo) -> str:
     return (f"{local.strftime('%A')} {local.day} {local.strftime('%B %Y')}"
             f" at {hr}:{local:%M:%S} {'am' if local.hour < 12 else 'pm'} "
             f"{local.tzname() or 'UTC'}")
+
+
+
+def _safe_execution_log_message(raw: object, app_id: str) -> str | None:
+    """Source-bound short excerpt from an app-scoped native past-log entry.
+
+    A prefix of app|id|label|body must match the original requested app ID.
+    The text remains untrusted; neither code nor credential-like content is
+    eligible for the fallback. No log's claim is treated as executed action.
+    """
+    if not isinstance(raw, str) or len(raw) > 2000 or "\n" in raw or "\r" in raw:
+        return None
+    fields = raw.split("|", 3)
+    if len(fields) != 4 or fields[0] != "app" or fields[1] != app_id:
+        return None
+    body = fields[3].strip()
+    if (not body or _LOG_SECRET.search(body) or _LOG_INSTRUCTION.search(body)
+            or any(char in body for char in ("<", chr(96), "{", "}", "\\"))):
+        return None
+    if ">" in body.replace("=>", ""):
+        return None
+    body = body.replace("=>", "→")
+    # Disallow markdown/html metacharacters and multiline log injections.
+    body = re.sub(r"[^\w \t.,:;()/=+\-°%\[\]!?&→]", " ", body)
+    body = re.sub(r"\s+", " ", body).strip()
+    if not body:
+        return None
+    if len(body) > _MAX_LOG_MESSAGE_CHARACTERS:
+        body = body[:_MAX_LOG_MESSAGE_CHARACTERS].rstrip() + "…"
+    return body.replace("[", r"\[").replace("]", r"\]")
+
+
+def _original_nearby_past_app_logs(
+    receipts: list[dict], anchors: list[datetime], zone: ZoneInfo,
+) -> list[str]:
+    """Display only bounded, identity-scoped source log observations.
+
+    Proximity to a device-reported state never proves command issuance,
+    internal controller decision, or independent physical operation.
+    """
+    if not anchors:
+        return []
+    rows: list[tuple[datetime, str, str]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for receipt in receipts[:_MAX_LOG_SCANNED_RECEIPTS]:
+        if (not isinstance(receipt, dict) or receipt.get("success") is not True
+                or receipt.get("name") != "hub_get_logs"):
+            continue
+        args = receipt.get("arguments")
+        if not isinstance(args, dict) or args.get("mode") != "past":
+            continue
+        ident = args.get("appId")
+        if type(ident) is int:
+            ident = str(ident)
+        if not isinstance(ident, str) or not _SAFE_APP_ID.fullmatch(ident):
+            continue
+        since = _timestamp(args.get("since"))
+        until = _timestamp(args.get("until"))
+        if (since is None or until is None or since > until
+                or until - since > timedelta(days=2)):
+            continue
+        _, native = _response(receipt)
+        if (not isinstance(native, dict) or native.get("mode") != "past"
+                or not isinstance(native.get("entries"), list)):
+            continue
+        for entry in native["entries"][:_MAX_LOG_ROWS_PER_RECEIPT]:
+            if not isinstance(entry, dict) or entry.get("type") != "app":
+                continue
+            message = _safe_execution_log_message(entry.get("message"), ident)
+            if message is None:
+                continue
+            clock = entry.get("time")
+            if not isinstance(clock, str) or len(clock) > 48:
+                continue
+            try:
+                instant = datetime.fromisoformat(clock.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            # Native log clock lacks an explicit offset in common envelopes.
+            # Use configured hub timezone as an interpretation, not as
+            # independent proof of wall-clock synchronization.
+            if instant.tzinfo is None:
+                instant = instant.replace(tzinfo=zone)
+            if not since <= instant <= until:
+                continue
+            key = (ident, instant.isoformat(), message)
+            if key not in seen:
+                seen.add(key)
+                rows.append((instant, ident, message))
+    chosen: dict[tuple[str, str, str], tuple[datetime, str, str]] = {}
+    for anchor in anchors[:2]:
+        nearby = sorted(
+            (item for item in rows
+             if abs((item[0] - anchor).total_seconds()) <= 180),
+            key=lambda item: (abs((item[0] - anchor).total_seconds()), item[0]),
+        )
+        for instant, ident, message in nearby[:_MAX_LOG_PER_EVENT]:
+            chosen[(ident, instant.isoformat(), message)] = (
+                instant, ident, message
+            )
+    ordered = sorted(chosen.values(), key=lambda item: item[0])
+    return [
+        f"- App {ident} past-log entry at "
+        f"{instant.astimezone(zone):%Y-%m-%d %H:%M:%S} (configured hub time): "
+        f"“{message}”"
+        for instant, ident, message in ordered[:_MAX_LOG_EXCERPTS]
+    ]
 
 
 def source_only_partial_answer(
@@ -203,6 +326,7 @@ def source_only_partial_answer(
         lines.append("**Returned device state reports:**")
     chosen_devices = set()
     chosen_fields = 0
+    state_time_anchors: list[datetime] = []
     for varied, _, bucket, ordered in candidates:
         if len(chosen_devices) >= _MAX_DEVICES and bucket["device_id"] not in chosen_devices:
             continue
@@ -210,6 +334,15 @@ def source_only_partial_answer(
             break
         chosen_devices.add(bucket["device_id"])
         chosen_fields += 1
+        if not state_time_anchors and len({key[1] for key in bucket["rows"]}) > 1:
+            most_recent = ordered[-1]
+            preceding = next(
+                (item for item in reversed(ordered[:-1])
+                 if item[0][1] != most_recent[0][1]),
+                None,
+            )
+            if preceding is not None:
+                state_time_anchors = [most_recent[1], preceding[1]]
         # Preserve a bounded transition-like context from original rows:
         # include latest two different values (if present), then latest rows.
         selected = []
@@ -231,6 +364,20 @@ def source_only_partial_answer(
             f"- **{bucket['name']}** (ID {bucket['device_id']}), "
             f"`{bucket['field']}`: {states}."
         )
+    log_excerpts = _original_nearby_past_app_logs(
+        receipts, state_time_anchors, zone
+    )
+    if log_excerpts:
+        lines.append(
+            "**Original event-time application-log excerpts:** The following "
+            "were returned by bounded app-scoped past-log queries near the "
+            "reported device state times. The native log clock is interpreted "
+            "using the configured hub timezone. They record what the "
+            "application logged, **not independent verification of the "
+            "initiating command, execution effect, exclusive cause or physical "
+            "outcome**. Source scope may be incomplete."
+        )
+        lines.extend(log_excerpts)
     if command_rows:
         lines.append(
             "These are bounded returned rows, not exhaustive or continuous history. "
