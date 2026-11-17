@@ -2038,6 +2038,41 @@ class Agent:
                                 + json.dumps(decision_frontier, ensure_ascii=False)[:3800]
                                 + "\n\n" + guidance
                             )
+                        # Stage B: reuse the V3 source-scope frontier approach
+                        # within this existing MODEL-owned review. ORIGINAL
+                        # complete receipts, not truncated inventory prose,
+                        # supply the candidate IDs and clocks.
+                        ranked_stage_b = stage_b_read_frontier(
+                            receipts, read_only_review_catalog(tools)
+                        )
+                        if ranked_stage_b.get("ranked_reads"):
+                            stage_b_brief = {
+                                key: ranked_stage_b[key]
+                                for key in (
+                                    "focal", "scope_candidates",
+                                    "causal_app_candidates", "ranked_reads",
+                                    "log_retention", "read_limits",
+                                ) if key in ranked_stage_b
+                            }
+                            guidance = (
+                                "Stage B source-grounded next READ options "
+                                "(advisory; NO native read is automatically "
+                                "executed):\n"
+                                + json.dumps(stage_b_brief, ensure_ascii=False)[:6200]
+                                + "\nAn attribute-filtered output history "
+                                  "cannot show other attributes or command rows. "
+                                  "Prefer a relevant SAME-device unfiltered "
+                                  "history when offered; then a recorded issuer "
+                                  "app log (if one is identified), or an "
+                                  "event-notified app log as a separate "
+                                  "unverified candidate. Current-state "
+                                  "capability peers indicate outcome SCOPE, "
+                                  "not an initiating input. The MODEL selects "
+                                  "or declines a proportionate offered read. "
+                                  "A zero-match general log is NOT proof of "
+                                  "missing execution or a retention cutoff.\n\n"
+                                + guidance
+                            )
                         opportunities = causal_read_opportunities(
                             receipts, read_only_review_catalog(tools)
                         )
@@ -2132,6 +2167,19 @@ class Agent:
                     opportunities = causal_read_opportunities(
                         receipts, read_only_review_catalog(tools)
                     )
+                    ranked_stage_b = stage_b_read_frontier(
+                        receipts, read_only_review_catalog(tools)
+                    )
+                    stage_b_navigation = (
+                        "\n\nStage B next-read ranking (advisory only):\n"
+                        + json.dumps({
+                            key: ranked_stage_b[key]
+                            for key in (
+                                "focal", "ranked_reads", "causal_app_candidates",
+                                "log_retention", "read_limits",
+                            ) if key in ranked_stage_b
+                        }, ensure_ascii=False)[:5200]
+                    )
                     concrete_sources = (
                         "\n\nAdvertised read-only tool contract and original state/issuer "
                         "leads (not evidence that logs exist):\n"
@@ -2142,6 +2190,7 @@ class Agent:
                     messages.append({
                         "role": "user",
                         "content": CAUSAL_FOLLOW_THROUGH_PROMPT
+                                   + stage_b_navigation
                                    + "\n\nOriginal review-read source-category delta "
                                      "(not proof of an event or a proposed read):\n"
                                    + json.dumps(review_read_delta,
