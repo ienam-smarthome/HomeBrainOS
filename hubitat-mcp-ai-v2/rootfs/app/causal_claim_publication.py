@@ -8,6 +8,7 @@ they do not make these unsupported categorical claims.
 from __future__ import annotations
 
 import re
+from datetime import datetime
 from investigation_source_ledger import _response
 from native_device_event_receipt import original_device_event_history
 
@@ -150,6 +151,108 @@ def _has_event_time_execution_source(receipts: list[dict]) -> bool:
 
 
 
+# Outcome types are generic across lights, HVAC, fans, contacts and switches.
+# A numeric setpoint is a TARGET change, never a substitute for an output
+# actually reporting a state change. This list describes source semantics,
+# not specific apps, rooms or a user incident.
+_REPORTED_OUTPUT_FIELDS = frozenset({
+    "switch", "thermostatOperatingState", "motion", "contact", "lock",
+    "presence", "valve", "alarm", "fanOperatingState", "operatingState",
+    "windowShade", "door", "water", "smoke", "carbonMonoxide", "powerSource",
+})
+_MAX_CEILING_ROWS = 250
+
+
+def causal_original_source_ceiling(receipts: list[dict]) -> dict:
+    """Original-receipt minimum for an UNRESTRICTED causal answer.
+
+    This is a sufficient-source *opportunity* check, NOT an evidence-based
+    cause classifier. A command issuer is a proximal actor, not its input.
+    A device reporter/listener is never the issuer. Even meeting this floor
+    does not validate a particular historical decision or physical effect.
+
+    The model is free to select further read-only evidence in existing
+    reviews. If it does not, the publisher must not present a definite
+    why/initiating-input conclusion from current inventories or setpoints.
+    """
+    by_field: dict[tuple[str, str], set[str]] = {}
+    commands_on_device: set[str] = set()
+    records: set[str] = set()
+    command_issuer_ids: set[str] = set()
+    observed_reports = 0
+    valid_native_history_reads = 0
+    for receipt in receipts[:_MAX_RECEIPTS]:
+        result = original_device_event_history(receipt)
+        if result is None:
+            continue
+        device_id, _, events = result
+        valid_native_history_reads += 1
+        for event in events[:_MAX_CEILING_ROWS]:
+            if not isinstance(event, dict):
+                continue
+            inline_id = event.get("deviceId")
+            if inline_id is not None and str(inline_id) != device_id:
+                continue
+            raw_date = event.get("date")
+            if not isinstance(raw_date, str):
+                continue
+            try:
+                stamp = datetime.fromisoformat(raw_date.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if stamp.tzinfo is None:
+                continue
+            name = event.get("name")
+            if not isinstance(name, str):
+                continue
+            if name.startswith("command-"):
+                origin = event.get("producedBy")
+                issuer_id = (origin.get("appId")
+                             if isinstance(origin, dict) else None)
+                if (type(issuer_id) in (int, str)
+                        and re.fullmatch(r"[0-9]{1,9}", str(issuer_id))):
+                    commands_on_device.add(device_id)
+                    command_issuer_ids.add(str(issuer_id))
+                continue
+            if name not in _REPORTED_OUTPUT_FIELDS:
+                continue
+            value = event.get("value")
+            if not isinstance(value, str) or len(value) > 64:
+                continue
+            observed_reports += 1
+            records.add(device_id)
+            by_field.setdefault((device_id, name), set()).add(value.casefold())
+
+    multiple_states_on_same_output = {
+        device_id for (device_id, _), values in by_field.items()
+        if len(values) >= 2
+    }
+    recorded_command_with_output = bool(records & commands_on_device)
+    related_execution = _has_event_time_execution_source(receipts)
+    # This admits the *possibility* of a causal explanation from original
+    # sources, not proof. No event-specific trigger is manufactured here.
+    possible_event_time_chain = bool(
+        multiple_states_on_same_output and
+        (recorded_command_with_output or related_execution)
+    )
+    return {
+        "scope": "current_request_original_successful_receipts_only",
+        "native_history_read_count": valid_native_history_reads,
+        "reported_categorical_output_rows": observed_reports,
+        "two_distinct_reported_states_same_output": bool(
+            multiple_states_on_same_output),
+        "recorded_app_command_on_reported_output": recorded_command_with_output,
+        "recorded_command_issuer_app_count": len(command_issuer_ids),
+        "related_app_execution_source_category": related_execution,
+        "minimum_source_categories_for_unrestricted_causal_prose":
+            possible_event_time_chain,
+        "cause_or_upstream_input_verified_by_this_index": False,
+        "current_snapshot_or_setpoint_is_not_output_activation": True,
+        "app_producer_or_listener_is_not_upstream_input": True,
+        "native_history_not_exhaustive": True,
+    }
+
+
 def causal_event_time_source_scope(receipts: list[dict]) -> dict:
     """Small, source-category-only navigation index; NEVER a proof engine.
 
@@ -220,6 +323,7 @@ def causal_event_time_source_scope(receipts: list[dict]) -> dict:
         "related_execution_source_category_present": (
             _has_event_time_execution_source(receipts)
         ),
+        "causal_original_source_ceiling": causal_original_source_ceiling(receipts),
         "current_configuration_or_snapshot_not_historical_decision": True,
         "controller_or_master_output_not_necessarily_input_that_triggered_it": True,
         "state_producer_and_triggered_listeners_not_command_issuers": True,
