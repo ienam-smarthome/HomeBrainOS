@@ -256,7 +256,7 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         )
         try:
             answer = await model.answer(
-                "Why did the fixture output report heating? Do not change anything.",
+                "Why did the fixture output report heating, and which input requested it? Do not change anything.",
                 [], hub, 120, enable_final_claim_audit=False,
             )
         finally:
