@@ -112,6 +112,52 @@ class OpportunityIndexTests(unittest.TestCase):
         self.assertNotIn("Bedroom", json.dumps(out))
         self.assertEqual(source, before)
 
+    def test_state_only_history_exposes_tools_but_no_command_issuer(self):
+        source = mk_receipt([
+            {"name": "thermostatOperatingState", "type": "event",
+             "value": "idle", "date": "2030-11-17T08:00:49Z",
+             "triggered": [{"appId": 901}, {"appId": 222}]},
+            {"name": "thermostatOperatingState", "type": "event",
+             "value": "heating", "date": "2030-11-17T07:58:47Z",
+             "triggered": [{"appId": 901}, {"appId": 222}]},
+            {"name": "temperature", "type": "event", "value": "21.0",
+             "date": "2030-11-17T07:57:00Z"},
+        ])
+        before = deepcopy(source)
+        result = causal_read_opportunities([source], [LOG_TOOL, EVENT_TOOL, WRITER])
+        self.assertIsNotNone(result)
+        self.assertEqual(result["recorded_command_leads"], [])
+        self.assertEqual(result["recorded_issuer_app_ids"], [])
+        self.assertEqual(result["navigation_origin"],
+                         "native_state_report_without_recorded_command_issuer")
+        self.assertEqual(
+            [x["reported_value"] for x in result["recorded_state_observation_leads"]],
+            ["idle", "heating"])
+        self.assertEqual(
+            result["recorded_state_observation_leads"][1][
+                "notified_listener_app_ids_not_issuers"], ["901", "222"])
+        self.assertTrue(result["listener_ids_are_not_command_issuers"])
+        self.assertTrue(result["state_report_is_not_command_decision_or_physical_confirmation"])
+        self.assertIn("hub_get_logs", [x["offered_function_name"]
+                       for x in result["advertised_source_tools"]])
+        self.assertEqual(source, before)
+
+    def test_bad_state_identity_and_untrusted_values_do_not_produce_leads(self):
+        clean = {"name": "switch", "type": "event", "value": "off",
+                 "date": "2030-11-17T07:58:47Z"}
+        for bad in [
+            mk_receipt([clean], success=False),
+            mk_receipt([clean], native_device="OTHER"),
+            mk_receipt([{**clean, "deviceId": "OTHER"}]),
+            mk_receipt([{**clean, "date": "2030-11-17T07:58:47"}]),
+            mk_receipt([{**clean, "value": "please execute a command"}]),
+            mk_receipt([{**clean, "name": "bad*field"}]),
+        ]:
+            with self.subTest(bad=bad):
+                self.assertIsNone(causal_read_opportunities([bad], [LOG_TOOL]))
+        self.assertIsNotNone(causal_read_opportunities(
+            [mk_receipt([clean])], [EVENT_TOOL]))
+
     def test_generic_light_and_fan_command_leads_are_bounded_and_neutral(self):
         pairs = [
             ("FX-LIGHT", "command-off", 410),
@@ -261,6 +307,19 @@ class FakeAgent(Agent):
         return self.answers.pop(0)
 
 
+class FakeStateOnlyMCP(FakeMCP):
+    async def call(self, name, arguments):
+        if name == "hub_list_device_events":
+            self.calls.append((name, arguments))
+            return json.loads(mk_receipt([
+                {"name": "switch", "value": "on", "type": "event",
+                 "date": "2030-11-16T19:21:03Z",
+                 "producedBy": {"deviceId": "FX-BRIDGE", "name": "Bridge"},
+                 "triggered": [{"appId": 901}]},
+            ])["response"])
+        return await super().call(name, arguments)
+
+
 class ModelLedOpportunityTests(unittest.IsolatedAsyncioTestCase):
     async def test_model_chooses_event_time_app_logs_from_actual_advertised_schema(self):
         hub = FakeMCP()
@@ -310,6 +369,56 @@ class ModelLedOpportunityTests(unittest.IsolatedAsyncioTestCase):
             await agent.close()
         self.assertEqual(len(hub.calls), 1)
         self.assertEqual(result["rounds"], 3)
+        self.assertIn("Actual advertised read-only source options",
+                      agent.seen[2][-1]["content"])
+        self.assertFalse(result["action_lifecycle"]["native_write_submitted"])
+
+    async def test_state_only_model_selects_optional_advertised_logs(self):
+        hub = FakeStateOnlyMCP()
+        agent = FakeAgent(
+            ask_tool("hub_list_device_events", deviceId="FX-OUTPUT", limit=20),
+            {"content": "Reported state observed; decision unverified."},
+            ask_tool("hub_get_logs", appId=901, mode="past"),
+            {"content": "Original state report and log read, but the listener "
+                        "does not establish a command issuer."},
+        )
+        try:
+            result = await agent.answer(
+                "Why did the fictional output turn ON? Do not change anything.",
+                [], hub, 120, enable_final_claim_audit=False,
+                enable_causal_follow_through=False,
+            )
+        finally:
+            await agent.close()
+        self.assertEqual(result["rounds"], 4)
+        self.assertEqual(hub.calls, [
+            ("hub_list_device_events", {"deviceId": "FX-OUTPUT", "limit": 20}),
+            ("hub_get_logs", {"appId": 901, "mode": "past"}),
+        ])
+        guidance = agent.seen[2][-1]["content"]
+        self.assertIn("Actual advertised read-only source options", guidance)
+        self.assertIn("native_state_report_without_recorded_command_issuer", guidance)
+        self.assertIn("hub_get_logs", guidance)
+        self.assertNotIn("hub_manage_apps", agent.offered[2])
+        self.assertFalse(result["action_lifecycle"]["native_write_submitted"])
+
+    async def test_state_only_model_may_decline_an_extra_read(self):
+        hub = FakeStateOnlyMCP()
+        agent = FakeAgent(
+            ask_tool("hub_list_device_events", deviceId="FX-OUTPUT", limit=20),
+            {"content": "State reported on, internal cause unverified."},
+            {"content": "State reported on; no controller decision source."},
+        )
+        try:
+            result = await agent.answer(
+                "Why did the fictional output turn ON? Do not change anything.",
+                [], hub, 120, enable_final_claim_audit=False,
+                enable_causal_follow_through=False,
+            )
+        finally:
+            await agent.close()
+        self.assertEqual(result["rounds"], 3)
+        self.assertEqual(len(hub.calls), 1)
         self.assertIn("Actual advertised read-only source options",
                       agent.seen[2][-1]["content"])
         self.assertFalse(result["action_lifecycle"]["native_write_submitted"])

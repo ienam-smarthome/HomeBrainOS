@@ -1980,35 +1980,37 @@ class Agent:
                                 + "\n\n" + guidance
                             )
                     if source_review_kind == "causal":
-                        # A recorded app-command issuer is a proximal
-                        # observation, not the historical controller decision.
-                        # Only the model can choose a proportionate read of
-                        # app execution or relevant historical inputs.
+                        # An issuer is a proximal observation, not an event-time
+                        # controller decision. State-only history is also an
+                        # eligible source-navigation anchor.
                         decision_frontier = causal_controller_frontier(receipts)
                         if should_prompt_controller_decision_gap(
                             question, review_kind_name=source_review_kind,
                             source_frontier=decision_frontier,
                             has_action_receipt=native_action_receipts_seen > 0,
                         ):
-                            # This is only a compact source-and-advertised-schema
-                            # navigation aid. It cannot select or execute reads.
-                            opportunities = causal_read_opportunities(
-                                receipts, read_only_review_catalog(tools)
-                            )
-                            concrete_sources = (
-                                "\n\nActual advertised read-only source options "
-                                "(navigation, NOT executed evidence or a plan):\n"
-                                + json.dumps(opportunities, ensure_ascii=False)[:3200]
-                                if opportunities and opportunities["advertised_source_tools"]
-                                else ""
-                            )
                             guidance = (
                                 CONTROLLER_DECISION_CHECKPOINT
                                 + "\n\nRecorded command-source navigation "
                                   "(not proof of a decision):\n"
                                 + json.dumps(decision_frontier, ensure_ascii=False)[:3800]
-                                + concrete_sources
                                 + "\n\n" + guidance
+                            )
+                        opportunities = causal_read_opportunities(
+                            receipts, read_only_review_catalog(tools)
+                        )
+                        if opportunities and opportunities["advertised_source_tools"]:
+                            guidance = (
+                                "Actual advertised read-only source options "
+                                "from original command OR reported-state "
+                                "observations (navigation, NOT executed evidence "
+                                "or a tool plan):\n"
+                                + json.dumps(opportunities, ensure_ascii=False)[:4200]
+                                + "\nReported states and triggered[] listeners "
+                                  "are NOT command issuers or verified event-time "
+                                  "controller decisions. Select only proportionate "
+                                  "advertised READ-ONLY evidence if useful.\n\n"
+                                + guidance
                             )
                     if source_review_kind == "historical_measurement":
                         # Source-type *coverage*, not a deterministic tool
@@ -2076,7 +2078,7 @@ class Agent:
                         receipts, read_only_review_catalog(tools)
                     )
                     concrete_sources = (
-                        "\n\nAdvertised read-only tool contract and recorded issuer "
+                        "\n\nAdvertised read-only tool contract and original state/issuer "
                         "leads (not evidence that logs exist):\n"
                         + json.dumps(opportunities, ensure_ascii=False)[:3200]
                         if opportunities and opportunities["advertised_source_tools"]

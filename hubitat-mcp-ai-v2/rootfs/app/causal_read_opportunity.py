@@ -17,12 +17,20 @@ from native_device_event_receipt import original_device_event_history
 
 _ID = re.compile(r"[0-9]{1,9}\Z")
 _COMMAND = re.compile(r"command-[A-Za-z][A-Za-z0-9_.-]{0,63}\Z")
+_STATE_FIELD = re.compile(r"[A-Za-z][A-Za-z0-9_.-]{0,63}\Z")
+_REPORTED_STATES = frozenset({
+    "on", "off", "heating", "idle", "cooling", "active", "inactive",
+    "open", "closed", "locked", "unlocked", "wet", "dry",
+    "present", "not present", "running", "stopped", "alarm", "clear",
+    "detected", "normal", "armed", "disarmed", "online", "offline",
+})
 _FIELD = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,60}\Z")
 _TOOL = re.compile(r"hub_(?:read|get|list|search)_[A-Za-z][A-Za-z0-9_]{0,80}\Z")
 _ENUM = re.compile(r"[A-Za-z0-9_-]{1,30}\Z")
 _MAX_SOURCE_RECEIPTS = 32
 _MAX_EVENTS_PER_SOURCE = 200
 _MAX_COMMAND_LEADS = 4
+_MAX_STATE_LEADS = 6
 _MAX_ISSUERS = 3
 _MAX_TOOLS = 6
 _MAX_FIELDS = 8
@@ -98,13 +106,15 @@ def causal_read_opportunities(
 ) -> dict | None:
     """Compact, source-safe options for a *model-chosen* discriminating read.
 
-    Emits None without a valid command issuer. An issuer's native command
-    does not identify the initiating room or prove a scheduler input.
+    Emits None without source-bound command OR categorical state evidence.
+    Neither a state report nor a command issuer establishes the actual
+    event-time decision, initiating room or physical effect.
     Never refer to an unadvertised tool; never assert logs are available.
     """
     if not isinstance(receipts, list) or not isinstance(offered_read_tools, list):
         return None
     leads: list[tuple[datetime, dict]] = []
+    state_reports: list[tuple[datetime, dict]] = []
     ids: set[str] = set()
     for rec in receipts[:_MAX_SOURCE_RECEIPTS]:
         native = original_device_event_history(rec)
@@ -112,27 +122,50 @@ def causal_read_opportunities(
             continue
         requested_device_id, _, events = native
         for row in events[:_MAX_EVENTS_PER_SOURCE]:
-            if not isinstance(row, dict) or row.get("type") not in (None, "command"):
-                continue
-            command = row.get("name")
-            if not isinstance(command, str) or not _COMMAND.fullmatch(command):
+            if not isinstance(row, dict):
                 continue
             inline_id = row.get("deviceId")
             if inline_id is not None and _id(inline_id) != requested_device_id:
                 continue
-            origin = row.get("producedBy")
-            app_id = _id(origin.get("appId")) if isinstance(origin, dict) else None
             stamp = _source_clock(row.get("date"))
-            if app_id is None or stamp is None:
+            if stamp is None:
                 continue
-            ids.add(app_id)
-            leads.append((stamp, {
-                "command_name": command,
-                "recorded_issuer_app_id": app_id,
+            name = row.get("name")
+            if (row.get("type") in (None, "command")
+                    and isinstance(name, str) and _COMMAND.fullmatch(name)):
+                origin = row.get("producedBy")
+                app_id = _id(origin.get("appId")) if isinstance(origin, dict) else None
+                if app_id:
+                    ids.add(app_id)
+                    leads.append((stamp, {
+                        "command_name": name,
+                        "recorded_issuer_app_id": app_id,
+                        "observed_original_timestamp": row["date"],
+                        "requested_output_device_id": requested_device_id,
+                    }))
+                continue
+            if row.get("type") not in (None, "event"):
+                continue
+            value = row.get("value")
+            if (not isinstance(name, str) or not _STATE_FIELD.fullmatch(name)
+                    or not isinstance(value, str)
+                    or value.lower() not in _REPORTED_STATES):
+                continue
+            notified_ids = []
+            notified = row.get("triggered")
+            if isinstance(notified, list):
+                for listener in notified[:8]:
+                    app_id = _id(listener.get("appId")) if isinstance(listener, dict) else None
+                    if app_id and app_id not in notified_ids:
+                        notified_ids.append(app_id)
+            state_reports.append((stamp, {
+                "reported_attribute": name,
+                "reported_value": value.lower(),
                 "observed_original_timestamp": row["date"],
                 "requested_output_device_id": requested_device_id,
+                "notified_listener_app_ids_not_issuers": notified_ids[:6],
             }))
-    if not leads:
+    if not leads and not state_reports:
         return None
 
     # Collapse repeated identical rows from overlapping history requests.
@@ -142,6 +175,19 @@ def causal_read_opportunities(
                item["command_name"], stamp)
         unique[key] = (stamp, item)
     latest = sorted(unique.values(), key=lambda x: x[0], reverse=True)
+    unique_states = {}
+    for stamp, item in state_reports:
+        key = (item["requested_output_device_id"], item["reported_attribute"],
+               item["reported_value"], stamp)
+        unique_states[key] = (stamp, item)
+    state_latest = sorted(unique_states.values(), key=lambda x: x[0], reverse=True)
+    recorded_state_leads = []
+    for _, item in state_latest[:_MAX_STATE_LEADS]:
+        reported = dict(item)
+        if latest:
+            # Do not elevate listeners into the command-led issuer index.
+            reported.pop("notified_listener_app_ids_not_issuers", None)
+        recorded_state_leads.append(reported)
     eligible = {item["recorded_issuer_app_id"]
                 for _, item in latest[:_MAX_COMMAND_LEADS]}
     issuer_ids = sorted(eligible, key=int)[:_MAX_ISSUERS]
@@ -189,7 +235,14 @@ def causal_read_opportunities(
         2, t["offered_function_name"]
     ))
     return {
-        "scope": "original_successful_device_command_rows_and_live_read_only_tool_definitions",
+        "scope": "original_successful_device_command_or_state_rows_and_live_read_only_tool_definitions",
+        "navigation_origin": (
+            "native_command_with_recorded_issuer" if latest
+            else "native_state_report_without_recorded_command_issuer"
+        ),
+        "recorded_state_observation_leads": recorded_state_leads,
+        "state_report_is_not_command_decision_or_physical_confirmation": True,
+        "listener_ids_are_not_command_issuers": True,
         "recorded_command_leads": [d for _, d in latest[:_MAX_COMMAND_LEADS]],
         "recorded_issuer_app_ids": issuer_ids,
         "issuer_log_read_attempted_in_this_request": sorted(attempted, key=int),
