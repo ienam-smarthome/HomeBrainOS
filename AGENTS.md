@@ -2,7 +2,7 @@
 
 ## 18 November 2026 — alpha.145 in-add-on acceptance package
 
-V2 Preview package `2.0.0-alpha.145.1` adds the phone-ready Acceptance study page for the existing sealed alpha.145 pack. The answer runtime and verifier's required capture version remain `2.0.0-alpha.145`. Captures record package provenance separately and the offline report identifies the restricted read-only catalog workflow. This is a distinct collection surface; do not pool its results with ordinary Ask. Installed capture and independent review remain pending. See [PR #1727](https://github.com/ienam-smarthome/HomeBrainOS/pull/1727).
+V2 Preview package `2.0.0-alpha.146` adds the phone-ready Acceptance study page for the existing sealed alpha.145 pack. The answer runtime and verifier's required capture version remain `2.0.0-alpha.145`. Captures record package provenance separately and the offline report identifies the restricted read-only catalog workflow. This is a distinct collection surface; do not pool its results with ordinary Ask. Installed capture and independent review remain pending. See [PR #1727](https://github.com/ienam-smarthome/HomeBrainOS/pull/1727).
 
 ## 17 November 2026 — alpha.145 prospective acceptance gate
 

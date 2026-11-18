@@ -30,7 +30,7 @@ new prospective pack for the replacement version.
 
 ## In-add-on workflow
 
-Update the Home Assistant add-on to package **2.0.0-alpha.145.1**. This package
+Update the Home Assistant add-on to package **2.0.0-alpha.146**. This package
 adds the study interface and keeps the answer runtime at **2.0.0-alpha.145**.
 The exact-version check still uses the runtime version. Exports record the
 installed package version separately. Open **Acceptance study** from the V2
