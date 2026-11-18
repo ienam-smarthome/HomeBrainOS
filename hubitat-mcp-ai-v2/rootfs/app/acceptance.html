@@ -19,7 +19,7 @@ code{overflow-wrap:anywhere}
 </head>
 <body>
 <main>
-<a href="./">Back to Ask HomeBrain</a>
+<a id="back" href="./">Back to Ask HomeBrain</a>
 <h1>Alpha.145 acceptance study</h1>
 <p>Use a dedicated MCP client with Read ON and Write OFF. Each case starts a fresh read-only investigation and saves its first answer privately on this add-on.</p>
 <p id="package"></p>
@@ -40,6 +40,11 @@ code{overflow-wrap:anywhere}
 <script>
 const get = id => document.getElementById(id);
 const form = get('labels');
+const addonBase = new URL(window.location.href);
+addonBase.pathname = addonBase.pathname.replace(/\/acceptance\/?$/, '/');
+addonBase.search = '';
+addonBase.hash = '';
+get('back').href = addonBase.href;
 const fields = {
   light: 'First light', second_light: 'Second light', thermostat: 'Thermostat',
   trv: 'TRV', automation: 'Automation', metered_plug: 'Metered plug',
@@ -63,8 +68,14 @@ async function api(path, body) {
     options.headers['Content-Type'] = 'application/json';
     options.body = JSON.stringify(body);
   }
-  const response = await fetch('api/acceptance/' + path, options);
-  const data = await response.json();
+  const response = await fetch(new URL('api/acceptance/' + path, addonBase), options);
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error('Acceptance service returned HTTP ' + response.status +
+      ' without JSON. Reopen HomeBrain through the Home Assistant sidebar. If it persists, check the add-on logs.');
+  }
   if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Request failed.');
   return data;
 }
