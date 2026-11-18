@@ -16,7 +16,7 @@ ADDON = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ADDON / "rootfs" / "app"), str(ADDON / "tools")]
 
 from acceptance_routes import router
-from source_real_acceptance import ALPHA145_LABEL_FIELDS, ALPHA149_VERSION
+from source_real_acceptance import ALPHA145_LABEL_FIELDS, ALPHA150_VERSION
 
 
 class Hub:
@@ -57,7 +57,7 @@ class Model:
 
 class AcceptanceWorkflowTests(unittest.IsolatedAsyncioTestCase):
     async def test_seal_permission_capture_and_offline_report(self):
-        app = FastAPI(version=ALPHA149_VERSION)
+        app = FastAPI(version=ALPHA150_VERSION)
         app.include_router(router)
         consent = {"model_and_private_evidence_consent": True}
         state = app.state
@@ -78,7 +78,7 @@ class AcceptanceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 setup = await client.post(prefix + "prepare", json={"labels": labels})
                 self.assertEqual(setup.status_code, 200, setup.text)
                 self.assertEqual(setup.json()["cases_frozen"], 10)
-                self.assertEqual(setup.json()["benchmark_pack"], "alpha149-prospective-v1")
+                self.assertEqual(setup.json()["benchmark_pack"], "alpha150-prospective-v1")
                 cases = (await client.get(prefix + "status")).json()["cases"]
                 self.assertEqual(len(cases), 10)
 
@@ -95,7 +95,7 @@ class AcceptanceWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
                 export = await client.get(prefix + cases[0]["id"] + "/export")
                 self.assertEqual(export.json()["question"], cases[0]["question"])
-                self.assertEqual(export.json()["ui_version"], ALPHA149_VERSION)
+                self.assertEqual(export.json()["ui_version"], ALPHA150_VERSION)
                 self.assertEqual(export.headers["cache-control"], "no-store")
                 for case in cases[1:]:
                     captured = await client.post(

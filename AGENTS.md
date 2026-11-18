@@ -1,5 +1,9 @@
 # HomeBrainOS development agent instructions
 
+## 18 November 2026 — alpha.150 receipt scope candidate
+
+The alpha.149 live cohort missed its quality gates. Alpha.150 extends the read-only publication check for unsupported continuity, event-store absence and log coverage claims. The fallback preserves native health and inventory activity timestamps separately. Use the fresh `alpha150-prospective-v1` pack for installed validation and preserve all earlier cohorts. See [the alpha.150 note](docs/HOMEBRAIN-V2-ALPHA150-RECEIPT-SCOPE.md).
+
 ## 18 November 2026 — alpha.149 historical publication candidate
 
 The alpha.148 source-real cohort missed the grounding, unsupported-cause and usefulness gates. Alpha.149 adds a bounded, read-only publication check after model completion and a distinct `alpha149-prospective-v1` pack. Preserve the alpha.145 and alpha.148 baselines. Installed alpha.149 capture and independent scoring remain pending. See [the alpha.149 note](docs/HOMEBRAIN-V2-ALPHA149-HISTORICAL-PUBLICATION.md).

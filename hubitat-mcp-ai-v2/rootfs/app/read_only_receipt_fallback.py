@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 import re
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from investigation_source_ledger import _SAFE_FIELD, _response
+from investigation_source_ledger import _SAFE_FIELD, _SAFE_ID, _response
 from native_device_event_receipt import original_device_event_history
 from native_command_provenance import original_command_rows
 from receipt_grounding_anchors import receipt_grounding_anchors
@@ -57,6 +57,7 @@ _STATE_VALUES = {
     "contact": frozenset({"open", "closed"}),
     "lock": frozenset({"locked", "unlocked", "unknown"}),
     "presence": frozenset({"present", "not present"}),
+    "healthStatus": frozenset({"online", "offline", "unknown", "unavailable"}),
     "water": frozenset({"wet", "dry"}),
     "valve": frozenset({"open", "closed", "opening", "closing", "on", "off"}),
     "fanSpeed": frozenset({"off", "low", "medium", "high", "on", "auto"}),
@@ -66,7 +67,7 @@ _STATE_VALUES = {
 _STATE_FIELDS = frozenset({
     "thermostatOperatingState", "switch", "motion", "contact", "lock",
     "presence", "water", "valve", "fanSpeed", "speed", "power",
-    "temperature", "level", "heatingSetpoint", "thermostatMode",
+    "temperature", "level", "heatingSetpoint", "thermostatMode", "healthStatus",
 })
 
 
@@ -210,6 +211,38 @@ def _original_nearby_past_app_logs(
     ]
 
 
+def _inventory_activity(receipts: list[dict], device_ids: set[str]) -> dict[str, datetime]:
+    """Return retrieval-time inventory fields for the same native device IDs."""
+    reported = {}
+    if not device_ids:
+        return reported
+    for receipt in receipts[:_MAX_RECEIPTS]:
+        if (not isinstance(receipt, dict) or receipt.get("success") is not True
+                or receipt.get("operation_executed") is False
+                or receipt.get("name") != "hub_list_devices"):
+            continue
+        envelope, data = _response(receipt)
+        if (not isinstance(envelope, dict) or not isinstance(data, dict)
+                or envelope.get("isError") is True or data.get("isError") is True
+                or envelope.get("truncated") is True or data.get("truncated") is True
+                or data.get("response_too_large") is True):
+            continue
+        devices = data.get("devices")
+        if not isinstance(devices, list):
+            continue
+        for device in devices[:700]:
+            if not isinstance(device, dict):
+                continue
+            value = device.get("id")
+            device_id = str(value) if type(value) in (str, int) else ""
+            if device_id not in device_ids or not _SAFE_ID.fullmatch(device_id):
+                continue
+            stamp = _timestamp(device.get("lastActivity"))
+            if stamp is not None:
+                reported[device_id] = stamp
+    return reported
+
+
 def source_only_partial_answer(
     question: str, receipts: list[dict], *, timezone_name: str | None = None,
     lead_with_latest_heating: bool = False,
@@ -332,6 +365,29 @@ def source_only_partial_answer(
                 "These are individual device state reports. The room that "
                 "requested heat and physical boiler operation remain unverified."
             )
+    health = [candidate for candidate in candidates if candidate[2]["field"] == "healthStatus"]
+    activity = _inventory_activity(receipts, {
+        candidate[2]["device_id"] for candidate in health[:_MAX_DEVICES]
+    })
+    if health:
+        lines.append("**Reported activity and health timestamps**")
+        for _, _, bucket, ordered in health[:_MAX_DEVICES]:
+            (_, status), stamp = ordered[-1]
+            device_id = bucket["device_id"]
+            observed = activity.get(device_id)
+            snapshot = (
+                f"; inventory `lastActivity` {_friendly_time(observed, zone)}"
+                if observed is not None else ""
+            )
+            lines.append(
+                f"- **{bucket['name']}** (ID {device_id}): latest returned "
+                f"`healthStatus` {status} at {_friendly_time(stamp, zone)}{snapshot}."
+            )
+        lines.append(
+            "The inventory timestamp and the health report describe different "
+            "source fields. Neither identifies the operation that updated the "
+            "activity timestamp or independently verifies device reachability."
+        )
     if command_rows:
         lines.append(
             "**Recorded command issuers from the returned native device histories:** "
@@ -351,12 +407,14 @@ def source_only_partial_answer(
                 f"`{row['command_name']}` at "
                 f"{_friendly_time(row['timestamp'], zone)}; {issuer}."
             )
-    if records:
+    if any(bucket["field"] != "healthStatus" for bucket in records.values()):
         lines.append("**Returned device state reports:**")
     chosen_devices = set()
     chosen_fields = 0
     state_time_anchors: list[datetime] = []
     for varied, _, bucket, ordered in candidates:
+        if bucket["field"] == "healthStatus":
+            continue
         if len(chosen_devices) >= _MAX_DEVICES and bucket["device_id"] not in chosen_devices:
             continue
         if chosen_fields >= _MAX_EVENT_FIELDS:

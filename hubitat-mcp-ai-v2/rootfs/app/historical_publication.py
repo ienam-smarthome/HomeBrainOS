@@ -19,6 +19,21 @@ _COVERAGE = re.compile(
     r"(?:were\s+)?(?:recorded|occurred|exist)\b",
     re.I,
 )
+# These assertions promote discrete reports into a source-wide claim.
+_UNBOUNDED_SCOPE = re.compile(
+    r"\b(?:proves?|establishes?|confirms?|shows?)\s+(?:that\s+)?"
+    r"[^.!?]{0,75}\b(?:remained|stayed|continued)\b[^.!?]{0,55}"
+    r"\b(?:throughout|between|entire|continuously)\b"
+    r"|\b(?:hub|system|store|log)\s+(?:saw|recorded|logged|contains?)\s+"
+    r"(?:no|zero)\s+(?:\w+[- ]?){0,5}(?:events?|entries|records|changes)\b"
+    r"|\b(?:did\s+not|never|has\s+not|have\s+not)\s+"
+    r"(?:emit|generate|record|log|leave)\s+"
+    r"(?:(?:any|a|an)\s+)?(?:\w+[- ]?){0,5}(?:events?|entries|records?|trace)\b"
+    r"|\b(?:continuous|uninterrupted|gapless)\s+(?:logging|recording|coverage)\b"
+    r"|\b(?:all[- ]time|unrestricted\s+by\s+time)\b"
+    r"|\b(?:pruning|retention)\b[^.!?]{0,50}\b(?:entire|full|whole)\b",
+    re.I,
+)
 _MECHANISM = re.compile(
     r"\b(?:is|was|are|were)\s+explained\s+by\b"
     r"|\b(?:each|every)\s+(?:\w+[- ]?){0,5}"
@@ -26,6 +41,7 @@ _MECHANISM = re.compile(
     r"|\b(?:logs?|emits?|generates?|records?)\b[^.!?]{0,55}\b(?:each|every)\s+time\b"
     r"|\b(?:meaning|therefore|consequently)\b[^.!?]{0,90}"
     r"\b(?:does\s+not|never|always)\s+(?:generate|emit|record|report|log)\b"
+    r"|\blogs?\s+(?:a\s+)?change\s+whenever\b"
     r"|\b(?:true|actual|definitive)\s+(?:reason|cause)\b",
     re.I,
 )
@@ -107,7 +123,8 @@ def historical_publication_check(answer: str, receipts: list[dict]) -> tuple[str
         if _MECHANISM.search(plain):
             reason = "unverified_execution_or_reporting_mechanism"
             break
-        if _COVERAGE.search(plain) and not _MATCHES_ONLY.search(plain):
+        if (_UNBOUNDED_SCOPE.search(plain)
+                or (_COVERAGE.search(plain) and not _MATCHES_ONLY.search(plain))):
             reason = "unverified_history_or_retention_coverage"
             break
     if reason is None:
