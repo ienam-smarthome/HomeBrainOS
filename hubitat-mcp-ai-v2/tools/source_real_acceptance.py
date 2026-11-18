@@ -219,7 +219,55 @@ ALPHA149_CASES = (
      "What can these results establish about retention or gaps? Do not change anything."),
 )
 
+ALPHA150_PACK = "alpha150-prospective-v1"
+ALPHA150_VERSION = "2.0.0-alpha.150"
+ALPHA150_CASES = (
+    ("a150-01", "health_snapshot_limits",
+     "List the hub's currently returned health warnings and memory reading. "
+     "Can this check show whether there was a warning or restart in the "
+     "last two hours? Do not change anything."),
+    ("a150-02", "inventory_scope",
+     "Find returned numeric battery readings above 90 percent. Say how many "
+     "qualify and whether the inventory pages or filters allow a hub-wide "
+     "count. Do not change anything."),
+    ("a150-03", "displayed_device_state",
+     "Compare the most recent current switch and level readings for "
+     "{second_light} and {light}. Is either reported value missing, and "
+     "what does the snapshot leave unverified? Do not change anything."),
+    ("a150-04", "listener_and_issuer",
+     "For {second_light}, find the most recent returned OFF report. Distinguish "
+     "the report, any notified apps, and any command that the returned "
+     "history actually links to it. Do not change anything."),
+    ("a150-05", "same_value_reports",
+     "Find two recent returned operating-state reports for {trv}, with a "
+     "timestamp for each. Compare with {thermostat} only where relevant. "
+     "What do the rows establish about state between reports? Do not change anything."),
+    ("a150-06", "empty_app_query",
+     "For {automation}, what is the latest returned source evidence of an "
+     "action or decision today? Explain the scope and limits of any empty "
+     "query and keep settings separate. Do not change anything."),
+    ("a150-07", "snapshot_and_history",
+     "For {metered_plug}, distinguish the current stored cumulative energy "
+     "value from the most recent energy event in a bounded history read. "
+     "Explain what missing rows mean for comparing the two. Do not change anything."),
+    ("a150-08", "activity_vs_measurement",
+     "For {offline_device}, report the inventory activity time and latest "
+     "returned health status with their timestamps, if available. Is there "
+     "a separate measurement row and what, if anything, establishes the "
+     "cause of stale activity? Do not change anything."),
+    ("a150-09", "contact_window_gaps",
+     "For {contact_sensor}, find the newest returned OPEN and CLOSED reports "
+     "in the past six hours, if available. Which parts of the requested "
+     "interval remain unverified? Do not change anything."),
+    ("a150-10", "diagnostic_scope",
+     "Summarize the returned ERROR log entries for the past four hours by "
+     "reported source. Give the matched and returned counts separately and "
+     "explain what the receipt does and does not say about older entries "
+     "or gaps. Do not change anything."),
+)
+
 PROSPECTIVE_PACKS = {
+    ALPHA150_PACK: (ALPHA150_CASES, ALPHA150_VERSION),
     ALPHA149_PACK: (ALPHA149_CASES, ALPHA149_VERSION),
     ALPHA145_PACK: (ALPHA145_CASES, ALPHA145_VERSION),
     ALPHA148_PACK: (ALPHA148_CASES, ALPHA148_VERSION),
