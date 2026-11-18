@@ -174,7 +174,53 @@ ALPHA148_CASES = (
      "matching count, returned count, and any aggregate total. Can the "
      "returned evidence establish retention across that whole request? Do not change anything."),
 )
+ALPHA149_PACK = "alpha149-prospective-v1"
+ALPHA149_VERSION = "2.0.0-alpha.149"
+ALPHA149_CASES = (
+    ("a149-01", "runtime_snapshot",
+     "What uptime and free memory does the hub report now, and what claims "
+     "about earlier memory pressure do these values support? Do not change anything."),
+    ("a149-02", "inventory_count_bounds",
+     "How many inventory entries report a numeric battery value from 25 "
+     "through 50 percent inclusive? Explain which source pages support the "
+     "count and what coverage is unverified. Do not change anything."),
+    ("a149-03", "state_vs_configuration",
+     "Which of {light} and {second_light} reports a switch state and a level "
+     "right now? Identify any missing values and distinguish the reported "
+     "state from a physical observation. Do not change anything."),
+    ("a149-04", "command_linkage",
+     "For {light}, find a recent reported switch transition and the nearest "
+     "returned command, if any. Can the evidence link the command to that "
+     "transition or establish who initiated it? Do not change anything."),
+    ("a149-05", "heating_coverage",
+     "Compare recent idle reports from {thermostat} and {trv}. Identify the "
+     "device and timestamp of each selected row and whether the available "
+     "history proves the devices stayed idle between reports. Do not change anything."),
+    ("a149-06", "execution_vs_configuration",
+     "For {automation}, distinguish the most recent returned execution evidence "
+     "from any installed setting or app-emitted device event. Can we establish "
+     "what the automation actually decided? Do not change anything."),
+    ("a149-07", "measurement_scope",
+     "For {metered_plug}, report the oldest and newest energy samples in a "
+     "bounded recent query if present. If fewer than two appear, explain what "
+     "the queried source establishes and which energy comparison cannot be "
+     "calculated. Do not change anything."),
+    ("a149-08", "telemetry_timestamp_provenance",
+     "For {offline_device}, distinguish its lastActivity timestamp from its "
+     "latest returned measurement and health report. What can the original "
+     "sources establish about why those times differ? Do not change anything."),
+    ("a149-09", "contact_absence",
+     "What is the most recent returned closed report for {contact_sensor} in "
+     "the past 12 hours? Explain what the observed rows allow us to say about "
+     "earlier openings in that window. Do not change anything."),
+    ("a149-10", "warnings_scope",
+     "Summarize returned WARN entries for the past three hours. Separate "
+     "reported matches, returned entries and the aggregate total, if available. "
+     "What can these results establish about retention or gaps? Do not change anything."),
+)
+
 PROSPECTIVE_PACKS = {
+    ALPHA149_PACK: (ALPHA149_CASES, ALPHA149_VERSION),
     ALPHA145_PACK: (ALPHA145_CASES, ALPHA145_VERSION),
     ALPHA148_PACK: (ALPHA148_CASES, ALPHA148_VERSION),
 }
