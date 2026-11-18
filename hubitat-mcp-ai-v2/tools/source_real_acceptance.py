@@ -128,6 +128,58 @@ ALPHA145_LABEL_FIELDS = (
 )
 
 
+ALPHA148_PACK = "alpha148-prospective-v1"
+ALPHA148_VERSION = "2.0.0-alpha.148"
+ALPHA148_CASES = (
+    ("a148-01", "hub_health_scope",
+     "Give me a point-in-time hub health check with the reported firmware, "
+     "uptime and active alerts. Which observations cannot establish whether "
+     "health changed earlier today? Do not change anything."),
+    ("a148-02", "inventory_scope",
+     "How many devices in the current inventory report a numeric battery "
+     "reading under 25 percent? List those readings and show whether the "
+     "inventory pages cover the full count. Do not change anything."),
+    ("a148-03", "state_vs_level",
+     "Check {second_light} and {light}. Which is reported on now, and what "
+     "level does each device report? Keep a stored level separate from "
+     "evidence of emitted light. Do not change anything."),
+    ("a148-04", "lighting_event_roles",
+     "Find the latest recorded ON report for {second_light} today in hub time. "
+     "Give the source time and separate who reported it, who was notified "
+     "and any recorded command relevant to that particular event. "
+     "Do not change anything."),
+    ("a148-05", "heating_event_order",
+     "Find the last reported change from heating to idle for {thermostat}. "
+     "Compare it with nearby {trv} events. Which timing and source roles "
+     "are visible, and what explains the stop, if anything? Do not change anything."),
+    ("a148-06", "configuration_vs_decision",
+     "Does the retained evidence establish that {automation} made a decision "
+     "today? Describe one relevant installed setting separately, then give "
+     "the latest event-time evidence or the exact gap. Do not change anything."),
+    ("a148-07", "energy_time_and_scope",
+     "What change in cumulative energy can you calculate between the two "
+     "latest returned readings from {metered_plug}? Give each timestamp "
+     "with an offset or timezone and state the history query scope. Do not change anything."),
+    ("a148-08", "telemetry_provenance",
+     "For {offline_device}, compare its most recent returned device-origin "
+     "measurement with its most recent returned health or connectivity "
+     "record. Can those records establish the reason it appears stale? Do not change anything."),
+    ("a148-09", "contact_intervals",
+     "Show the latest returned open and subsequent closed report for "
+     "{contact_sensor} from the last 24 hours, if both exist. Give the "
+     "reported timestamps and distinguish their elapsed gap from proof "
+     "the contact stayed open. Do not change anything."),
+    ("a148-10", "diagnostic_retention",
+     "Summarize ERROR entries returned from the last six hours. Distinguish "
+     "matching count, returned count, and any aggregate total. Can the "
+     "returned evidence establish retention across that whole request? Do not change anything."),
+)
+PROSPECTIVE_PACKS = {
+    ALPHA145_PACK: (ALPHA145_CASES, ALPHA145_VERSION),
+    ALPHA148_PACK: (ALPHA148_CASES, ALPHA148_VERSION),
+}
+
+
 class AcceptanceError(ValueError):
     pass
 
@@ -176,10 +228,9 @@ def init_labels(labels: Any, directory: Path, *, pack: str) -> dict:
         cases_source = CASES
         label_fields = LABEL_FIELDS
         expected_version = None
-    elif pack == ALPHA145_PACK:
-        cases_source = ALPHA145_CASES
+    elif pack in PROSPECTIVE_PACKS:
+        cases_source, expected_version = PROSPECTIVE_PACKS[pack]
         label_fields = ALPHA145_LABEL_FIELDS
-        expected_version = ALPHA145_VERSION
     else:
         _fail("Unknown private acceptance pack")
     labels = _validate_labels(labels, label_fields)
@@ -223,9 +274,8 @@ def _load_manifest(directory: Path) -> tuple[dict, str]:
     if pack == "source-real-v1":
         expected_cases = CASES
         expected_version = None
-    elif pack == ALPHA145_PACK:
-        expected_cases = ALPHA145_CASES
-        expected_version = ALPHA145_VERSION
+    elif pack in PROSPECTIVE_PACKS:
+        expected_cases, expected_version = PROSPECTIVE_PACKS[pack]
     else:
         _fail("Unrecognised frozen benchmark pack")
     if (doc.get("schema") != SCHEMA or not isinstance(cases, list) or
@@ -408,10 +458,10 @@ def verify(directory: Path, *, reviews: Path | None = None) -> dict:
                                 version_mismatches):
         _fail("Do not combine different models or add-on versions in a scored study")
     permission_evidence = _permission_evidence(source_exports)
-    if (reviews is not None and manifest.get("benchmark_pack") == ALPHA145_PACK and
+    if (reviews is not None and manifest.get("benchmark_pack") in PROSPECTIVE_PACKS and
             not (permission_evidence["per_client_read_enabled_reported"] is True and
                  permission_evidence["per_client_write_enabled_reported"] is False)):
-        _fail("Alpha.145 scoring requires source-reported per-client Read ON and Write OFF")
+        _fail("Prospective scoring requires source-reported per-client Read ON and Write OFF")
     human_review = _read_json(reviews) if reviews else None
     try:
         outcome = summarize(records, human_reviews=human_review)
@@ -448,7 +498,7 @@ def verify(directory: Path, *, reviews: Path | None = None) -> dict:
             "requires_expected_addon_version"
             if version_mismatches else
             "requires_source_reported_read_only_client"
-            if (manifest.get("benchmark_pack") == ALPHA145_PACK and
+            if (manifest.get("benchmark_pack") in PROSPECTIVE_PACKS and
                 not (permission_evidence["per_client_read_enabled_reported"] is True and
                      permission_evidence["per_client_write_enabled_reported"] is False)) else
             "needs_operator_source_and_first_attempt_attestation"
@@ -465,7 +515,7 @@ def main(argv: list[str] | None = None) -> int:
     make = commands.add_parser("init", help="Freeze ten new private questions")
     make.add_argument("--config", required=True, type=Path)
     make.add_argument("--directory", required=True, type=Path)
-    make.add_argument("--pack", choices=("source-real-v1", ALPHA145_PACK),
+    make.add_argument("--pack", choices=("source-real-v1", *PROSPECTIVE_PACKS),
                       default="source-real-v1")
     read = commands.add_parser("verify", help="Check first-answer exports offline")
     read.add_argument("--directory", required=True, type=Path)

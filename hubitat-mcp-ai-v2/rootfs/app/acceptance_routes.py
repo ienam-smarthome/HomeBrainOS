@@ -1,4 +1,4 @@
-"""Private, operator-driven alpha.145 acceptance under the V2 UI boundary."""
+"""Private, operator-driven alpha.148 acceptance under the V2 UI boundary."""
 from __future__ import annotations
 
 import json
@@ -16,7 +16,7 @@ from prospective_routes import guard
 from prospective_source_ab import ReadOnlyMCP, verify_read_only_client
 
 router = APIRouter()
-STUDY = Path("/data/homebrain-v2-alpha145-acceptance")
+STUDY = Path("/data/homebrain-v2-alpha148-acceptance")
 PRIVATE = {"Cache-Control": "no-store"}
 PACKAGE_VERSION = os.environ.get("HOMEBRAIN_PACKAGE_VERSION") or "development"
 
@@ -54,7 +54,7 @@ async def acceptance_page():
 
 @router.post("/api/acceptance/prepare")
 async def prepare(body: Labels, request: Request):
-    from source_real_acceptance import ALPHA145_PACK, AcceptanceError, init_labels
+    from source_real_acceptance import ALPHA148_PACK, AcceptanceError, init_labels
 
     directory = _study(request)
     if directory.exists():
@@ -62,7 +62,7 @@ async def prepare(body: Labels, request: Request):
     # Make the parent private before the CLI helper writes labels or prompts.
     directory.mkdir(mode=0o700)
     try:
-        result = init_labels(body.labels, directory, pack=ALPHA145_PACK)
+        result = init_labels(body.labels, directory, pack=ALPHA148_PACK)
     except AcceptanceError as exc:
         if not any(directory.iterdir()):
             directory.rmdir()
@@ -109,14 +109,14 @@ async def export(case_id: str, request: Request):
 
 @router.post("/api/acceptance/{case_id}/capture")
 async def capture(case_id: str, body: CaptureConsent, request: Request):
-    from source_real_acceptance import ALPHA145_VERSION, AcceptanceError
+    from source_real_acceptance import ALPHA148_VERSION, AcceptanceError
 
     directory = _study(request)
     if not body.model_and_private_evidence_consent:
         raise HTTPException(400, "Confirm use of the configured model with private evidence")
     app = request.app
-    if app.version != ALPHA145_VERSION:
-        raise HTTPException(409, "This study requires exactly V2 Preview alpha.145")
+    if app.version != ALPHA148_VERSION:
+        raise HTTPException(409, "This study requires exactly V2 Preview alpha.148")
     state = app.state
     if state.configuration_error or state.model is None or state.mcp is None:
         raise HTTPException(503, "Configure the V2 model and dedicated read-only MCP client")

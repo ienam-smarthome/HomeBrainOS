@@ -11,6 +11,7 @@ import json
 
 from temporal_receipt_fidelity import temporal_receipt_fidelity_index
 from receipt_completeness_index import original_event_completeness_index
+from receipt_grounding_anchors import receipt_grounding_anchors
 
 # Light-touch eligibility for a *missing-source* checkpoint: explicit live
 # measurement/state reads only, not generic knowledge questions or writes.
@@ -501,6 +502,17 @@ this internal checkpoint.
 # This is a separate final model pass, AFTER any model-selected evidence reads.
 # It does not select tools, parse claims, rewrite text mechanically or decide
 # the answer. The model compares its own final wording against original receipts.
+RECEIPT_GROUNDING_GUIDANCE = """Use receipt roles literally. A state reporter
+emits the report. A notified app receives that event. A recorded issuer issued
+only the command in its own row. Require event-time evidence to attribute a
+decision or explain the cause of a state, diagnostic label or timestamp.
+Use the exact source timestamp or the supplied hub display time without
+applying the offset again. Preserve requested scope, returned rows and matched
+rows separately. An unscoped total, a complete page of matches or a truncated
+response does not establish retention. Attribute pagination and projection
+to the receipts that used them. Lead with the strongest supported answer and
+name the evidence gap that prevents a stronger conclusion."""
+
 FINAL_CLAIM_AUDIT_PROMPT = """Final source-to-claim contradiction audit (internal).
 You are revising your own proposed answer, not collecting new evidence.
 The original successful tool receipts are the evidence; your previous drafts,
@@ -929,7 +941,8 @@ def _audit_request(arguments: object) -> dict:
 
 
 def final_claim_receipt_scope_index(
-    receipts: list[dict], *, draft_answer: str | None = None
+    receipts: list[dict], *, draft_answer: str | None = None,
+    timezone_name: str | None = None,
 ) -> str:
     """Index successful original tool receipt scopes, without causal inference.
 
@@ -1048,6 +1061,7 @@ def final_claim_receipt_scope_index(
            if temporal_anchors is not None else {}),
         **({"original_event_completeness": completeness_anchors}
            if completeness_anchors is not None else {}),
+        "receipt_grounding_anchors": receipt_grounding_anchors(receipts, timezone_name),
         "indexed_receipts": rows,
         "failed_calls_in_indexed_receipts": sum(
             row.get("read_failed") is True for row in rows),

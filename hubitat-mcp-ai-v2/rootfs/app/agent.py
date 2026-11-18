@@ -74,7 +74,7 @@ from investigation_review import (
     should_review_completion,
     is_read_only_review_tool, read_only_review_catalog,
     review_kind, review_prompt, is_current_state_question,
-    FINAL_CLAIM_AUDIT_PROMPT, should_audit_completion,
+    FINAL_CLAIM_AUDIT_PROMPT, RECEIPT_GROUNDING_GUIDANCE, should_audit_completion,
     final_claim_receipt_scope_index, CAUSAL_FOLLOW_THROUGH_PROMPT,
     should_recheck_causal_evidence, causal_review_read_delta, FRESH_SOURCE_RECOVERY_PROMPT,
     should_offer_fresh_source_recovery, should_prompt_historical_status_gap,
@@ -2119,6 +2119,8 @@ class Agent:
                             has_action_receipt=native_action_receipts_seen > 0,
                         ):
                             guidance = HISTORICAL_SOURCE_TYPE_GAP_PROMPT + "\n\n" + guidance
+                    if source_review_kind in ("causal", "historical_measurement", "source_verification"):
+                        guidance += "\n\n" + RECEIPT_GROUNDING_GUIDANCE
                     guidance += (
                         "\n\nOriginal receipt-scope navigation index "
                         "(not independent proof):\n"
@@ -2217,7 +2219,9 @@ class Agent:
                                                 ensure_ascii=False)[:1650]
                                    + concrete_sources
                                    + "\n\nReturned-receipt scope index (navigation only):\n"
-                                   + final_claim_receipt_scope_index(receipts)
+                                   + final_claim_receipt_scope_index(
+                                       receipts, timezone_name=clock_timezone_name,
+                                   )
                                    + "\n\nTemporal focal-transition index:\n"
                                    + json.dumps(
                                        temporal_transition_evidence(question, receipts),
@@ -2356,11 +2360,12 @@ class Agent:
                     # model's original read receipts remain unchanged and
                     # authoritative. No new source or tool call is introduced.
                     scope_index = final_claim_receipt_scope_index(
-                        receipts, draft_answer=text
+                        receipts, draft_answer=text, timezone_name=clock_timezone_name,
                     )
                     messages.append({
                         "role": "user",
                         "content": FINAL_CLAIM_AUDIT_PROMPT
+                                   + "\n\n" + RECEIPT_GROUNDING_GUIDANCE
                                    + ("\n\nOriginal event-time causal source categories "
                                       "(not a causal verdict):\n"
                                       + json.dumps(
