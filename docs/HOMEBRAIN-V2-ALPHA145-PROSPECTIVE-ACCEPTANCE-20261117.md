@@ -28,7 +28,26 @@ logic after freezing this pack and before collecting it. A demonstrated safety
 or build defect may be fixed, but that invalidates the candidate and requires a
 new prospective pack for the replacement version.
 
-## Private setup
+## In-add-on workflow
+
+Open **Acceptance study** from the V2 navigation in a build that includes this
+page. Supply the same eight exact labels described below and seal the pack, then
+select **Capture first answer** once per case. Each button uses the configured
+model and a fresh conversation context. The add-on first checks the upstream
+per-client grant and then exposes only tools and gateway leaves explicitly
+annotated read-only. This capture surface therefore uses a restricted catalog
+and its reports identify it as `in_addon_read_only_catalog`. Keep it separate
+from normal Ask cohorts.
+
+The original captures and sealed manifest stay in the add-on's private data
+directory at `/data/homebrain-v2-alpha145-acceptance`. Use Home Assistant ingress
+on a trusted installation. Download individual private JSON files for independent
+review. **Run offline verification** checks the saved cohort with the same
+verifier below and offers the capture report as a download. Permission preflight
+does not count as a study receipt, and offline verification makes no model or
+MCP calls. Keep any interrupted case in the study record.
+
+## Private setup (CLI alternative)
 
 Install **2.0.0-alpha.145** and configure a dedicated upstream per-client token
 whose `hub_get_info.clientAccess` reports `readEnabled:true` and

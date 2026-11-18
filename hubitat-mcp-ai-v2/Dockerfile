@@ -8,6 +8,8 @@ LABEL io.hass.version="${BUILD_VERSION}" io.hass.arch="${BUILD_ARCH}"
 RUN apk add --no-cache python3 py3-pip tzdata
 WORKDIR /app
 COPY rootfs/app /app
+COPY tools/first_answer_audit.py tools/source_real_acceptance.py /acceptance-tools/
+ENV PYTHONPATH=/acceptance-tools
 RUN pip3 install --break-system-packages --no-cache-dir -r /app/requirements.txt
 COPY run.sh /run.sh
 RUN chmod +x /run.sh
