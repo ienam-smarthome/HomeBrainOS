@@ -46,7 +46,9 @@ _MECHANISM = re.compile(
     re.I,
 )
 _LIMITED = re.compile(
-    r"\b(?:cannot|can't|does\s+not|not\s+(?:prove|establish|confirm|guarantee)"
+    r"\b(?:cannot|can't|could\s+not|does\s+not|do\s+not|did\s+not)\s+"
+    r"(?:prove|establish|confirm|guarantee|show|verify|infer|determine)\b"
+    r"|\b(?:cannot|can't|does\s+not|not\s+(?:prove|establish|confirm|guarantee)"
     r"|unverified|unknown)\b\s*(?:\w+\s+){0,8}"
     r"(?:prove|establish|confirm|guarantee|show|verify|infer|claim|assert|determine|coverage|"
     r"cause|reason|retention|complete|full|entire|all|every)\b"
