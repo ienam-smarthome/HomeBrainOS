@@ -385,9 +385,8 @@ class InteractionTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertIn("no-store", response.headers["cache-control"])
                 self.assertEqual(response.json()["version"], runtime.app.version)
-                # The acceptance-only package has its own Supervisor version.
-                self.assertEqual(addon_version, "2.0.0-alpha.147")
-                self.assertEqual(response.json()["version"], "2.0.0-alpha.145")
+                self.assertEqual(addon_version, "2.0.0-alpha.148")
+                self.assertEqual(response.json()["version"], "2.0.0-alpha.148")
                 self.assertEqual(response.json()["device_monitor"]["configured"], True)
                 self.assertNotIn("access_token", response.text)
                 page = await client.get("/")

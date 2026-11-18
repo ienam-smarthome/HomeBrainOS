@@ -1,5 +1,9 @@
 # HomeBrainOS development agent instructions
 
+## 18 November 2026 — alpha.148 receipt grounding candidate
+
+The installed alpha.145 baseline missed first-answer usefulness and unsupported definitive causal claim targets. Alpha.148 keeps source roles and timestamps attached to individual native rows and separates query scope from receipt coverage in the existing review and audit. The dedicated read-only acceptance surface now seals the distinct `alpha148-prospective-v1` pack in a separate study directory. Preserve the exposed alpha.145 baseline. Installed alpha.148 capture and independent scoring remain pending. See [PR #1730](https://github.com/ienam-smarthome/HomeBrainOS/pull/1730) and [the alpha.148 note](docs/HOMEBRAIN-V2-ALPHA148-RECEIPT-GROUNDING.md).
+
 ## 18 November 2026 — alpha.145 in-add-on acceptance package
 
 V2 Preview package `2.0.0-alpha.147` adds the phone-ready Acceptance study page and hardens startup under Supervisor ingress for the existing sealed alpha.145 pack. The answer runtime and verifier's required capture version remain `2.0.0-alpha.145`. Captures record package provenance separately and the offline report identifies the restricted read-only catalog workflow. This is a distinct collection surface; do not pool its results with ordinary Ask. Installed capture and independent review remain pending. See [PR #1727](https://github.com/ienam-smarthome/HomeBrainOS/pull/1727).

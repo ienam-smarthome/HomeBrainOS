@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from investigation_source_ledger import _SAFE_FIELD, _response
 from native_device_event_receipt import original_device_event_history
 from native_command_provenance import original_command_rows
+from receipt_grounding_anchors import receipt_grounding_anchors
 
 _MAX_RECEIPTS = 40
 _MAX_EVENTS_PER_RECEIPT = 300
@@ -392,6 +393,25 @@ def source_only_partial_answer(
             f"- **{bucket['name']}** (ID {bucket['device_id']}), "
             f"`{bucket['field']}`: {states}."
         )
+    # Tie notified apps to the specific returned report. A command elsewhere
+    # in the same history does not give these listeners an initiating role.
+    listener_lines = []
+    seen_listener_events = set()
+    for receipt in receipt_grounding_anchors(receipts, zone.key):
+        for event in receipt.get("events", []):
+            key = (event["device_id"], event["field"], event["utc_timestamp"])
+            notified = event.get("notified_app_ids")
+            if (not notified or key in seen_listener_events
+                    or event["device_id"] not in chosen_devices):
+                continue
+            seen_listener_events.add(key)
+            listener_lines.append(
+                f"- Device {event['device_id']}, `{event['field']}` at "
+                f"{event['hub_display_time']} — notified app IDs {', '.join(notified)}."
+            )
+    if listener_lines:
+        lines.append("**Notified apps on selected state reports**")
+        lines.extend(listener_lines[:_MAX_DEVICES])
     log_excerpts = _original_nearby_past_app_logs(
         receipts, state_time_anchors, zone
     )
@@ -409,8 +429,8 @@ def source_only_partial_answer(
     if command_rows:
         lines.append(
             "These are bounded returned rows, not exhaustive or continuous history. "
-            "**The initiating command's recorded issuer is not proof of the "
-            "upstream trigger, the internal controller decision or the physical "
+            "**A recorded command issuer is not proof of the "
+            "initiating command, upstream trigger, internal controller decision or physical "
             "outcome. A later state report shows only what the device reported; "
             "chronological proximity does not prove exclusive causation.** "
             "Relevant app execution logs and input histories may still be "
