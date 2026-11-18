@@ -168,6 +168,10 @@ def _validate_labels(labels: Any, fields: tuple[str, ...] = LABEL_FIELDS) -> dic
 
 
 def init(config: Path, directory: Path, *, pack: str = "source-real-v1") -> dict:
+    return init_labels(_read_json(config).get("labels"), directory, pack=pack)
+
+
+def init_labels(labels: Any, directory: Path, *, pack: str) -> dict:
     if pack == "source-real-v1":
         cases_source = CASES
         label_fields = LABEL_FIELDS
@@ -178,7 +182,7 @@ def init(config: Path, directory: Path, *, pack: str = "source-real-v1") -> dict
         expected_version = ALPHA145_VERSION
     else:
         _fail("Unknown private acceptance pack")
-    labels = _validate_labels(_read_json(config).get("labels"), label_fields)
+    labels = _validate_labels(labels, label_fields)
     if directory.exists() and any(directory.iterdir()):
         _fail("The private acceptance directory must start empty")
     if directory.exists() and not directory.is_dir():

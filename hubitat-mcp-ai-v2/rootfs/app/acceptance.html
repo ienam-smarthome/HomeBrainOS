@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>V2 Acceptance Study</title>
+<style>
+:root{color-scheme:dark;background:#0e1522;color:#eff4fb;font:16px system-ui,sans-serif}
+main{max-width:52rem;margin:auto;padding:1rem}
+a{color:#8fcaff}
+form,article{border:1px solid #3b5069;border-radius:12px;padding:1rem;margin:1rem 0;background:#172233}
+label,summary{display:block;margin:.75rem 0}
+input,button{font:inherit;color:inherit;background:#203752;border:1px solid #7290af;border-radius:6px;padding:.65rem}
+input[type=text]{display:block;box-sizing:border-box;width:100%;margin-top:.3rem}
+button{margin-right:.6rem;cursor:pointer}button:disabled{opacity:.55;cursor:default}
+pre{white-space:pre-wrap;overflow-wrap:anywhere}
+code{overflow-wrap:anywhere}
+</style>
+</head>
+<body>
+<main>
+<a href="./">Back to Ask HomeBrain</a>
+<h1>Alpha.145 acceptance study</h1>
+<p>Use a dedicated MCP client with Read ON and Write OFF. Each case starts a fresh read-only investigation and saves its first answer privately on this add-on.</p>
+<p id="package"></p>
+<p id="status" role="status"></p>
+<form id="labels" hidden>
+<h2>Seal the ten prompts</h2>
+<button type="submit">Seal prompts</button>
+</form>
+<section id="study" hidden>
+<p>Manifest SHA-256 <code id="seal"></code></p>
+<label><input type="checkbox" id="consent"> I agree to send each selected question and its private source evidence to the configured model provider.</label>
+<div id="cases"></div>
+<button id="verify" type="button">Run offline verification</button>
+<button id="reportDownload" type="button" hidden>Download capture report</button>
+<pre id="report" hidden></pre>
+</section>
+</main>
+<script>
+const get = id => document.getElementById(id);
+const form = get('labels');
+const fields = {
+  light: 'First light', second_light: 'Second light', thermostat: 'Thermostat',
+  trv: 'TRV', automation: 'Automation', metered_plug: 'Metered plug',
+  offline_device: 'Offline or stale device', contact_sensor: 'Contact sensor',
+};
+for (const [name, title] of Object.entries(fields)) {
+  const label = document.createElement('label');
+  label.textContent = title;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.name = name;
+  input.required = true;
+  input.maxLength = 120;
+  label.append(input);
+  form.insertBefore(label, form.querySelector('button'));
+}
+async function api(path, body) {
+  const options = {headers:{'X-Homebrain-Request':'1'}};
+  if (body !== undefined) {
+    options.method = 'POST';
+    options.headers['Content-Type'] = 'application/json';
+    options.body = JSON.stringify(body);
+  }
+  const response = await fetch('api/acceptance/' + path, options);
+  const data = await response.json();
+  if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Request failed.');
+  return data;
+}
+let busy = false;
+function action(button, title, callback) {
+  button.addEventListener('click', () => run(title, callback));
+}
+async function run(title, callback) {
+  if (busy) return;
+  busy = true;
+  get('status').textContent = title;
+  const controls = Array.from(document.querySelectorAll('button'));
+  controls.forEach(button => {button.disabled = true;});
+  try {
+    await callback();
+    get('status').textContent = '';
+  } catch (error) {
+    get('status').textContent = error.message;
+  } finally {
+    controls.forEach(button => {button.disabled = false;});
+    busy = false;
+  }
+}
+async function render() {
+  const data = await api('status');
+  get('package').textContent = 'Add-on package ' + data.package_version;
+  form.hidden = data.cases.length > 0;
+  get('study').hidden = !form.hidden;
+  get('seal').textContent = data.manifest_sha256 || '';
+  get('cases').replaceChildren();
+  for (const row of data.cases) {
+    const card = document.createElement('article');
+    const heading = document.createElement('h3');
+    heading.textContent = row.id + ' · ' + row.state;
+    const prompt = document.createElement('p');
+    prompt.textContent = row.question;
+    card.append(heading, prompt);
+    if (row.state === 'ready') {
+      const capture = document.createElement('button');
+      capture.textContent = 'Capture first answer';
+      action(capture, 'Running ' + row.id + '…', async () => {
+        if (!get('consent').checked) throw new Error('Confirm model and private evidence use first.');
+        try {
+          await api(row.id + '/capture', {model_and_private_evidence_consent:true});
+        } finally {
+          await render();
+        }
+        get('report').hidden = get('reportDownload').hidden = true;
+      });
+      card.append(capture);
+    } else if (row.state === 'captured') {
+      const details = document.createElement('details');
+      const summary = document.createElement('summary');
+      summary.textContent = 'First answer';
+      const answer = document.createElement('pre');
+      details.append(summary, answer);
+      details.addEventListener('toggle', async () => {
+        if (!details.open || answer.textContent) return;
+        try {
+          const capture = await api(row.id + '/export');
+          answer.textContent = capture.response.answer || 'No answer text returned.';
+        } catch (error) {
+          answer.textContent = error.message;
+        }
+      });
+      const download = document.createElement('button');
+      download.textContent = 'Download private JSON';
+      action(download, 'Preparing download…', async () => {
+        downloadJSON(await api(row.id + '/export'), row.id + '.json');
+      });
+      card.append(details, download);
+    } else {
+      const note = document.createElement('p');
+      note.textContent = 'The first attempt started. Reload to check for its capture. An interrupted attempt stays recorded.';
+      card.append(note);
+    }
+    get('cases').append(card);
+  }
+}
+function downloadJSON(value, filename) {
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], {type:'application/json'}));
+  link.download = filename;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+}
+form.addEventListener('submit', event => {
+  event.preventDefault();
+  run('Sealing prompts…', async () => {
+    await api('prepare', {labels:Object.fromEntries(new FormData(form))});
+    form.reset();
+    await render();
+  });
+});
+let report;
+action(get('verify'), 'Verifying saved captures offline…', async () => {
+  report = await api('report');
+  get('report').textContent = JSON.stringify(report, null, 2);
+  get('report').hidden = get('reportDownload').hidden = false;
+});
+action(get('reportDownload'), 'Preparing report…', () => downloadJSON(report, 'capture-report.json'));
+run('Loading study…', render);
+</script>
+</body>
+</html>

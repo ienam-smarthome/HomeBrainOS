@@ -19,6 +19,7 @@ from autonomous_routes import router as autonomous_router
 from reasoning_experiment import ReasoningExperiment
 from reasoning_routes import router as reasoning_router
 from prospective_routes import router as prospective_router
+from acceptance_routes import router as acceptance_router
 from prospective_source_ab import ProspectiveWorkspace
 from pydantic import BaseModel, Field, StrictBool
 
@@ -215,6 +216,7 @@ app.include_router(benchmark_router)
 app.include_router(autonomous_router)
 app.include_router(reasoning_router)
 app.include_router(prospective_router)
+app.include_router(acceptance_router)
 
 
 @app.middleware("http")
