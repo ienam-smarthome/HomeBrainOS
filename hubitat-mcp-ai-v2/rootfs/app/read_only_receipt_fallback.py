@@ -430,7 +430,7 @@ def source_only_partial_answer(
         lines.append(
             "These are bounded returned rows, not exhaustive or continuous history. "
             "**A recorded command issuer is not proof of the "
-            "upstream trigger, the internal controller decision or the physical "
+            "initiating command, upstream trigger, internal controller decision or physical "
             "outcome. A later state report shows only what the device reported; "
             "chronological proximity does not prove exclusive causation.** "
             "Relevant app execution logs and input histories may still be "
