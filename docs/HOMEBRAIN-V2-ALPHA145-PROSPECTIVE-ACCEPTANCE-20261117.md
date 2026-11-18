@@ -30,8 +30,11 @@ new prospective pack for the replacement version.
 
 ## In-add-on workflow
 
-Open **Acceptance study** from the V2 navigation in a build that includes this
-page. Supply the same eight exact labels described below and seal the pack, then
+Update the Home Assistant add-on to package **2.0.0-alpha.145.1**. This package
+adds the study interface and keeps the answer runtime at **2.0.0-alpha.145**.
+The exact-version check still uses the runtime version. Exports record the
+installed package version separately. Open **Acceptance study** from the V2
+navigation. Supply the same eight exact labels described below and seal the pack, then
 select **Capture first answer** once per case. Each button uses the configured
 model and a fresh conversation context. The add-on first checks the upstream
 per-client grant and then exposes only tools and gateway leaves explicitly

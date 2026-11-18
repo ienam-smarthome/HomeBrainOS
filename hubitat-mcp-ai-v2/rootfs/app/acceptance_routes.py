@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from time import monotonic
@@ -17,6 +18,7 @@ from prospective_source_ab import ReadOnlyMCP, verify_read_only_client
 router = APIRouter()
 STUDY = Path("/data/homebrain-v2-alpha145-acceptance")
 PRIVATE = {"Cache-Control": "no-store"}
+PACKAGE_VERSION = os.environ.get("HOMEBRAIN_PACKAGE_VERSION") or "development"
 
 
 class Labels(BaseModel):
@@ -74,7 +76,7 @@ async def status(request: Request):
 
     directory = _study(request)
     if not directory.exists():
-        return JSONResponse({"cases": []}, headers=PRIVATE)
+        return JSONResponse({"cases": [], "package_version": PACKAGE_VERSION}, headers=PRIVATE)
     try:
         manifest, seal = _load_manifest(directory)
     except AcceptanceError as exc:
@@ -86,7 +88,8 @@ async def status(request: Request):
             "attempted" if path.with_suffix(".attempt").is_file() else "ready"
         )
         cases.append({"id": row["id"], "question": row["question"], "state": state})
-    return JSONResponse({"manifest_sha256": seal, "cases": cases}, headers=PRIVATE)
+    return JSONResponse({"manifest_sha256": seal, "cases": cases,
+                         "package_version": PACKAGE_VERSION}, headers=PRIVATE)
 
 
 @router.get("/api/acceptance/{case_id}/export")
@@ -158,6 +161,7 @@ async def capture(case_id: str, body: CaptureConsent, request: Request):
 
         document = {
             "ui_version": app.version,
+            "package_version": PACKAGE_VERSION,
             "model": state.model.model,
             "request_id": request_id,
             "question": case["question"],
@@ -184,4 +188,5 @@ async def report(request: Request):
     except AcceptanceError as exc:
         raise HTTPException(409, str(exc)) from None
     result["capture_workflow"] = "in_addon_read_only_catalog"
+    result["verification_package_version"] = PACKAGE_VERSION
     return JSONResponse(result, headers=PRIVATE)

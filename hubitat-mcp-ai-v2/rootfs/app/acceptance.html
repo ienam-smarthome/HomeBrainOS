@@ -22,6 +22,7 @@ code{overflow-wrap:anywhere}
 <a href="./">Back to Ask HomeBrain</a>
 <h1>Alpha.145 acceptance study</h1>
 <p>Use a dedicated MCP client with Read ON and Write OFF. Each case starts a fresh read-only investigation and saves its first answer privately on this add-on.</p>
+<p id="package"></p>
 <p id="status" role="status"></p>
 <form id="labels" hidden>
 <h2>Seal the ten prompts</h2>
@@ -89,6 +90,7 @@ async function run(title, callback) {
 }
 async function render() {
   const data = await api('status');
+  get('package').textContent = 'Add-on package ' + data.package_version;
   form.hidden = data.cases.length > 0;
   get('study').hidden = !form.hidden;
   get('seal').textContent = data.manifest_sha256 || '';
