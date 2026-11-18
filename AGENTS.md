@@ -1,5 +1,9 @@
 # HomeBrainOS development agent instructions
 
+## 18 November 2026 — alpha.149 historical publication candidate
+
+The alpha.148 source-real cohort missed the grounding, unsupported-cause and usefulness gates. Alpha.149 adds a bounded, read-only publication check after model completion and a distinct `alpha149-prospective-v1` pack. Preserve the alpha.145 and alpha.148 baselines. Installed alpha.149 capture and independent scoring remain pending. See [the alpha.149 note](docs/HOMEBRAIN-V2-ALPHA149-HISTORICAL-PUBLICATION.md).
+
 ## 18 November 2026 — alpha.148 receipt grounding candidate
 
 The installed alpha.145 baseline missed first-answer usefulness and unsupported definitive causal claim targets. Alpha.148 keeps source roles and timestamps attached to individual native rows and separates query scope from receipt coverage in the existing review and audit. The dedicated read-only acceptance surface now seals the distinct `alpha148-prospective-v1` pack in a separate study directory. Preserve the exposed alpha.145 baseline. Installed alpha.148 capture and independent scoring remain pending. See [PR #1730](https://github.com/ienam-smarthome/HomeBrainOS/pull/1730) and [the alpha.148 note](docs/HOMEBRAIN-V2-ALPHA148-RECEIPT-GROUNDING.md).

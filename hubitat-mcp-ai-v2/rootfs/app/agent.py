@@ -64,6 +64,7 @@ from causal_outcome_frontier import (
     causal_outcome_frontier, OUTCOME_FIRST_CHECKPOINT,
 )
 from read_only_receipt_fallback import source_only_partial_answer
+from historical_publication import historical_publication_check
 from native_read_size_refusal import native_read_size_refusal
 from causal_claim_publication import (
     causal_publication_floor, causal_event_time_source_scope,
@@ -1182,6 +1183,24 @@ class Agent:
                     )
                     fallback_status = "causal_claim_publication_floor"
                     audit_status = "source_only_partial_after_claim_verification"
+            historical_claim_check = {"status": "not_applicable", "reason": None}
+            if (not native_action_receipts_seen and not current_write_attempted()
+                    and not is_explicit_device_imperative(question)
+                    and fallback_status == "not_used"):
+                reason, scope_summary = historical_publication_check(
+                    verified_answer, receipts,
+                )
+                if reason is not None:
+                    historical_claim_check = {"status": "unsafe", "reason": reason}
+                    grounded = source_only_partial_answer(
+                        question, receipts, timezone_name=clock_timezone_name,
+                    )
+                    verified_answer = (
+                        (grounded or "**Investigation incomplete — source-only partial result.**")
+                        + "\n\n" + scope_summary
+                    )
+                    fallback_status = "historical_claim_publication_floor"
+                    audit_status = "source_only_partial_after_claim_verification"
             action_contract_meta = {
                 key: value for key, value in action_contract.items()
                 if key != "answer"
@@ -1201,6 +1220,7 @@ class Agent:
                 "temporal_transition_verification": transition_meta,
                 "action_semantics_verification": action_contract_meta,
                 "causal_claim_verification": causal_claim_check,
+                "historical_claim_verification": historical_claim_check,
                 "action_performance": {
                     "model_reported_ms": round(sum(
                         m["total_ms"] for m in model_round_metrics
