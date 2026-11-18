@@ -385,12 +385,14 @@ class InteractionTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertIn("no-store", response.headers["cache-control"])
                 self.assertEqual(response.json()["version"], runtime.app.version)
-                self.assertEqual(response.json()["version"], addon_version)
+                # The acceptance-only package has its own Supervisor version.
+                self.assertEqual(addon_version, "2.0.0-alpha.145.1")
+                self.assertEqual(response.json()["version"], "2.0.0-alpha.145")
                 self.assertEqual(response.json()["device_monitor"]["configured"], True)
                 self.assertNotIn("access_token", response.text)
                 page = await client.get("/")
                 self.assertEqual(page.status_code, 200)
-                self.assertIn('UI_VERSION="'+addon_version+'"', page.text)
+                self.assertIn('UI_VERSION="'+runtime.app.version+'"', page.text)
         try:
             asyncio.run(run())
         finally:
