@@ -1,5 +1,26 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 19 November 2026 — alpha.152 merged; fresh installed review pending
+
+[PR #1735](https://github.com/ienam-smarthome/HomeBrainOS/pull/1735)
+merged as `7f97493295fde04078498325482b8d5f9ebd0ee2` after
+**5/5 exact-head CI workflows passed** (V2 pilot, UI screenshot,
+release assurance, validation and scorecard integrity).
+Alpha.152 fixes the independent acceptance blocker by saving the actual
+already-executed native permission preflight as a separate PRIVATE
+source receipt, and requires the build-argument version to agree with the
+bundled package manifest. The distinct alpha152 prospective pack is frozen in code and uses a
+separate private directory when an operator seals its labels. No additional model/native read, native write,
+approval or answer change was made.
+
+**Installation, fresh source-reported client receipt, claim-level accuracy,
+first-answer usefulness and promotion remain NOT MEASURED for alpha152.**
+Alpha.151 original exports stay intact and ineligible for retroactive repair.
+Next: operator installs alpha152 with dedicated Read ON / Write OFF token,
+captures the 10 new first answers once, exports original files/report, and
+requests independent original-source scoring. Do not describe CI as semantic
+acceptance or rerun any exposed older cohort.
+
 ## 19 November 2026 — alpha.152 permission preflight candidate; no measured semantic gain
 
 Independent review of all ten original alpha.151 first answers found 4/10
