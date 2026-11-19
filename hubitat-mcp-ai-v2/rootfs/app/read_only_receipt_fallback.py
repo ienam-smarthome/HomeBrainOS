@@ -288,6 +288,10 @@ def _returned_past_log_groups(receipts: list[dict]) -> str | None:
             ungroupable += 1
             continue
         counts[name] += 1
+    # An opaque log with no safely attributable source names cannot answer a
+    # source-grouping question. Keep the original no-evidence fallback contract.
+    if not counts:
+        return None
     entries = [
         "**Investigation incomplete — bounded source-only log summary.** "
         "These are grouped *returned* native past-log entries, not proof of "
@@ -434,8 +438,7 @@ def source_only_partial_answer(
         "The following " + ("recorded command and state-report rows" if command_rows
                   else "state-report rows") + " come from successful native "
         "read-only receipts. The returned rows do not establish full "
-        "retention, an internal controller trigger or independent physical "
-        "actuation.",
+        "retention, an internal controller trigger or independent physical effect.",
     ]
     if lead_with_latest_heating:
         latest_heating = []
