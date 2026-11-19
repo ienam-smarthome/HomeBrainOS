@@ -1163,7 +1163,7 @@ def is_app_execution_question(question: str) -> bool:
             _APP_EXECUTION_SUBJECT.search(clause)
             and _APP_EXECUTION_FACT.search(clause)
             and _APP_EXECUTION_READ.search(clause)
-            for clause in re.split(r"[.!?\\n]+", question)
+            for clause in re.split(r"[.!?\n]+", question)
         )
     )
 
