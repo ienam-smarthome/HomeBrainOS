@@ -549,5 +549,19 @@ class Alpha152PermissionEvidenceTests(unittest.TestCase):
             "hub_info_permission_receipts"], 0)
 
 
+
+    def test_bundled_manifest_without_build_arg_keeps_source_real_eligibility(self):
+        item = self.put(0)
+        item["package_version_provenance"] = "bundled_manifest_no_build_arg"
+        case_id = self.manifest["cases"][0]["id"]
+        path = self.directory / acceptance.EXPORT_DIRECTORY / (case_id + ".json")
+        path.write_text(json.dumps(item), encoding="utf-8")
+        result = acceptance.verify(self.directory)
+        self.assertEqual(result["package_provenance_unverified_case_ids"], [])
+        self.assertEqual(result["review_eligibility"],
+                         "needs_operator_source_and_first_attempt_attestation")
+        self.assertFalse(result["read_only_permission_independently_verified"])
+
+
 if __name__ == "__main__":
     unittest.main()

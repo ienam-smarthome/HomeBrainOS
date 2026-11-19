@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -136,3 +137,108 @@ class AcceptanceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(state.mcp.calls, 11)  # one rejected preflight, ten good
                 self.assertNotIn(cases[0]["question"], report.text)
                 self.assertEqual(state.model.calls, 10)
+
+
+    async def test_real_bundled_manifest_allows_capture_without_build_argument(self):
+        """Regression for the installed alpha152 'unverified (unverified)' blocker."""
+        app = FastAPI(version=ALPHA152_VERSION)
+        app.include_router(router)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest_file = root / "addon-config.yaml"
+            manifest_file.write_text(
+                'name: "Hubitat MCP AI v2 (Preview)"\n'
+                'version: "2.0.0-alpha.152"\n'
+                'slug: hubitat_mcp_ai_v2\n',
+                encoding="utf-8",
+            )
+            state = app.state
+            state.acceptance_directory = root / "private-study"
+            state.configuration_error = None
+            state.mcp = Hub()
+            state.model = Model()
+            state.options = {"investigation_timeout_seconds": 60}
+            state.ask_lock = asyncio.Lock()
+            with (patch("acceptance_routes.PACKAGE_MANIFEST", manifest_file),
+                  patch.dict(os.environ, {"HOMEBRAIN_PACKAGE_VERSION": ""})):
+                transport = httpx.ASGITransport(app=app)
+                async with httpx.AsyncClient(
+                    transport=transport, base_url="http://test",
+                    headers={"X-Homebrain-Request": "1"},
+                ) as client:
+                    prefix = "/api/acceptance/"
+                    labels = {field: "Fixture " + field
+                              for field in ALPHA145_LABEL_FIELDS}
+                    sealed = await client.post(prefix + "prepare",
+                                               json={"labels": labels})
+                    self.assertEqual(sealed.status_code, 200, sealed.text)
+                    case = (await client.get(prefix + "status")).json()["cases"][0]
+                    preflight_status = (await client.get(prefix + "status")).json()
+                    self.assertEqual(preflight_status["package_version"],
+                                     ALPHA152_VERSION)
+                    self.assertEqual(preflight_status["package_version_provenance"],
+                                     "bundled_manifest_no_build_arg")
+                    captured = await client.post(prefix + case["id"] + "/capture",
+                        json={"model_and_private_evidence_consent": True})
+                    self.assertEqual(captured.status_code, 200, captured.text)
+                    original = (await client.get(prefix + case["id"] + "/export")).json()
+                    self.assertEqual(original["package_version"], ALPHA152_VERSION)
+                    self.assertEqual(original["package_version_provenance"],
+                                     "bundled_manifest_no_build_arg")
+                    self.assertEqual(original["permission_preflight_receipt"][
+                        "receipt_origin"], "acceptance_server_preflight")
+                    report = (await client.get(prefix + "report")).json()
+                    self.assertEqual(report["review_eligibility"],
+                                     "needs_operator_source_and_first_attempt_attestation")
+                    self.assertFalse(report["read_only_permission_independently_verified"])
+
+    async def test_conflicting_or_missing_bundled_version_is_denied_without_attempt(self):
+        app = FastAPI(version=ALPHA152_VERSION)
+        app.include_router(router)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest_file = root / "addon-config.yaml"
+            manifest_file.write_text('version: "2.0.0-alpha.152"\n',
+                                     encoding="utf-8")
+            state = app.state
+            state.acceptance_directory = root / "private-study"
+            state.configuration_error = None
+            state.mcp = Hub()
+            state.model = Model()
+            state.options = {"investigation_timeout_seconds": 60}
+            state.ask_lock = asyncio.Lock()
+            with patch("acceptance_routes.PACKAGE_MANIFEST", manifest_file):
+                transport = httpx.ASGITransport(app=app)
+                async with httpx.AsyncClient(
+                    transport=transport, base_url="http://test",
+                    headers={"X-Homebrain-Request": "1"},
+                ) as client:
+                    prefix = "/api/acceptance/"
+                    labels = {field: "Fixture " + field
+                              for field in ALPHA145_LABEL_FIELDS}
+                    setup = await client.post(prefix + "prepare",
+                                              json={"labels": labels})
+                    self.assertEqual(setup.status_code, 200, setup.text)
+                    case_id = (await client.get(prefix + "status")).json()["cases"][0]["id"]
+                    with patch.dict(os.environ, {
+                        "HOMEBRAIN_PACKAGE_VERSION": "2.0.0-alpha.151",
+                    }):
+                        denied = await client.post(
+                            prefix + case_id + "/capture",
+                            json={"model_and_private_evidence_consent": True},
+                        )
+                        self.assertEqual(denied.status_code, 409)
+                        self.assertEqual((await client.get(prefix + "status")).json()[
+                            "package_version_provenance"], "build_arg_bundled_manifest_conflict")
+                    manifest_file.unlink()
+                    with patch.dict(os.environ, {"HOMEBRAIN_PACKAGE_VERSION": ""}):
+                        denied = await client.post(
+                            prefix + case_id + "/capture",
+                            json={"model_and_private_evidence_consent": True},
+                        )
+                        self.assertEqual(denied.status_code, 409)
+                        self.assertEqual((await client.get(prefix + "status")).json()[
+                            "package_version_provenance"], "unverified")
+                    self.assertEqual(state.model.calls, 0)
+                    self.assertFalse((state.acceptance_directory / "first-answers"
+                                      / (case_id + ".attempt")).exists())

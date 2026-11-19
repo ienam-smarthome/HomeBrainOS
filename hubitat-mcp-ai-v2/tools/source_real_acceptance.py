@@ -657,8 +657,13 @@ def verify(directory: Path, *, reviews: Path | None = None) -> dict:
             version_mismatches.append(ident)
         if manifest.get("benchmark_pack") == ALPHA152_PACK and (
                 document.get("package_version") != ALPHA152_VERSION
-                or document.get("package_version_provenance")
-                   != "build_arg_and_bundled_manifest_match"):
+                or document.get("package_version_provenance") not in (
+                    "build_arg_and_bundled_manifest_match",
+                    "bundled_manifest_no_build_arg",
+                )):
+            # A bundled runtime version is authoritative when Supervisor did
+            # not export BUILD_VERSION; an explicitly conflicting or missing
+            # bundled manifest remains ineligible. No older cohort is changed.
             package_provenance_unverified.append(ident)
         records.append(record)
         source_exports.append(document)

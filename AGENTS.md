@@ -1,5 +1,21 @@
 # HomeBrainOS development agent instructions
 
+## 19 November 2026 — alpha.152 installed package identity hotfix candidate
+
+A user-installed alpha152 screenshot shows `Add-on package unverified
+(unverified)`, with ten `ready` cases but capture denied before any
+first attempt. The original `_package_identity` raw regex was over-escaped;
+Supervisors may also omit `BUILD_VERSION` on an otherwise valid bundled
+image. Candidate hotfix preserves the same alpha152 pack/version/sealed
+private user data, requires a valid bundled manifest, rejects explicit
+build-version conflicts, and permits a missing build arg only when bundled
+manifest and runtime both match alpha152. The alternate accepted provenance
+remains explicitly `bundled_manifest_no_build_arg`; no independent
+package integrity guarantee is inferred. A rebuild, not a restart, is
+required; see
+[alpha152 packaging hotfix](docs/HOMEBRAIN-V2-ALPHA152-PACKAGE-PROVENANCE-HOTFIX-20261119.md).
+No live alpha152 first-answer outcomes are claimed.
+
 ## 19 November 2026 — alpha.152 merged; source-real promotion pending
 
 [PR #1735](https://github.com/ienam-smarthome/HomeBrainOS/pull/1735)
