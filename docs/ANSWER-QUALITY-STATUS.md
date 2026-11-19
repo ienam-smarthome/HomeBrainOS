@@ -1,5 +1,30 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 19 November 2026 — alpha.152 permission preflight candidate; no measured semantic gain
+
+Independent review of all ten original alpha.151 first answers found 4/10
+advisory complete useful answers. Definite source errors included battery
+inventory aggregation (18 qualifying devices but 17 claimed), an elapsed
+interval of 29m59.322s described as 1h30, and current stored attributes
+misrepresented as independently dated measurement events. Claim-level
+grounded percentage was not independently calculated. The capture report
+continues to require a source-reported Read ON / Write OFF receipt.
+**Alpha.151 does not pass promotion.** Original private exports were not
+edited, modified or retried.
+
+Alpha.152 candidate fixes the workflow root cause: the previously executed
+permission preflight now retains its original native `hub_get_info` response
+outside the model tool-call list. Only alpha152 may count that separately
+marked receipt, and only after checking success, executed origin, tool name,
+arguments and source-reported per-client booleans. The package build version
+must match its embedded manifest; unknown/mismatched provenance blocks new
+captures. The new alpha152 prospective pack is isolated from every older
+cohort. Runtime model answers, prompts, routing and native write safety are
+unchanged. This is **acceptance plumbing, not a semantic quality fix**. Need
+exact-head CI, installed fresh alpha152 capture and private independent source
+scoring before considering promotion. See
+[alpha.152 engineering note](HOMEBRAIN-V2-ALPHA152-ACCEPTANCE-SOURCE-PROVENANCE-20261119.md).
+
 ## 19 November 2026 — alpha.151 publication-scope candidate; quality unmeasured
 
 Alpha.151 fixes a demonstrated clause-boundary weakness in the read-only
