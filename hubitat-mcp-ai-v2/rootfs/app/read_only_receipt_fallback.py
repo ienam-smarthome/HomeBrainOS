@@ -298,11 +298,11 @@ def _returned_past_log_groups(receipts: list[dict]) -> str | None:
         value = args.get(key)
         if (type(value) is int and value >= 0) or (
             isinstance(value, str) and 0 < len(value) <= 70
-            and re.fullmatch(r"[\\w.:+-]+", value)
+            and re.fullmatch(r"[\w.:+-]+", value)
         ):
             filters.append(f"{key}={value}")
     entries.append(
-        f"**Receipt {idx}: \`hub_get_logs\`** "
+        f"**Receipt {idx}: `hub_get_logs`** "
         + ("(" + ", ".join(filters) + "). " if filters else "")
         + f"{total_returned} entries actually returned."
     )
