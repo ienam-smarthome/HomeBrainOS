@@ -1,5 +1,17 @@
 # HomeBrainOS development agent instructions
 
+## 19 November 2026 — alpha.152 merged; source-real promotion pending
+
+[PR #1735](https://github.com/ienam-smarthome/HomeBrainOS/pull/1735)
+merged `7f97493295fde04078498325482b8d5f9ebd0ee2` after 5/5
+exact-head workflow passes. Acceptance now exports the original server
+permission preflight separately from model receipts and requires consistent
+package build metadata. The fresh alpha152 pack is sealed, but **no alpha152
+installed source-real cohort has been captured or scored**. Alpha151 remains
+unpromoted. Do not modify its exports, count old permission preflights,
+claim a quality fix from this plumbing patch, or change runtime logic after
+sealing alpha152 before its new prospective capture.
+
 ## 19 November 2026 — alpha.152 original permission preflight candidate
 
 The original installed alpha.151 ten-case capture is preserved and remains
