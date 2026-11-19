@@ -1143,7 +1143,7 @@ _APP_EXECUTION_FACT = re.compile(
     re.I,
 )
 _APP_EXECUTION_READ = re.compile(
-    r"\b(?:find|show|inspect|identify|summari[sz]e|report|"
+    r"\b(?:find|show|inspect|identify|distinguish|summari[sz]e|report|"
     r"latest|newest|last|evidence|what|which|when)\b",
     re.I,
 )
@@ -1159,9 +1159,12 @@ def is_app_execution_question(question: str) -> bool:
     return (
         isinstance(question, str)
         and not bool(_WRITE_INTENT_AT_START.search(question))
-        and bool(_APP_EXECUTION_SUBJECT.search(question))
-        and bool(_APP_EXECUTION_FACT.search(question))
-        and bool(_APP_EXECUTION_READ.search(question))
+        and any(
+            _APP_EXECUTION_SUBJECT.search(clause)
+            and _APP_EXECUTION_FACT.search(clause)
+            and _APP_EXECUTION_READ.search(clause)
+            for clause in re.split(r"[.!?\\n]+", question)
+        )
     )
 
 
@@ -1195,12 +1198,12 @@ def review_kind(question: str) -> str | None:
     """Return one general reasoning goal, without prescribing MCP operations."""
     if is_causal_question(question):
         return "causal"
+    if is_app_execution_question(question):
+        return "app_execution"
     if is_historical_measurement_question(question):
         return "historical_measurement"
     if is_source_verification_question(question):
         return "source_verification"
-    if is_app_execution_question(question):
-        return "app_execution"
     return None
 
 
@@ -1615,12 +1618,14 @@ def should_review_completion(
     A short deadline leaves the original model response intact rather than
     risking a second model timeout. No MCP call is made by this helper.
     """
+    kind = review_kind(question)
     return (
         not already_reviewed
         and available_tools
         and remaining_seconds > 8
         and (
-            review_kind(question) is not None or has_action_receipt
+            (kind is not None and (kind != "app_execution" or has_tool_receipts))
+            or has_action_receipt
             or (not has_tool_receipts and is_current_state_question(question)
                 and is_deferred_read_draft(candidate_answer))
         )
