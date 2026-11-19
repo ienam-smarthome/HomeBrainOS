@@ -1134,17 +1134,17 @@ def is_historical_measurement_question(question: str) -> bool:
 
 
 _APP_EXECUTION_SUBJECT = re.compile(
-    r"\\b(?:apps?|applications?|automations?|scheduler|rule\\s+machine)\\b",
+    r"\b(?:apps?|applications?|automations?|scheduler|rule\s+machine)\b",
     re.I,
 )
 _APP_EXECUTION_FACT = re.compile(
-    r"\\b(?:execut(?:e|ed|ion)|decisions?|trigger(?:ed|s)?|"
-    r"ran|runs?|log(?:ged|s)?|history)\\b",
+    r"\b(?:execut(?:e|ed|ion)|decisions?|trigger(?:ed|s)?|"
+    r"ran|runs?|log(?:ged|s)?|history)\b",
     re.I,
 )
 _APP_EXECUTION_READ = re.compile(
-    r"\\b(?:find|show|inspect|identify|summari[sz]e|report|"
-    r"latest|newest|last|evidence|what|which|when)\\b",
+    r"\b(?:find|show|inspect|identify|summari[sz]e|report|"
+    r"latest|newest|last|evidence|what|which|when)\b",
     re.I,
 )
 
