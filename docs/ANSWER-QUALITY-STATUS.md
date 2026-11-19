@@ -1,5 +1,24 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 19 November 2026 — alpha.150 failed; typed claim/receipt shadow candidate
+
+Private source review of all ten installed alpha.150 prospective first answers
+found 68/80 supported factual claims (**85% grounded**), 3/10 useful first
+answers (**30%**), one unsupported definitive causal claim, and 7/10 relevant
+source sufficiency (**70%**). Alpha.150 fails the ≥90% grounded, zero unsupported
+definitive causes and ≥80% useful-first-answer promotion gates. Operator
+source/first-attempt and independent permission-enforcement attestations remain
+separate open requirements; they cannot rescue the failed semantic scores.
+
+The new candidate is shadow telemetry only. It assigns stable IDs to bounded
+safe facts from original current-state, event, command, hub-info and grouped-log
+receipts, preserves request scope and marks absence/window/continuity limits.
+It supplies no claim bindings and reports `enforced=false` and
+`answer_changed=false`. No prompt, model round, MCP call, source selection,
+write or user-facing answer changes. Measure this substrate against fixed
+private cohorts before designing explicit claim-to-fact binding. See
+[the engineering note](HOMEBRAIN-V2-CLAIM-RECEIPT-CONTRACT-SHADOW-20261119.md).
+
 ## 16 November 2026 — alpha.136 source read opportunities merged; installed accuracy not established
 
 The installed alpha.135 source-real heating first answer scored **4/8** in one independent review: thermostat 4382 history showed a latest returned heating report at 19:15:09 GMT and a preceding scheduler-app 3970 setpoint command at 19:14:51 GMT, but no app execution logs or event-time TRV demand receipts supported the demanding room. The model incorrectly treated the device room grouping as the demand source, and the final publication floor returned source-only partial. The original request took seven rounds / 398,189 provider input tokens / 34.7s browser elapsed with three successful read requests, including two broad inventories and a native 20/20 row-limit hit. [PR #1709](https://github.com/ienam-smarthome/HomeBrainOS/pull/1709), merged at `1178f5e9104f0423d49b38196eabc7b50dde5367` after 4/4 exact-head CI, adds a concrete **advertised read-only tool contract index bound to validated command issuers and timestamps** in existing causal source-review and follow-through rounds. It performs no forced source reads and cannot prove any scheduler's event-time input, physical heat or root cause. **Alpha.136 real first-answer accuracy, latency/token benefit, and 53-case pass remain NOT MEASURED.** Need original private uncoached captures across multiple source-real domains and independent human scoring. [Engineering note](HOMEBRAIN-V2-ALPHA136-SOURCE-OPPORTUNITIES-20261116.md).

@@ -1,5 +1,18 @@
 # HomeBrainOS development agent instructions
 
+## 19 November 2026 — typed claim/receipt contract shadow candidate
+
+The complete private alpha.150 prospective cohort failed promotion: 68/80
+supported factual claims (85%), 3/10 useful first answers (30%), one unsupported
+definitive causal claim and 7/10 relevant-source sufficiency (70%). The failures
+cross arithmetic, source selection, empty-result coverage, health causality and
+loss of useful facts in fallback. Do not add another case-specific prose rule.
+The current candidate adds a shadow-only typed receipt/fact vocabulary to
+private Technical JSON. It must not change answers, prompts, model rounds, MCP
+calls, writes or approvals. No claim binding is accepted or enforced yet.
+Original receipts remain authoritative. See
+[the shadow contract note](docs/HOMEBRAIN-V2-CLAIM-RECEIPT-CONTRACT-SHADOW-20261119.md).
+
 ## 18 November 2026 — alpha.150 receipt scope candidate
 
 The alpha.149 live cohort missed its quality gates. Alpha.150 extends the read-only publication check for unsupported continuity, event-store absence and log coverage claims. The fallback preserves native health and inventory activity timestamps separately. Use the fresh `alpha150-prospective-v1` pack for installed validation and preserve all earlier cohorts. See [the alpha.150 note](docs/HOMEBRAIN-V2-ALPHA150-RECEIPT-SCOPE.md).
