@@ -51,7 +51,9 @@ def _payload(response: dict) -> dict | None:
     return objects[0] if len(objects) == 1 else None
 
 
-async def verify_read_only_client(mcp: MCPClient) -> dict:
+async def verify_read_only_client(
+    mcp: MCPClient, *, retain_original_receipt: bool = False,
+) -> dict:
     """Require the actual configured token to report its own effective grant.
 
     This is checked immediately before EACH arm, not inferred from global
@@ -78,7 +80,7 @@ async def verify_read_only_client(mcp: MCPClient) -> dict:
         )
     if not isinstance(grant.get("client"), str) or not grant["client"].strip():
         raise ProspectiveError("MCP client identity was not established")
-    return {
+    evidence = {
         "read_only_grant_reported": True,
         "per_client_read_enabled": True,
         "per_client_write_enabled": False,
@@ -86,6 +88,20 @@ async def verify_read_only_client(mcp: MCPClient) -> dict:
                                if type(result.get("writeEnabled")) is bool else None,
         "permission_enforcement_independently_tested": False,
     }
+    if retain_original_receipt:
+        # Save the actual already-executed preflight response, not a fabricated
+        # summary and not a model-selected call. PRIVATE acceptance export only.
+        # No second MCP call or write is made.
+        evidence["original_permission_receipt"] = {
+            "receipt_origin": "acceptance_server_preflight",
+            "name": "hub_get_info",
+            "arguments": {},
+            "success": True,
+            "operation_executed": True,
+            "result_kind": "tool_result",
+            "response": json.dumps(native, ensure_ascii=False),
+        }
+    return evidence
 
 
 class ReadOnlyMCP:
