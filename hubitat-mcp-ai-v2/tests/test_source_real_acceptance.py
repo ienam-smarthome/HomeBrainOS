@@ -447,5 +447,107 @@ class Alpha151ProspectivePackTests(unittest.TestCase):
                             for case in manifest["cases"]))
 
 
+
+class Alpha152PermissionEvidenceTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.directory = Path(self.temp.name) / "alpha152"
+        acceptance.init_labels(alpha145_config()["labels"], self.directory,
+                               pack=acceptance.ALPHA152_PACK)
+        self.manifest = json.loads(
+            (self.directory / acceptance.MANIFEST).read_text(encoding="utf-8")
+        )
+
+    @staticmethod
+    def preflight(*, client_write=False, executed=True):
+        return {
+            "receipt_origin": "acceptance_server_preflight",
+            "name": "hub_get_info", "arguments": {}, "success": True,
+            "operation_executed": executed, "result_kind": "tool_result",
+            "response": json.dumps({"content": [{"type": "text", "text":
+                json.dumps({"readEnabled": True, "writeEnabled": True,
+                            "clientAccess": {"client": "PRIVATE-CLIENT",
+                                             "readEnabled": True,
+                                             "writeEnabled": client_write}})}]}),
+        }
+
+    def put(self, i, *, permission=True, package=True):
+        case = self.manifest["cases"][i]
+        item = export(case["question"], case["id"])
+        item["ui_version"] = acceptance.ALPHA152_VERSION
+        item["package_version"] = acceptance.ALPHA152_VERSION if package else "development"
+        item["package_version_provenance"] = (
+            "build_arg_and_bundled_manifest_match" if package else "unverified"
+        )
+        if permission:
+            item["permission_preflight_receipt"] = self.preflight()
+        (self.directory / acceptance.EXPORT_DIRECTORY / (case["id"] + ".json")).write_text(
+            json.dumps(item), encoding="utf-8",
+        )
+        return item
+
+    def test_new_pack_does_not_reuse_alpha151(self):
+        self.assertEqual([case["id"] for case in self.manifest["cases"]],
+                         [f"a152-{i:02d}" for i in range(1, 11)])
+        self.assertNotIn("a151-", json.dumps(self.manifest))
+        self.assertEqual(self.manifest["expected_addon_version"],
+                         acceptance.ALPHA152_VERSION)
+
+    def test_real_standalone_preflight_is_eligible_without_model_tool_call(self):
+        for i in range(10):
+            self.put(i)
+        summary = acceptance.verify(self.directory)
+        self.assertEqual(summary["permission_evidence"]["hub_info_permission_receipts"], 10)
+        self.assertTrue(summary["permission_evidence"]["per_client_read_enabled_reported"])
+        self.assertFalse(summary["permission_evidence"]["per_client_write_enabled_reported"])
+        self.assertEqual(summary["summary"]["tool_attempts"], 0)
+        self.assertEqual(summary["review_eligibility"],
+                         "needs_operator_source_and_first_attempt_attestation")
+        self.assertFalse(summary["read_only_permission_independently_verified"])
+        self.assertNotIn("PRIVATE-CLIENT", json.dumps(summary))
+
+    def test_unknown_package_and_missing_preflight_fail_closed(self):
+        self.put(0, package=False)
+        self.put(1, permission=False)
+        r = acceptance.verify(self.directory)
+        self.assertEqual(r["package_provenance_unverified_case_ids"], ["a152-01"])
+        self.assertEqual(r["review_eligibility"], "requires_verified_package_provenance")
+        self.put(0)
+        r = acceptance.verify(self.directory)
+        self.assertEqual(r["review_eligibility"], "needs_operator_source_and_first_attempt_attestation")
+        # The verified preflight from a152-01 remains valid; a152-02 has no preflight.
+        (self.directory / acceptance.EXPORT_DIRECTORY / "a152-01.json").unlink()
+        r = acceptance.verify(self.directory)
+        self.assertEqual(r["review_eligibility"],
+                         "requires_source_reported_read_only_client")
+
+    def test_failed_nonexecuted_global_or_write_enabled_preflight_cannot_pass(self):
+        case = self.put(0)
+        for change in (
+            {"operation_executed": False},
+            {"success": False},
+            {"receipt_origin": "fabricated"},
+            {"name": "hub_list_devices"},
+            {"arguments": {"unauthorized": "argument"}},
+            {"result_kind": "contract_error"},
+        ):
+            altered = copy.deepcopy(case)
+            altered["permission_preflight_receipt"].update(change)
+            self.assertEqual(
+                acceptance._permission_evidence([altered], include_preflight=True)[
+                    "hub_info_permission_receipts"], 0,
+            )
+        altered = copy.deepcopy(case)
+        altered["permission_preflight_receipt"] = self.preflight(client_write=True)
+        self.assertEqual(
+            acceptance._permission_evidence([altered], include_preflight=True)[
+                "per_client_write_enabled_reported"], True,
+        )
+        # No retrofit: the same standalone field never counts for older packs.
+        self.assertEqual(acceptance._permission_evidence([case])[
+            "hub_info_permission_receipts"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()
