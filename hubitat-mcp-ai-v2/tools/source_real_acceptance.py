@@ -357,7 +357,63 @@ ALPHA152_CASES = (
      "aggregate total without guessing what the total counts. Do not change anything."),
 )
 
+ALPHA153_PACK = "alpha153-prospective-v1"
+ALPHA153_VERSION = "2.0.0-alpha.153"
+ALPHA153_CASES = (
+    ("a153-01", "memory_conversion_and_bounds",
+     "For the hub's current free memory and preceding 75-minute samples, "
+     "report raw KB and consistent converted MiB. Identify returned "
+     "timestamps outside the requested window and any unobserved gaps. "
+     "Do not change anything."),
+    ("a153-02", "battery_distinct_numeric_count",
+     "Across the returned inventory count distinct device IDs with a "
+     "numeric battery value from 85 to 96 percent inclusive. State the "
+     "count, excluded/missing values and what pagination establishes. "
+     "Do not change anything."),
+    ("a153-03", "two_light_stored_state",
+     "Compare the current stored switch and level readings of {light} and "
+     "{second_light}. State the source type and avoid implying a fresh "
+     "dated light event unless one was returned. Do not change anything."),
+    ("a153-04", "event_reporter_listener_issuer",
+     "For {second_light}, inspect the latest returned switch observation. "
+     "Include its timestamp and distinguish the reporting bridge, notified "
+     "listener apps, recorded command issuer, and unresolved initiator. "
+     "Do not change anything."),
+    ("a153-05", "two_observation_interval_math",
+     "For {trv}, obtain two latest dated operating-state observations and "
+     "compute their exact elapsed separation. What do the two rows not "
+     "verify about the intervening state or triggering decision? "
+     "Do not change anything."),
+    ("a153-06", "exact_app_identity_and_execution",
+     "For the installed app {automation}, identify the most recent returned "
+     "execution or decision evidence. Resolve its exact app identity, "
+     "distinguish app configuration, native command issuer and device "
+     "state reports, and state any unresolved links. Do not change anything."),
+    ("a153-07", "energy_event_vs_activity",
+     "Compare {metered_plug}'s stored cumulative energy value, general "
+     "last-activity marker and newest genuinely dated energy-attribute "
+     "event. State which timestamps are not energy measurements. "
+     "Do not change anything."),
+    ("a153-08", "device_target_resolution",
+     "For {offline_device}, establish whether the current inventory "
+     "contains that exact device; if it does, distinguish the latest "
+     "dated measurement, reported health and general activity. "
+     "If unavailable, state only the returned inventory scope, "
+     "not lifetime nonexistence. Do not change anything."),
+    ("a153-09", "contact_source_review_preservation",
+     "For {contact_sensor}, report the newest OPEN and CLOSED observations "
+     "in the preceding nine hours and the oldest/newest returned timestamps. "
+     "Include unobserved intervals without asserting events never occurred. "
+     "Do not change anything."),
+    ("a153-10", "past_log_group_and_total_scope",
+     "Summarize returned ERROR past-log entries from the preceding three "
+     "hours by their reported source. Distinguish returned, matched and "
+     "aggregate total counts, and do not infer full retention. "
+     "Do not change anything."),
+)
+
 PROSPECTIVE_PACKS = {
+    ALPHA153_PACK: (ALPHA153_CASES, ALPHA153_VERSION),
     ALPHA152_PACK: (ALPHA152_CASES, ALPHA152_VERSION),
     ALPHA151_PACK: (ALPHA151_CASES, ALPHA151_VERSION),
     ALPHA150_PACK: (ALPHA150_CASES, ALPHA150_VERSION),
