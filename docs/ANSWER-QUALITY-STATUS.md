@@ -1,5 +1,20 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 19 November 2026 — alpha.152 unverified package blocker and repair candidate
+
+The user's installed alpha152 Acceptance page displayed
+`Add-on package unverified (unverified)` and an error rejecting capture
+before any first-attempt marker. Root cause: escaped-literal regex failed
+to parse a valid bundled `version:` line; an optional
+`HOMEBRAIN_PACKAGE_VERSION` value may also be absent. The same-version
+hotfix uses bounded literal manifest parsing and accepts
+`bundled_manifest_no_build_arg` only where the bundled and runtime
+versions equal alpha152; a conflicting explicit version or missing bundled
+config still blocks capture. Preserve the sealed private alpha152 manifest
+and all existing questions. No model, native actions or source-real quality
+results changed. See
+[packaging hotfix](HOMEBRAIN-V2-ALPHA152-PACKAGE-PROVENANCE-HOTFIX-20261119.md).
+
 ## 19 November 2026 — alpha.152 merged; fresh installed review pending
 
 [PR #1735](https://github.com/ienam-smarthome/HomeBrainOS/pull/1735)
