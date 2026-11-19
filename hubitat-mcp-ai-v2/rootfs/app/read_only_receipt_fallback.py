@@ -338,7 +338,7 @@ def _returned_past_log_groups(receipts: list[dict]) -> str | None:
         "No device command or additional investigation was performed for this "
         "fallback; unreturned entries and gaps remain unverified."
     )
-    return "\\n".join(entries)
+    return "\n".join(entries)
 
 
 def source_only_partial_answer(
