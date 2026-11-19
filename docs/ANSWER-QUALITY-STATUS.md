@@ -1,5 +1,26 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 19 November 2026 — alpha.153 candidate; alpha.152 does not pass quality
+
+The uploaded alpha152 original ten-case cohort was independently reviewed
+without modifying captures: 3/10 useful complete first answers, 5 partial,
+2 failed, with no formal atomic-claim grounding denominator. Reproducible
+defects included overwritten contact-event facts during source review,
+lost WARN source grouping after historical fallback, stored
+`lastActivity` misused as an energy observation timestamp and
+an app request investigated through device inventory alone.
+Alpha152 capture and read-only permission-source evidence functioned,
+but no semantic promotion is authorised.
+
+Alpha153 candidate contains (a) source-anchor-preserving answer
+finalization only when a tool-free review loses multiple original
+dated facts, (b) safe bounded per-source native past-log grouping
+from original receipts, (c) additive typed provenance/source-role facts
+and source-scope prompt guidance, and (d) an optional read-only app-identity
+execution review. It is a distinct pack/runtime version. No installed
+alpha153 first-answer outcomes or generalisation gains are claimed.
+See [alpha153 development and gates](HOMEBRAIN-V2-ALPHA153-PUBLICATION-EVIDENCE-20261119.md).
+
 ## 19 November 2026 — alpha.152 unverified package blocker and repair candidate
 
 The user's installed alpha152 Acceptance page displayed
