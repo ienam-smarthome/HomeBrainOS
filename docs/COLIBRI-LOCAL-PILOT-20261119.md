@@ -47,7 +47,7 @@ The probe performs:
 
 It reports request elapsed times, chat_ok, tool_call_ok and tool_roundtrip_ok. Exit 0 = protocol checks passed, 2 = incomplete compatibility, 1 = transport/configuration error. A pass proves neither factual grounding, robust device control, nor production latency. Unit tests are fully mocked:
 
-    py -3 -m unittest tests.test_colibri_local_pilot -v
+    py -3 -m unittest discover -s tests -p test_colibri_local_pilot.py -v
 
 When finished, from the **upstream Colibri checkout**:
 
