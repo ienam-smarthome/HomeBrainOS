@@ -14,7 +14,7 @@ import sys
 import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit, urlunsplit
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
 DEMO_TOOL = {
@@ -48,10 +48,14 @@ def normalise_base(raw: str, allow_lan: bool = False) -> str:
             raise ValueError("Non-loopback addresses require --allow-lan and a private-network IP")
     if host != "localhost" and not ipaddress.ip_address(host).is_loopback and not allow_lan:
         raise ValueError("A private-network address requires --allow-lan")
-    if parsed.scheme == "http" and allow_lan and host != "localhost":
-        # The caller must consciously opt in to non-loopback, plaintext access.
-        pass
     return urlunsplit((parsed.scheme, parsed.netloc, "/v1", "", ""))
+
+
+class RejectRedirects(HTTPRedirectHandler):
+    """Refuse redirects to prevent probing a different host or leaking API keys."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise ValueError("Redirect refused: Colibri endpoint must respond directly")
 
 
 def request_json(method: str, url: str, data: dict | None = None, timeout: float = 120) -> dict:
@@ -63,7 +67,7 @@ def request_json(method: str, url: str, data: dict | None = None, timeout: float
     if token:
         headers["Authorization"] = "Bearer " + token
     req = Request(url=url, data=encoded, headers=headers, method=method)
-    with urlopen(req, timeout=timeout) as response:
+    with build_opener(RejectRedirects).open(req, timeout=timeout) as response:
         value = json.load(response)
     if not isinstance(value, dict):
         raise ValueError("Unexpected non-object API response")
