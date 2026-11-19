@@ -240,6 +240,41 @@ def _event_facts(receipt_id: str, data: dict, tool: str) -> list[dict]:
     return facts
 
 
+def _app_identity_facts(receipt_id: str, data: dict, tool: str) -> list[dict]:
+    """Typed app identity is not a native device or an execution receipt."""
+    if tool == "hub_list_apps":
+        apps = data.get("apps")
+        if not isinstance(apps, list):
+            return []
+        facts = []
+        for row in apps[:250]:
+            if not isinstance(row, dict):
+                continue
+            ident = _safe_id(row.get("id"))
+            if ident is None:
+                continue
+            facts.append({
+                "fact_id": f"{receipt_id}.app.{len(facts) + 1}",
+                "fact_type": "reported_installed_app_identity",
+                "source_role": "app_inventory_not_device_inventory",
+                "subject": {"app_id": ident},
+                "historical_app_execution_proven": False,
+            })
+        return facts
+    if tool == "hub_get_app_config":
+        ident = _safe_id(data.get("appId"))
+        if ident is None:
+            return []
+        return [{
+            "fact_id": f"{receipt_id}.app_config.{ident}",
+            "fact_type": "reported_app_configuration",
+            "source_role": "stored_app_configuration_not_event_time_execution",
+            "subject": {"app_id": ident},
+            "historical_app_execution_proven": False,
+        }]
+    return []
+
+
 def _log_facts(receipt_id: str, data: dict) -> list[dict]:
     entries = data.get("entries")
     if not isinstance(entries, list):
@@ -320,6 +355,7 @@ def build_claim_receipt_contract(question: str, answer: str, receipts: list[dict
                 facts = (
                     _state_facts(receipt_id, data, tool)
                     + _event_facts(receipt_id, data, tool)
+                    + _app_identity_facts(receipt_id, data, tool)
                     + _log_facts(receipt_id, data)
                     + (_info_facts(receipt_id, data) if tool == "hub_get_info" else [])
                 )
