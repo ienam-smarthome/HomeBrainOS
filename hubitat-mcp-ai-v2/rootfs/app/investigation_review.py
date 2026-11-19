@@ -1133,6 +1133,64 @@ def is_historical_measurement_question(question: str) -> bool:
     )
 
 
+_APP_EXECUTION_SUBJECT = re.compile(
+    r"\\b(?:apps?|applications?|automations?|scheduler|rule\\s+machine)\\b",
+    re.I,
+)
+_APP_EXECUTION_FACT = re.compile(
+    r"\\b(?:execut(?:e|ed|ion)|decisions?|trigger(?:ed|s)?|"
+    r"ran|runs?|log(?:ged|s)?|history)\\b",
+    re.I,
+)
+_APP_EXECUTION_READ = re.compile(
+    r"\\b(?:find|show|inspect|identify|summari[sz]e|report|"
+    r"latest|newest|last|evidence|what|which|when)\\b",
+    re.I,
+)
+
+
+def is_app_execution_question(question: str) -> bool:
+    """Eligibility only: app execution needs app-identity source verification.
+
+    Does not guess installed app IDs, route a native tool, or infer execution.
+    Generic category words are needed so an unrelated device-history request
+    doesn't incur a new model round.
+    """
+    return (
+        isinstance(question, str)
+        and not bool(_WRITE_INTENT_AT_START.search(question))
+        and bool(_APP_EXECUTION_SUBJECT.search(question))
+        and bool(_APP_EXECUTION_FACT.search(question))
+        and bool(_APP_EXECUTION_READ.search(question))
+    )
+
+
+APP_EXECUTION_REVIEW_PROMPT = """Read-only installed-application evidence checkpoint.
+The question names or discusses an automation or application. An installed
+Hubitat APP and a native DEVICE are distinct source categories. Before
+claiming any app executed, establish the requested installed app's identity
+using the actual offered app inventory/configuration or app-scoped logs,
+not merely a same-named or nearby device listing. A command row from a
+different recorded app identifies THAT recorded issuer, not the requested
+app by alias. A device-report listener is not a command issuer.
+
+The previous draft and a device label are not app identity evidence. If
+the original receipts do not link the requested app and returned event,
+consider a proportionate currently advertised READ-ONLY app/list/config/log
+tool and exact arguments. YOU select any tool; no tool is required or
+executed automatically. If exact app identity or execution remains
+unverified, report the supported native command/state observations as
+separate findings and mark the requested app unresolved. Configuration,
+an app's self-reported history, recorded native command event, later
+reported state and independent physical action are different fact types.
+
+Do not change anything, read private credentials, infer a missing
+historical action from zero returned rows, or treat an unsuccessful read as
+proof of nonexistence. The final answer must be a user-facing result,
+not commentary about this internal review.
+"""
+
+
 def review_kind(question: str) -> str | None:
     """Return one general reasoning goal, without prescribing MCP operations."""
     if is_causal_question(question):
@@ -1141,6 +1199,8 @@ def review_kind(question: str) -> str | None:
         return "historical_measurement"
     if is_source_verification_question(question):
         return "source_verification"
+    if is_app_execution_question(question):
+        return "app_execution"
     return None
 
 
@@ -1201,6 +1261,8 @@ def review_prompt(kind: str) -> str:
         return MEASUREMENT_REVIEW_PROMPT
     if kind == "source_verification":
         return VERIFICATION_REVIEW_PROMPT
+    if kind == "app_execution":
+        return APP_EXECUTION_REVIEW_PROMPT
     if kind == "action_outcome":
         return ACTION_OUTCOME_REVIEW_PROMPT
     return SOURCE_REVIEW_PROMPT
