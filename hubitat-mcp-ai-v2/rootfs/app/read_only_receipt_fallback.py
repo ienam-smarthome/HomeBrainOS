@@ -430,12 +430,12 @@ def source_only_partial_answer(
     candidates.sort(key=lambda c: (c[0], c[1]), reverse=True)
 
     lines = [
-        "**Investigation incomplete — source-only partial result.** "
-        "A reliable complete causal explanation could not be published. The following "
-        "are " + ("recorded command and reported state rows" if command_rows
-                  else "reported state rows") + " from this "
-        "request's successful read-only MCP histories. They do not establish "
-        "a controller's internal trigger or an independent physical effect.",
+        "**Source-only partial result — bounded observations.** "
+        "The following " + ("recorded command and state-report rows" if command_rows
+                  else "state-report rows") + " come from successful native "
+        "read-only receipts. The returned rows do not establish full "
+        "retention, an internal controller trigger or independent physical "
+        "actuation.",
     ]
     if lead_with_latest_heating:
         latest_heating = []
