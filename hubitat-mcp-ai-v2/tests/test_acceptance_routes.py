@@ -240,5 +240,5 @@ class AcceptanceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual((await client.get(prefix + "status")).json()[
                             "package_version_provenance"], "unverified")
                     self.assertEqual(state.model.calls, 0)
-                    self.assertFalse((state.acceptance_directory / "exports"
+                    self.assertFalse((state.acceptance_directory / "first-answers"
                                       / (case_id + ".attempt")).exists())
