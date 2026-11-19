@@ -9,8 +9,8 @@ release assurance, validation and scorecard integrity).
 Alpha.152 fixes the independent acceptance blocker by saving the actual
 already-executed native permission preflight as a separate PRIVATE
 source receipt, and requires the build-argument version to agree with the
-bundled package manifest. The distinct alpha152 prospective pack is sealed
-in its own version/directory. No additional model/native read, native write,
+bundled package manifest. The distinct alpha152 prospective pack is frozen in code and uses a
+separate private directory when an operator seals its labels. No additional model/native read, native write,
 approval or answer change was made.
 
 **Installation, fresh source-reported client receipt, claim-level accuracy,
