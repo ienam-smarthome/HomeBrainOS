@@ -1,5 +1,21 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 19 November 2026 — alpha.150 failed; claim/receipt shadow foundation
+
+The installed sealed alpha.150 cohort is complete and source-reviewed. Scores:
+85% grounded factual claims, 30% useful first answers, one unsupported
+definitive causal claim and 70% relevant-source sufficiency. It is not eligible
+for promotion. Failures include a 20→19 inventory count, false empty-result
+coverage, insufficient operating-state source selection, unsupported offline
+causality and fallbacks that discarded available energy/log facts.
+
+The current development candidate adds only a typed shadow evidence packet to
+private Technical JSON. Stable receipt/fact IDs, safe observed values and
+explicit coverage limits prepare later claim binding; the current runtime
+supplies no claim bindings and does not enforce the packet. Answers, model
+prompts/rounds, native reads/writes and approval paths remain unchanged. See
+[the shadow design](HOMEBRAIN-V2-CLAIM-RECEIPT-CONTRACT-SHADOW-20261119.md).
+
 ## 17 November 2026 — alpha.145 runtime freeze and prospective gate
 
 Alpha.145 is the current V2 Preview candidate after PR #1724 merged at
