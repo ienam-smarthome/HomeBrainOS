@@ -711,8 +711,8 @@ def verify(directory: Path, *, reviews: Path | None = None) -> dict:
         expected_version = manifest.get("expected_addon_version")
         if expected_version and record["build"]["version"] != expected_version:
             version_mismatches.append(ident)
-        if manifest.get("benchmark_pack") == ALPHA152_PACK and (
-                document.get("package_version") != ALPHA152_VERSION
+        if manifest.get("benchmark_pack") in (ALPHA152_PACK, ALPHA153_PACK) and (
+                document.get("package_version") != expected_version
                 or document.get("package_version_provenance") not in (
                     "build_arg_and_bundled_manifest_match",
                     "bundled_manifest_no_build_arg",
@@ -734,7 +734,9 @@ def verify(directory: Path, *, reviews: Path | None = None) -> dict:
         _fail("Do not combine unverified or different add-on versions in a scored study")
     permission_evidence = _permission_evidence(
         source_exports,
-        include_preflight=manifest.get("benchmark_pack") == ALPHA152_PACK,
+        include_preflight=manifest.get("benchmark_pack") in (
+            ALPHA152_PACK, ALPHA153_PACK,
+        ),
     )
     if (reviews is not None and manifest.get("benchmark_pack") in PROSPECTIVE_PACKS and
             not (permission_evidence["per_client_read_enabled_reported"] is True and
