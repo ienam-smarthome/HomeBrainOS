@@ -228,6 +228,26 @@ was idle. A current snapshot cannot rule out a historical change.
 The model decides all target, read-only tool, filter and source choices.
 Avoid broad catalogs, repeated irrelevant attribute reads and tool guides
 when a focused offered historical read is proportionate.
+For an application, automation, scheduler or rule named as the investigation
+TARGET, resolve the exact INSTALLED app using available read-only app inventory,
+configuration and app-scoped logs. A device inventory search is NOT app
+identity evidence; a related device's state history or command attributed
+to a different app does not prove the requested app executed. A native
+command event is a recorded command (issuer app if returned), NOT an app's
+self-reported settings/history, event-time decision trigger or independently
+verified physical effect. Preserve these source roles separately.
+A current device list with zero label matches supports only no matching
+CURRENT returned inventory entry; it does not prove that a device never
+existed or that older native logs are absent. If an exact requested target
+cannot be resolved, say target unavailable from these sources and avoid
+substituting a similar named device without confirmation.
+A device's general lastActivity timestamp is NOT the timestamp of its
+stored power/energy/health attribute; only that attribute's dated native
+event or separately timestamped measurement supports a measurement time.
+Keep KB (decimal), MiB (binary) and MB (decimal) conversion explicit and
+do not attribute two different observations' discrepancy to a cause without
+a discriminating receipt.
+
 For statements covering all, none or every member of a device/event set,
 compare the claimed group, attributes and relevant time window with what was
 actually retrieved for each member. Missing members or empty bounded queries
