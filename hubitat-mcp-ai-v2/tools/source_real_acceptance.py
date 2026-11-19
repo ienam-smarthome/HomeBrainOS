@@ -311,7 +311,54 @@ ALPHA151_CASES = (
      "Explain what the bounded receipt cannot prove about retention. Do not change anything."),
 )
 
+ALPHA152_PACK = "alpha152-prospective-v1"
+ALPHA152_VERSION = "2.0.0-alpha.152"
+ALPHA152_CASES = (
+    ("a152-01", "snapshot_history_separation",
+     "Compare the hub's currently reported free memory and uptime with any "
+     "dated memory observations returned for the preceding hour. State what "
+     "is not observed between samples. Do not change anything."),
+    ("a152-02", "inventory_numeric_coverage",
+     "Count distinct devices whose returned numeric battery reading is "
+     "between 92 and 100 percent inclusive. Include the count and explain "
+     "whether the inventory pagination proves hub-wide coverage. Do not change anything."),
+    ("a152-03", "two_device_current_state",
+     "Compare {second_light} and {light} using their current stored switch and "
+     "brightness attributes. Say what is unavailable and avoid claiming "
+     "historical illumination. Do not change anything."),
+    ("a152-04", "source_roles",
+     "For {light}, inspect the most recent returned ON or OFF switch report "
+     "with its timestamp. Keep the reporter, notified listeners, native "
+     "command issuer, and initiating decision separate. Do not change anything."),
+    ("a152-05", "observed_time_difference",
+     "For {trv}, quote the last two returned operating-state observations "
+     "and calculate their elapsed separation from the timestamps. Explain "
+     "what the intervening time cannot prove. Do not change anything."),
+    ("a152-06", "automation_evidence_kind",
+     "For {automation}, identify the newest dated evidence of an execution "
+     "or decision, if any. Distinguish a configuration setting, an app's "
+     "self-reported history and a native event or log receipt. Do not change anything."),
+    ("a152-07", "cumulative_energy_provenance",
+     "For {metered_plug}, compare the stored cumulative energy value with "
+     "the newest returned dated energy event. Report both timestamps where "
+     "provided and do not invent a consumption interval. Do not change anything."),
+    ("a152-08", "health_measurement_origin",
+     "For {offline_device}, give the most recent independently dated "
+     "measurement event and latest reported health state if returned. "
+     "Separate stored device attributes, inventory activity time and any "
+     "verified reason for non-reporting. Do not change anything."),
+    ("a152-09", "contact_returned_bounds",
+     "Over the past ten hours, find the latest returned contact OPEN and "
+     "CLOSED reports for {contact_sensor}. State the oldest and newest "
+     "returned timestamps and any unobserved interval. Do not change anything."),
+    ("a152-10", "diagnostic_count_semantics",
+     "Summarize WARN diagnostic entries returned for the preceding three "
+     "hours, grouped by source. Separate returned rows, matched rows and "
+     "aggregate total without guessing what the total counts. Do not change anything."),
+)
+
 PROSPECTIVE_PACKS = {
+    ALPHA152_PACK: (ALPHA152_CASES, ALPHA152_VERSION),
     ALPHA151_PACK: (ALPHA151_CASES, ALPHA151_VERSION),
     ALPHA150_PACK: (ALPHA150_CASES, ALPHA150_VERSION),
     ALPHA149_PACK: (ALPHA149_CASES, ALPHA149_VERSION),
@@ -437,7 +484,9 @@ def _load_manifest(directory: Path) -> tuple[dict, str]:
     return doc, saved
 
 
-def _permission_evidence_from_export(document: dict) -> list[tuple[bool | None, bool | None, bool | None, bool | None]]:
+def _permission_evidence_from_export(
+    document: dict, *, include_preflight: bool = False,
+) -> list[tuple[bool | None, bool | None, bool | None, bool | None]]:
     """Extract only safe permission booleans from successful hub_get_info receipts.
 
     The top-level readEnabled/writeEnabled switches are GLOBAL, not per-token.
@@ -448,8 +497,24 @@ def _permission_evidence_from_export(document: dict) -> list[tuple[bool | None, 
     response = document.get("response")
     if not isinstance(response, dict):
         return []
+    calls = response.get("tool_calls", [])
+    if not isinstance(calls, list):
+        return []
+    receipts = list(calls)
+    if include_preflight:
+        preflight = document.get("permission_preflight_receipt")
+        # Only the new alpha152 contract accepts a separately recorded
+        # original native call. Prior cohorts cannot be retroactively repaired.
+        if (isinstance(preflight, dict)
+                and preflight.get("receipt_origin") == "acceptance_server_preflight"
+                and preflight.get("name") == "hub_get_info"
+                and preflight.get("arguments") == {}
+                and preflight.get("result_kind") == "tool_result"
+                and preflight.get("success") is True
+                and preflight.get("operation_executed") is True):
+            receipts.append(preflight)
     findings = []
-    for receipt in response.get("tool_calls", []):
+    for receipt in receipts:
         if not isinstance(receipt, dict) or receipt.get("success") is not True:
             continue
         if (receipt.get("operation_executed") is False or
@@ -493,9 +558,12 @@ def _permission_evidence_from_export(document: dict) -> list[tuple[bool | None, 
     return findings
 
 
-def _permission_evidence(documents: list[dict]) -> dict:
+def _permission_evidence(
+    documents: list[dict], *, include_preflight: bool = False,
+) -> dict:
     found = [row for doc in documents
-             for row in _permission_evidence_from_export(doc)]
+             for row in _permission_evidence_from_export(
+                 doc, include_preflight=include_preflight)]
     def consistent(index: int) -> bool | None:
         values = {row[index] for row in found if row[index] is not None}
         return next(iter(values)) if len(values) == 1 else None
@@ -548,6 +616,7 @@ def verify(directory: Path, *, reviews: Path | None = None) -> dict:
     model_hashes: set[str] = set()
     versions: set[str] = set()
     version_mismatches: list[str] = []
+    package_provenance_unverified: list[str] = []
     request_ids: set[str] = set()
     for case in manifest["cases"]:
         ident = case["id"]
@@ -586,6 +655,11 @@ def verify(directory: Path, *, reviews: Path | None = None) -> dict:
         expected_version = manifest.get("expected_addon_version")
         if expected_version and record["build"]["version"] != expected_version:
             version_mismatches.append(ident)
+        if manifest.get("benchmark_pack") == ALPHA152_PACK and (
+                document.get("package_version") != ALPHA152_VERSION
+                or document.get("package_version_provenance")
+                   != "build_arg_and_bundled_manifest_match"):
+            package_provenance_unverified.append(ident)
         records.append(record)
         source_exports.append(document)
         ids.append(ident)
@@ -595,9 +669,12 @@ def verify(directory: Path, *, reviews: Path | None = None) -> dict:
     if reviews is not None and (carryover or attempted_commands):
         _fail("Do not rate a study with reported prior context or a device-command attempt")
     if reviews is not None and (len(model_hashes) != 1 or len(versions) != 1 or
-                                version_mismatches):
-        _fail("Do not combine different models or add-on versions in a scored study")
-    permission_evidence = _permission_evidence(source_exports)
+                                version_mismatches or package_provenance_unverified):
+        _fail("Do not combine unverified or different add-on versions in a scored study")
+    permission_evidence = _permission_evidence(
+        source_exports,
+        include_preflight=manifest.get("benchmark_pack") == ALPHA152_PACK,
+    )
     if (reviews is not None and manifest.get("benchmark_pack") in PROSPECTIVE_PACKS and
             not (permission_evidence["per_client_read_enabled_reported"] is True and
                  permission_evidence["per_client_write_enabled_reported"] is False)):
@@ -626,6 +703,7 @@ def verify(directory: Path, *, reviews: Path | None = None) -> dict:
                                            if records and manifest.get("expected_addon_version")
                                            else None),
         "addon_version_mismatch_case_ids": version_mismatches,
+        "package_provenance_unverified_case_ids": package_provenance_unverified,
         "real_source_verified_from_export": False,
         "first_attempt_independently_verified": False,
         "read_only_permission_independently_verified": False,
@@ -637,6 +715,8 @@ def verify(directory: Path, *, reviews: Path | None = None) -> dict:
             if carryover or attempted_commands else
             "requires_expected_addon_version"
             if version_mismatches else
+            "requires_verified_package_provenance"
+            if package_provenance_unverified else
             "requires_source_reported_read_only_client"
             if (manifest.get("benchmark_pack") in PROSPECTIVE_PACKS and
                 not (permission_evidence["per_client_read_enabled_reported"] is True and

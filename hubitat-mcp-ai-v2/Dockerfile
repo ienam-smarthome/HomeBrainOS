@@ -8,6 +8,9 @@ LABEL io.hass.version="${BUILD_VERSION}" io.hass.arch="${BUILD_ARCH}"
 RUN apk add --no-cache python3 py3-pip tzdata
 WORKDIR /app
 COPY rootfs/app /app
+# Bundle the exact add-on config alongside build-time version metadata so
+# acceptance rejects a mismatched or unverified package identity.
+COPY config.yaml /app/addon-config.yaml
 COPY tools/first_answer_audit.py tools/source_real_acceptance.py /app/
 ENV HOMEBRAIN_PACKAGE_VERSION="${BUILD_VERSION}"
 RUN pip3 install --break-system-packages --no-cache-dir -r /app/requirements.txt

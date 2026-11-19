@@ -1,5 +1,23 @@
 # HomeBrainOS development agent instructions
 
+## 19 November 2026 — alpha.152 original permission preflight candidate
+
+The original installed alpha.151 ten-case capture is preserved and remains
+unpromotable. An independent advisory review found 4/10 complete useful
+answers, including a missed battery device, an incorrect elapsed interval and
+stored attributes misrepresented as fresh measurements. A calibrated
+claim-level grounded-claim percentage is not yet measured. Read ON / Write OFF
+is not source-verified in the alpha.151 saved cohort.
+
+Alpha.152 records the real already-executed `hub_get_info` per-client preflight
+as a separately labelled PRIVATE receipt, not a model tool call; only the new
+alpha152 verifier may count that original source. It also verifies build
+metadata against an embedded config manifest before capturing any new first
+attempt and seals distinct unseen `alpha152-prospective-v1` prompts.
+No write, approval, prompt, answer, model round or source routing change.
+Quality improvement is NOT claimed. See
+[the alpha.152 note](docs/HOMEBRAIN-V2-ALPHA152-ACCEPTANCE-SOURCE-PROVENANCE-20261119.md).
+
 ## 19 November 2026 — alpha.151 publication-scope candidate
 
 Alpha.150 failed its semantic promotion gates. Alpha.151 separates contrastive
