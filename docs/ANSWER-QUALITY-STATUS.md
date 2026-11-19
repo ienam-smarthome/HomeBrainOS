@@ -1,5 +1,16 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 19 November 2026 — alpha.151 publication-scope candidate; quality unmeasured
+
+Alpha.151 fixes a demonstrated clause-boundary weakness in the read-only
+historical publication check and retains safe requested `since`/`until` bounds
+in bounded fallback summaries. It also packages the merged claim/receipt shadow,
+which remains non-enforcing private telemetry. The new
+`alpha151-prospective-v1` cohort has new case IDs and wording; alpha.150 results
+must not be reused as post-change evidence. No installed alpha.151 answer has
+been scored, so quality and promotion readiness remain **not measured**. See
+[the engineering note](HOMEBRAIN-V2-ALPHA151-PUBLICATION-SCOPE-20261119.md).
+
 ## 19 November 2026 — alpha.150 failed; typed claim/receipt shadow candidate
 
 Private source review of all ten installed alpha.150 prospective first answers

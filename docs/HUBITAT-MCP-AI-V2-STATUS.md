@@ -1,5 +1,16 @@
 # Hubitat MCP AI v2 — architecture and live acceptance
 
+## 19 November 2026 — alpha.151 bounded-publication candidate
+
+Alpha.151 separates categorical historical claims joined to limitations by a
+semicolon or contrastive conjunction, preventing the limitation from exempting
+an unsupported absence or continuity assertion. Safe original `since`/`until`
+scope is retained in bounded fallback summaries. No new source read, model
+round, write or approval change is introduced. The package includes the merged
+non-enforcing claim/receipt shadow. A distinct `alpha151-prospective-v1` pack is
+sealed for installed evaluation; alpha.151 quality remains unmeasured. See
+[the design and gate](HOMEBRAIN-V2-ALPHA151-PUBLICATION-SCOPE-20261119.md).
+
 ## 19 November 2026 — alpha.150 failed; claim/receipt shadow foundation
 
 The installed sealed alpha.150 cohort is complete and source-reviewed. Scores:

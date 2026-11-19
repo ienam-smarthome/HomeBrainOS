@@ -423,5 +423,29 @@ class Alpha145ProspectiveAcceptanceTests(unittest.TestCase):
         self.assertNotIn("PRIVATE-", json.dumps(result))
 
 
+class Alpha151ProspectivePackTests(unittest.TestCase):
+    def test_pack_is_distinct_version_bound_and_answer_free(self):
+        with tempfile.TemporaryDirectory() as root:
+            directory = Path(root) / "study"
+            result = acceptance.init_labels(
+                alpha145_config()["labels"], directory,
+                pack=acceptance.ALPHA151_PACK,
+            )
+            manifest = json.loads(
+                (directory / acceptance.MANIFEST).read_text(encoding="utf-8")
+            )
+        self.assertEqual(result["benchmark_pack"], acceptance.ALPHA151_PACK)
+        self.assertEqual(result["expected_addon_version"], acceptance.ALPHA151_VERSION)
+        self.assertEqual(
+            [case["id"] for case in manifest["cases"]],
+            [f"a151-{number:02d}" for number in range(1, 11)],
+        )
+        serialized = json.dumps(manifest)
+        self.assertNotIn("a150-", serialized)
+        self.assertNotIn("answer_key", serialized)
+        self.assertTrue(all(case["question"].endswith("Do not change anything.")
+                            for case in manifest["cases"]))
+
+
 if __name__ == "__main__":
     unittest.main()

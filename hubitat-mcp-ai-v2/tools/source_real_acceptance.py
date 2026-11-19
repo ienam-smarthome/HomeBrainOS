@@ -266,7 +266,53 @@ ALPHA150_CASES = (
      "or gaps. Do not change anything."),
 )
 
+ALPHA151_PACK = "alpha151-prospective-v1"
+ALPHA151_VERSION = "2.0.0-alpha.151"
+ALPHA151_CASES = (
+    ("a151-01", "health_time_boundary",
+     "Report the currently returned hub health observations, including memory. "
+     "Which evidence, if any, covers the preceding 90 minutes? Keep snapshot and "
+     "history claims separate. Do not change anything."),
+    ("a151-02", "inventory_aggregation",
+     "Across the returned inventory, count devices with a numeric battery value "
+     "of 95 percent or more. State the count and the evidence that makes it a "
+     "complete or incomplete hub-wide result. Do not change anything."),
+    ("a151-03", "two_device_attributes",
+     "Give the current switch and level values returned for {light} and "
+     "{second_light}. Identify missing attributes and do not turn a current "
+     "snapshot into a history claim. Do not change anything."),
+    ("a151-04", "event_roles",
+     "Inspect the newest returned switch report for {second_light}. Separate the "
+     "reporting device, notified listeners, recorded command issuer and any role "
+     "for which no evidence was returned. Do not change anything."),
+    ("a151-05", "continuity_boundary",
+     "Find the newest two returned operating-state observations for {trv} and "
+     "include both timestamps. What do these samples establish, and not establish, "
+     "about the interval between them? Do not change anything."),
+    ("a151-06", "app_execution_boundary",
+     "Find the newest returned execution or decision evidence for {automation}. "
+     "Keep installed settings separate and explain the exact scope of an empty "
+     "event or log result. Do not change anything."),
+    ("a151-07", "stored_and_event_values",
+     "For {metered_plug}, report the current stored energy total and the newest "
+     "returned energy-history value, with timestamps where available. Preserve "
+     "both values even when comparison is limited. Do not change anything."),
+    ("a151-08", "activity_health_causality",
+     "For {offline_device}, distinguish inventory activity, the newest returned "
+     "health observation and a genuine measurement event. State only causes that "
+     "the returned evidence directly establishes. Do not change anything."),
+    ("a151-09", "bounded_contact_history",
+     "Within the past eight hours, report the newest returned OPEN and CLOSED "
+     "observations for {contact_sensor}, if present. State the requested and "
+     "returned bounds and any interval that remains unverified. Do not change anything."),
+    ("a151-10", "bounded_log_summary",
+     "For the past two hours of ERROR diagnostics, summarize returned entries by "
+     "reported source and keep matched, returned and aggregate counts distinct. "
+     "Explain what the bounded receipt cannot prove about retention. Do not change anything."),
+)
+
 PROSPECTIVE_PACKS = {
+    ALPHA151_PACK: (ALPHA151_CASES, ALPHA151_VERSION),
     ALPHA150_PACK: (ALPHA150_CASES, ALPHA150_VERSION),
     ALPHA149_PACK: (ALPHA149_CASES, ALPHA149_VERSION),
     ALPHA145_PACK: (ALPHA145_CASES, ALPHA145_VERSION),

@@ -1,5 +1,15 @@
 # HomeBrainOS development agent instructions
 
+## 19 November 2026 — alpha.151 publication-scope candidate
+
+Alpha.150 failed its semantic promotion gates. Alpha.151 separates contrastive
+publication claims so a limitation cannot exempt a categorical absence or
+continuity assertion, and preserves safe `since`/`until` bounds in fallback
+summaries. It carries the already-merged typed claim/receipt shadow without
+enforcement. Validate only with the distinct `alpha151-prospective-v1` pack;
+do not reuse or pool alpha.150 evidence. See
+[the alpha.151 note](docs/HOMEBRAIN-V2-ALPHA151-PUBLICATION-SCOPE-20261119.md).
+
 ## 19 November 2026 — typed claim/receipt contract shadow candidate
 
 The complete private alpha.150 prospective cohort failed promotion: 68/80
