@@ -21,30 +21,45 @@ STUDY = Path("/data/homebrain-v2-alpha152-acceptance")
 PRIVATE = {"Cache-Control": "no-store"}
 
 
+PACKAGE_MANIFEST = Path(__file__).with_name("addon-config.yaml")
+TRUSTED_PACKAGE_PROVENANCE = frozenset({
+    "build_arg_and_bundled_manifest_match",
+    "bundled_manifest_no_build_arg",
+})
+
+
 def _package_identity() -> tuple[str | None, str]:
-    """Report independent build-arg/embedded-manifest consistency, not UI version."""
+    """Use the image's bundled config even when Supervisor omits BUILD_VERSION.
+
+    The bundled manifest and running app version must both match the sealed
+    alpha152 pack. A supplied but conflicting BUILD_VERSION always fails.
+    Neither the user-provided label data nor the study's manifest is trusted
+    as the package's version source.
+    """
     build_version = os.environ.get("HOMEBRAIN_PACKAGE_VERSION", "").strip()
-    manifest = Path(__file__).with_name("addon-config.yaml")
     embedded_version = None
     try:
-        if manifest.is_file():
-            match = re.search(
-                r'^version:\\s*["\\\']?([^"\\\'\\s]+)',
-                manifest.read_text(encoding="utf-8"), re.M,
-            )
-            embedded_version = match.group(1) if match else None
+        for line in PACKAGE_MANIFEST.read_text(encoding="utf-8").splitlines():
+            if not line.startswith("version:"):
+                continue
+            # A literal YAML top-level version key avoids ambiguous escaped
+            # regex syntax. This matches both quoted and bare version values.
+            candidate = line.partition(":")[2].strip().strip('"').strip("'")
+            if re.fullmatch(r"[A-Za-z0-9._+-]{1,80}", candidate):
+                embedded_version = candidate
+            break
     except (OSError, UnicodeError):
         pass
-    if build_version and build_version == embedded_version:
-        return build_version, "build_arg_and_bundled_manifest_match"
+
     if build_version and embedded_version:
+        if build_version == embedded_version:
+            return build_version, "build_arg_and_bundled_manifest_match"
         return None, "build_arg_bundled_manifest_conflict"
     if embedded_version:
         return embedded_version, "bundled_manifest_no_build_arg"
     if build_version:
         return build_version, "build_arg_no_bundled_manifest"
     return None, "unverified"
-
 
 class Labels(BaseModel):
     labels: dict[str, str]
@@ -149,10 +164,11 @@ async def capture(case_id: str, body: CaptureConsent, request: Request):
         raise HTTPException(409, "This study requires exactly V2 Preview alpha.152")
     package_version, provenance = _package_identity()
     if (package_version != ALPHA152_VERSION
-            or provenance != "build_arg_and_bundled_manifest_match"):
+            or provenance not in TRUSTED_PACKAGE_PROVENANCE):
         raise HTTPException(
-            409, "Installed package build version and bundled manifest must "
-                 "agree on alpha.152 before a first attempt may be captured",
+            409, "Cannot verify the installed alpha.152 bundle and runtime "
+                 "version. Refresh/rebuild the add-on from the current repository "
+                 "before capturing any first attempt.",
         )
     state = app.state
     if state.configuration_error or state.model is None or state.mcp is None:
