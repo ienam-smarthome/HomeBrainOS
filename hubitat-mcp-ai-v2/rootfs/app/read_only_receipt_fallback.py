@@ -7,7 +7,7 @@ model did not return usable prose. No writes, tool calls or additional AI rounds
 """
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 import re
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -243,6 +243,108 @@ def _inventory_activity(receipts: list[dict], device_ids: set[str]) -> dict[str,
     return reported
 
 
+def _returned_past_log_groups(receipts: list[dict]) -> str | None:
+    """Bounded, receipt-scoped log counts when model prose cannot be published.
+
+    Read-only original log receipt ONLY: no messages, app config or inferred
+    causes, no log-retention or cross-page deduplication claim. Never combine
+    potentially overlapping queries. Sanitise names rather than repeating
+    untrusted log text or credentials in user-facing output.
+    """
+    best: tuple[int, int, dict, dict, list] | None = None
+    for idx, item in enumerate(receipts[:_MAX_LOG_SCANNED_RECEIPTS], 1):
+        if (not isinstance(item, dict) or item.get("name") != "hub_get_logs"
+                or item.get("success") is not True
+                or item.get("operation_executed") is False):
+            continue
+        args = item.get("arguments")
+        if not isinstance(args, dict) or args.get("mode") != "past":
+            continue
+        envelope, native = _response(item)
+        if (not isinstance(envelope, dict) or not isinstance(native, dict)
+                or envelope.get("isError") is True or native.get("isError") is True
+                or native.get("mode") != "past"):
+            continue
+        rows = native.get("entries")
+        if not isinstance(rows, list):
+            continue
+        if best is None or len(rows) > best[0]:
+            best = len(rows), idx, args, native, rows
+    if best is None:
+        return None
+    total_returned, idx, args, native, rows = best
+    # Count at most 250 original rows, then explicitly flag omitted rows.
+    counts: Counter[str] = Counter()
+    ungroupable = 0
+    for entry in rows[:250]:
+        if not isinstance(entry, dict):
+            ungroupable += 1
+            continue
+        name = entry.get("name")
+        if (not isinstance(name, str) or not 0 < len(name) <= 60
+                or any(ord(ch) < 32 for ch in name)
+                or _LOG_SECRET.search(name) or _LOG_INSTRUCTION.search(name)
+                or _SAFE_LABEL.sub("", name) != name):
+            ungroupable += 1
+            continue
+        counts[name] += 1
+    # An opaque log with no safely attributable source names cannot answer a
+    # source-grouping question. Keep the original no-evidence fallback contract.
+    if not counts:
+        return None
+    entries = [
+        "**Investigation incomplete — bounded source-only log summary.** "
+        "These are grouped *returned* native past-log entries, not proof of "
+        "complete retention or why a source logged a warning.",
+    ]
+    filters = []
+    for key in ("level", "since", "until", "appId", "limit"):
+        value = args.get(key)
+        if (type(value) is int and value >= 0) or (
+            isinstance(value, str) and 0 < len(value) <= 70
+            and re.fullmatch(r"[\w.:+-]+", value)
+        ):
+            filters.append(f"{key}={value}")
+    entries.append(
+        f"**Receipt {idx}: `hub_get_logs`** "
+        + ("(" + ", ".join(filters) + "). " if filters else "")
+        + f"{total_returned} entries actually returned."
+    )
+    for key, label in (("count", "Source count"), ("matched", "Reported matches")):
+        value = native.get(key)
+        if type(value) is int and value >= 0:
+            entries.append(f"- {label}: {value}.")
+    value = native.get("total")
+    if type(value) is int and value >= 0:
+        entries.append(
+            f"- Source aggregate total: {value}; its time/level scope "
+            "is not established by this receipt."
+        )
+    if counts:
+        entries.append("**Returned entries by reported source**")
+        for name, count in sorted(counts.items(), key=lambda p: (-p[1], p[0].lower()))[:12]:
+            entries.append(f"- {name}: {count}")
+        if len(counts) > 12:
+            entries.append(
+                f"{len(counts) - 12} additional source labels are omitted."
+            )
+    if ungroupable:
+        entries.append(f"{ungroupable} returned rows had unpublishable source labels.")
+    if total_returned > 250:
+        entries.append(
+            f"Only the first 250 of {total_returned} returned rows were grouped."
+        )
+    if (native.get("truncated") is True or native.get("response_too_large") is True
+            or (isinstance(args.get("limit"), int)
+                and args["limit"] > 0 and total_returned >= args["limit"])):
+        entries.append("The source row limit/truncation may exclude other matching entries.")
+    entries.append(
+        "No device command or additional investigation was performed for this "
+        "fallback; unreturned entries and gaps remain unverified."
+    )
+    return "\n".join(entries)
+
+
 def source_only_partial_answer(
     question: str, receipts: list[dict], *, timezone_name: str | None = None,
     lead_with_latest_heating: bool = False,
@@ -318,7 +420,7 @@ def source_only_partial_answer(
                     )
 
     if not records and not command_rows:
-        return None
+        return _returned_past_log_groups(receipts)
 
     # Prioritise sources showing DIFFERENT reported values, but do not assume
     # any device is the focal output or any event is the physical transition.
@@ -332,11 +434,11 @@ def source_only_partial_answer(
     candidates.sort(key=lambda c: (c[0], c[1]), reverse=True)
 
     lines = [
-        "**Investigation incomplete — source-only partial result.** "
-        "A reliable complete causal explanation could not be published. The following "
-        "are original recorded command rows and reported states from this "
-        "request's successful read-only MCP histories. They do not establish "
-        "a controller's internal trigger or an independent physical effect.",
+        "**Source-only partial result — bounded observations.** "
+        "The following " + ("recorded command and state-report rows" if command_rows
+                  else "state-report rows") + " come from successful native "
+        "read-only receipts. The returned rows do not establish full "
+        "retention, an internal controller trigger or independent physical effect.",
     ]
     if lead_with_latest_heating:
         latest_heating = []

@@ -64,6 +64,7 @@ from causal_outcome_frontier import (
     causal_outcome_frontier, OUTCOME_FIRST_CHECKPOINT,
 )
 from read_only_receipt_fallback import source_only_partial_answer
+from review_answer_preservation import preserve_receipt_anchored_answer
 from historical_publication import historical_publication_check
 from claim_receipt_contract import build_claim_receipt_contract
 from native_read_size_refusal import native_read_size_refusal
@@ -227,6 +228,26 @@ was idle. A current snapshot cannot rule out a historical change.
 The model decides all target, read-only tool, filter and source choices.
 Avoid broad catalogs, repeated irrelevant attribute reads and tool guides
 when a focused offered historical read is proportionate.
+For an application, automation, scheduler or rule named as the investigation
+TARGET, resolve the exact INSTALLED app using available read-only app inventory,
+configuration and app-scoped logs. A device inventory search is NOT app
+identity evidence; a related device's state history or command attributed
+to a different app does not prove the requested app executed. A native
+command event is a recorded command (issuer app if returned), NOT an app's
+self-reported settings/history, event-time decision trigger or independently
+verified physical effect. Preserve these source roles separately.
+A current device list with zero label matches supports only no matching
+CURRENT returned inventory entry; it does not prove that a device never
+existed or that older native logs are absent. If an exact requested target
+cannot be resolved, say target unavailable from these sources and avoid
+substituting a similar named device without confirmation.
+A device's general lastActivity timestamp is NOT the timestamp of its
+stored power/energy/health attribute; only that attribute's dated native
+event or separately timestamped measurement supports a measurement time.
+Keep KB (decimal), MiB (binary) and MB (decimal) conversion explicit and
+do not attribute two different observations' discrepancy to a cause without
+a discriminating receipt.
+
 For statements covering all, none or every member of a device/event set,
 compare the claimed group, attributes and relevant time window with what was
 actually retrieved for each member. Missing members or empty bounded queries
@@ -945,6 +966,8 @@ class Agent:
         source_review_invoked = False
         source_review_kind = None
         source_review_receipt_count = None
+        source_review_candidate = ""
+        source_review_answer_integrity_status = "not_invoked"
         fresh_source_recovery_invoked = False
         causal_follow_through_invoked = False
         causal_follow_through_candidate = ""
@@ -1399,6 +1422,7 @@ class Agent:
                     else "not_invoked"
                 ),
                 "answer_stage_trace": answer_stage_trace,
+                "source_review_answer_integrity_status": source_review_answer_integrity_status,
                 "available_read_sources": source_catalog,
                 "current_read_source_progress": current_source_progress(receipts),
                 "historical_measurement_source_frontier": historical_source_frontier(
@@ -1830,6 +1854,22 @@ class Agent:
                     partial = original_source_partial("empty_after_source_review")
                     if partial is not None:
                         return partial
+                if (text and source_review_invoked and not final_claim_audit_invoked
+                        and not native_action_receipts_seen
+                        and not current_write_attempted()
+                        and source_review_candidate):
+                    # A review can return a self-assessment instead of the
+                    # user's requested source facts. Only restore an earlier
+                    # receipt-anchored draft when no fresh read justified losing
+                    # multiple original dated observations. Publication guards
+                    # still apply to the selected candidate.
+                    text, source_review_answer_integrity_status = (
+                        preserve_receipt_anchored_answer(
+                            source_review_candidate, text, receipts,
+                            receipt_count_at_draft=source_review_receipt_count,
+                            timezone_name=clock_timezone_name,
+                        )
+                    )
                 # A text-only "please confirm" is not a pending UI approval.
                 # Reuse one bounded model opportunity to select an advertised
                 # native writer from fresh device details. All real writes still
@@ -1995,6 +2035,7 @@ class Agent:
                     candidate_answer=text,
                 ):
                     capture_answer_stage("pre_source_review", text)
+                    source_review_candidate = text
                     source_review_invoked = True
                     source_review_receipt_count = len(receipts)
                     source_review_kind = (

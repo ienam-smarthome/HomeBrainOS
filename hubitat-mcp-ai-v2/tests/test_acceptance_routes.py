@@ -18,7 +18,7 @@ ADDON = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ADDON / "rootfs" / "app"), str(ADDON / "tools")]
 
 from acceptance_routes import router
-from source_real_acceptance import ALPHA145_LABEL_FIELDS, ALPHA152_VERSION
+from source_real_acceptance import ALPHA145_LABEL_FIELDS, ALPHA153_VERSION
 
 
 class Hub:
@@ -59,7 +59,7 @@ class Model:
 
 class AcceptanceWorkflowTests(unittest.IsolatedAsyncioTestCase):
     async def test_seal_permission_capture_and_offline_report(self):
-        app = FastAPI(version=ALPHA152_VERSION)
+        app = FastAPI(version=ALPHA153_VERSION)
         app.include_router(router)
         consent = {"model_and_private_evidence_consent": True}
         state = app.state
@@ -80,7 +80,7 @@ class AcceptanceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 setup = await client.post(prefix + "prepare", json={"labels": labels})
                 self.assertEqual(setup.status_code, 200, setup.text)
                 self.assertEqual(setup.json()["cases_frozen"], 10)
-                self.assertEqual(setup.json()["benchmark_pack"], "alpha152-prospective-v1")
+                self.assertEqual(setup.json()["benchmark_pack"], "alpha153-prospective-v1")
                 cases = (await client.get(prefix + "status")).json()["cases"]
                 self.assertEqual(len(cases), 10)
 
@@ -90,7 +90,7 @@ class AcceptanceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(state.model.calls, 0)
                 package_identity = patch(
                     "acceptance_routes._package_identity",
-                    return_value=(ALPHA152_VERSION, "build_arg_and_bundled_manifest_match"),
+                    return_value=(ALPHA153_VERSION, "build_arg_and_bundled_manifest_match"),
                 )
                 package_identity.start()
                 self.addCleanup(package_identity.stop)
@@ -106,8 +106,8 @@ class AcceptanceWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
                 export = await client.get(prefix + cases[0]["id"] + "/export")
                 self.assertEqual(export.json()["question"], cases[0]["question"])
-                self.assertEqual(export.json()["ui_version"], ALPHA152_VERSION)
-                self.assertEqual(export.json()["package_version"], ALPHA152_VERSION)
+                self.assertEqual(export.json()["ui_version"], ALPHA153_VERSION)
+                self.assertEqual(export.json()["package_version"], ALPHA153_VERSION)
                 self.assertEqual(export.json()["package_version_provenance"],
                                  "build_arg_and_bundled_manifest_match")
                 original = export.json()["permission_preflight_receipt"]
@@ -140,15 +140,15 @@ class AcceptanceWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_real_bundled_manifest_allows_capture_without_build_argument(self):
-        """Regression for the installed alpha152 'unverified (unverified)' blocker."""
-        app = FastAPI(version=ALPHA152_VERSION)
+        """Regression for the installed alpha153 'unverified (unverified)' blocker."""
+        app = FastAPI(version=ALPHA153_VERSION)
         app.include_router(router)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             manifest_file = root / "addon-config.yaml"
             manifest_file.write_text(
                 'name: "Hubitat MCP AI v2 (Preview)"\n'
-                'version: "2.0.0-alpha.152"\n'
+                'version: "2.0.0-alpha.153"\n'
                 'slug: hubitat_mcp_ai_v2\n',
                 encoding="utf-8",
             )
@@ -175,14 +175,14 @@ class AcceptanceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                     case = (await client.get(prefix + "status")).json()["cases"][0]
                     preflight_status = (await client.get(prefix + "status")).json()
                     self.assertEqual(preflight_status["package_version"],
-                                     ALPHA152_VERSION)
+                                     ALPHA153_VERSION)
                     self.assertEqual(preflight_status["package_version_provenance"],
                                      "bundled_manifest_no_build_arg")
                     captured = await client.post(prefix + case["id"] + "/capture",
                         json={"model_and_private_evidence_consent": True})
                     self.assertEqual(captured.status_code, 200, captured.text)
                     original = (await client.get(prefix + case["id"] + "/export")).json()
-                    self.assertEqual(original["package_version"], ALPHA152_VERSION)
+                    self.assertEqual(original["package_version"], ALPHA153_VERSION)
                     self.assertEqual(original["package_version_provenance"],
                                      "bundled_manifest_no_build_arg")
                     self.assertEqual(original["permission_preflight_receipt"][
@@ -193,12 +193,12 @@ class AcceptanceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                     self.assertFalse(report["read_only_permission_independently_verified"])
 
     async def test_conflicting_or_missing_bundled_version_is_denied_without_attempt(self):
-        app = FastAPI(version=ALPHA152_VERSION)
+        app = FastAPI(version=ALPHA153_VERSION)
         app.include_router(router)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             manifest_file = root / "addon-config.yaml"
-            manifest_file.write_text('version: "2.0.0-alpha.152"\n',
+            manifest_file.write_text('version: "2.0.0-alpha.153"\n',
                                      encoding="utf-8")
             state = app.state
             state.acceptance_directory = root / "private-study"
