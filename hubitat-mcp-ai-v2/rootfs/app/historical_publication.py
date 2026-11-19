@@ -9,7 +9,8 @@ import re
 
 from investigation_source_ledger import _response, _SAFE_FIELD, _SAFE_ID
 
-_CLAUSES = re.compile(r"\n+|(?<=[.!?])\s+")
+_CLAUSES = re.compile(r"\n+|(?<=[.!?;])\s+|\s+(?:but|however|yet)\s+", re.I)
+_SAFE_SCOPE = re.compile(r"^[A-Za-z0-9:+._-]{1,80}$")
 _COVERAGE = re.compile(
     r"\b(?:complete|full|entire|exhaustive)\s+(?:\w+[- ]?){0,4}"
     r"(?:history|coverage|interval|window|set of|week|day|period)\b"
@@ -24,6 +25,8 @@ _UNBOUNDED_SCOPE = re.compile(
     r"\b(?:proves?|establishes?|confirms?|shows?)\s+(?:that\s+)?"
     r"[^.!?]{0,75}\b(?:remained|stayed|continued)\b[^.!?]{0,55}"
     r"\b(?:throughout|between|entire|continuously)\b"
+    r"|\b(?:remained|stayed|continued)\b[^.!?]{0,55}"
+    r"\b(?:throughout|between|the\s+entire|continuously)\b"
     r"|\b(?:hub|system|store|log)\s+(?:saw|recorded|logged|contains?)\s+"
     r"(?:no|zero)\s+(?:\w+[- ]?){0,5}(?:events?|entries|records|changes)\b"
     r"|\b(?:did\s+not|never|has\s+not|have\s+not)\s+"
@@ -53,7 +56,8 @@ _LIMITED = re.compile(
     r"(?:prove|establish|confirm|guarantee|show|verify|infer|claim|assert|determine|coverage|"
     r"cause|reason|retention|complete|full|entire|all|every)\b"
     r"|\b(?:might|may|could|possibly)\s+(?:have\s+|be\s+)?"
-    r"(?:explain|explain(?:ed)?\s+by|caus(?:e|ed)|update|refresh|emit|generate|record)\b",
+    r"(?:explain|explain(?:ed)?\s+by|caus(?:e|ed)|update|refresh|emit|generate|record|"
+    r"remain(?:ed)?|stay(?:ed)?|continu(?:e|ed))\b",
     re.I,
 )
 _MATCHES_ONLY = re.compile(
@@ -101,6 +105,10 @@ def _scoped_receipts(receipts: list[dict]) -> list[dict]:
             value = args.get(key)
             if type(value) is int and value >= 0:
                 scope[key] = value
+        for key in ("since", "until"):
+            value = args.get(key)
+            if isinstance(value, str) and _SAFE_SCOPE.fullmatch(value):
+                scope[key] = value
         if type(data.get("matched")) is int and data["matched"] >= 0:
             scope["matched"] = data["matched"]
         if type(data.get("total")) is int and data["total"] >= 0:
@@ -135,7 +143,8 @@ def historical_publication_check(answer: str, receipts: list[dict]) -> tuple[str
     for scope in scopes[:6]:
         filters = ", ".join(
             f"{key}={scope[key]}" for key in ("deviceId", "appId", "attribute", "level",
-                                              "hoursBack", "limit") if key in scope
+                                              "since", "until", "hoursBack", "limit")
+            if key in scope
         )
         detail = f" ({filters})" if filters else ""
         counts = f"{scope['returned']} returned"

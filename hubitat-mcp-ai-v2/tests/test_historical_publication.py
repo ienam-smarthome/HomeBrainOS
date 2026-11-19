@@ -107,10 +107,54 @@ class HistoricalPublicationTests(unittest.TestCase):
             "All returned rows in that window were OFF reports.",
             "These receipts cannot establish continuous logging.",
             "The returned rows do not prove that the device remained idle throughout.",
+            "The device may have stayed idle throughout the interval.",
             "The timestamps differ. Command retries might explain the discrepancy.",
         ):
             with self.subTest(draft=draft):
                 self.assertEqual(historical_publication_check(draft, [events]), (None, ""))
+
+    def test_qualification_does_not_exempt_a_separate_categorical_claim(self):
+        events = receipt(
+            "hub_list_device_events",
+            {"deviceId": 702, "attribute": "switch", "hoursBack": 24},
+            {"events": []},
+        )
+        for draft in (
+            "This read cannot prove retention; the hub recorded no events in the period.",
+            "This read cannot prove retention but the hub recorded no events in the period.",
+            "Coverage is unverified; the device stayed idle throughout the interval.",
+            "Coverage is unknown, however the system logged zero changes.",
+        ):
+            with self.subTest(draft=draft):
+                reason, summary = historical_publication_check(draft, [events])
+                self.assertEqual(reason, "unverified_history_or_retention_coverage")
+                self.assertIn("Bounded history evidence", summary)
+
+    def test_original_time_scope_is_preserved_in_bounded_summary(self):
+        logs = receipt(
+            "hub_get_logs",
+            {"mode": "past", "appId": 701, "level": "warn",
+             "since": "2030-11-18T12:00:00+00:00",
+             "until": "2030-11-18T15:00:00Z", "limit": 100},
+            {"entries": [], "matched": 0, "total": 14500},
+        )
+        reason, summary = historical_publication_check(
+            "The system logged zero warning entries.", [logs],
+        )
+        self.assertEqual(reason, "unverified_history_or_retention_coverage")
+        self.assertIn("since=2030-11-18T12:00:00+00:00", summary)
+        self.assertIn("until=2030-11-18T15:00:00Z", summary)
+
+    def test_unsafe_time_scope_is_not_published(self):
+        logs = receipt(
+            "hub_get_logs",
+            {"mode": "past", "since": "<script>alert(1)</script>"},
+            {"entries": []},
+        )
+        _, summary = historical_publication_check(
+            "The system logged zero entries.", [logs],
+        )
+        self.assertNotIn("script", summary)
 
 
 class HistoricalPublicationAgentTests(unittest.IsolatedAsyncioTestCase):
