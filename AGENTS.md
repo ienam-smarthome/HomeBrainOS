@@ -1,5 +1,24 @@
 # HomeBrainOS development agent instructions
 
+## 19 November 2026 — alpha.153 source-grounded publication candidate
+
+Alpha152's private original ten-case cohort remains frozen and unpromoted
+(3/10 advisory useful complete, two failed). Alpha153 is a distinct
+prospective version/pack and uses receipt-derived answer preservation when
+a review drops original dated observations without any successful new read.
+Safe source-only log fallback now groups returned native past-log rows
+without conflating `total` with the query scope; state fallback no longer
+pretends command rows were returned. Typed shadow roles separate stored
+attributes, generic activity, dated events, recorded command issuers,
+notified listeners, app identity/config and native logs. A model-owned
+read-only application execution review can check exact installed app
+identity rather than equate it with a device label. These are bounded
+generalisations, not a model-quality pass. No native write/approval path
+changes. See
+[alpha153 publication evidence proposal](docs/HOMEBRAIN-V2-ALPHA153-PUBLICATION-EVIDENCE-20261119.md).
+Do not rerun or modify previous cohorts. Require fresh installed
+original-source alpha153 scoring and charter gates before promotion.
+
 ## 19 November 2026 — alpha.152 installed package identity hotfix candidate
 
 A user-installed alpha152 screenshot shows `Add-on package unverified
