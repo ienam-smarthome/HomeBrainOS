@@ -7,6 +7,7 @@ the original receipts as the sole authority.
 from __future__ import annotations
 
 from collections import Counter
+from datetime import datetime
 import hashlib
 import math
 import re
@@ -143,15 +144,40 @@ def _state_facts(receipt_id: str, data: dict, tool: str) -> list[dict]:
             facts.append({
                 "fact_id": f"{receipt_id}.state.{len(facts) + 1}",
                 "fact_type": "reported_current_state",
+                "source_role": (
+                    "stored_device_inventory_attribute" if tool == "hub_list_devices"
+                    else "stored_individual_device_attribute"
+                ),
                 "subject": {"device_id": device_id},
                 "field": safe_field,
                 "value": safe_value,
+                "attribute_specific_event_timestamp_proven": False,
                 "physical_state_proven": False,
             })
+        activity = device.get("lastActivity")
+        if isinstance(activity, str) and 0 < len(activity) <= 45:
+            try:
+                stamp = datetime.fromisoformat(activity.replace("Z", "+00:00"))
+            except ValueError:
+                stamp = None
+            if stamp is not None and stamp.tzinfo is not None:
+                facts.append({
+                    "fact_id": f"{receipt_id}.activity.{device_id}",
+                    "fact_type": "reported_device_activity_marker",
+                    "source_role": "device_wide_last_activity_not_attribute_sample",
+                    "subject": {"device_id": device_id},
+                    "source_timestamp": activity,
+                    "attribute_specific_event_timestamp_proven": False,
+                    "device_reachability_proven": False,
+                })
     return facts
 
 
-def _event_facts(receipt_id: str, data: dict) -> list[dict]:
+def _event_facts(receipt_id: str, data: dict, tool: str) -> list[dict]:
+    # App configuration fields named "events" cannot establish native device
+    # history. Only the matching source-class tool supplies these event facts.
+    if tool != "hub_list_device_events":
+        return []
     events = data.get("events")
     if not isinstance(events, list):
         return []
@@ -172,6 +198,12 @@ def _event_facts(receipt_id: str, data: dict) -> list[dict]:
         fact = {
             "fact_id": f"{receipt_id}.event.{len(facts) + 1}",
             "fact_type": "recorded_command" if command else "reported_event_state",
+            "source_role": (
+                "native_device_command_row" if command
+                else "native_device_reported_attribute_event"
+            ),
+            "independent_physical_actuation_proven": False,
+            "app_self_reported_history_proven": False,
             "subject": {
                 key: ident for key, ident in (
                     ("device_id", _safe_id(data.get("deviceId"))),
@@ -189,6 +221,15 @@ def _event_facts(receipt_id: str, data: dict) -> list[dict]:
             if issuer is not None:
                 fact["recorded_issuer_app_id"] = issuer
         else:
+            notified = event.get("triggered")
+            notified = notified[:32] if isinstance(notified, list) else []
+            listeners = list(dict.fromkeys(
+                ident for row in notified if isinstance(row, dict)
+                if (ident := _safe_id(row.get("appId"))) is not None
+            ))
+            if listeners:
+                fact["notified_listener_app_ids"] = listeners
+                fact["notified_listener_is_command_issuer_proven"] = False
             reporter_device = _safe_id(producer.get("deviceId"))
             reporter_app = _safe_id(producer.get("appId"))
             if reporter_device is not None:
@@ -214,6 +255,7 @@ def _log_facts(receipt_id: str, data: dict) -> list[dict]:
     return [{
         "fact_id": f"{receipt_id}.log_group.{position}",
         "fact_type": "returned_log_source_group",
+        "source_role": "native_past_log_rows_not_physical_execution",
         "source_name_sha256_prefix": source_hash,
         "level": level,
         "returned_rows": count,
@@ -277,7 +319,7 @@ def build_claim_receipt_contract(question: str, answer: str, receipts: list[dict
                 )
                 facts = (
                     _state_facts(receipt_id, data, tool)
-                    + _event_facts(receipt_id, data)
+                    + _event_facts(receipt_id, data, tool)
                     + _log_facts(receipt_id, data)
                     + (_info_facts(receipt_id, data) if tool == "hub_get_info" else [])
                 )
