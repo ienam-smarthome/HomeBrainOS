@@ -147,9 +147,9 @@ class AcceptanceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             root = Path(directory)
             manifest_file = root / "addon-config.yaml"
             manifest_file.write_text(
-                'name: "Hubitat MCP AI v2 (Preview)"\\n'
-                'version: "2.0.0-alpha.152"\\n'
-                'slug: hubitat_mcp_ai_v2\\n',
+                'name: "Hubitat MCP AI v2 (Preview)"\n'
+                'version: "2.0.0-alpha.152"\n'
+                'slug: hubitat_mcp_ai_v2\n',
                 encoding="utf-8",
             )
             state = app.state
@@ -198,7 +198,7 @@ class AcceptanceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             manifest_file = root / "addon-config.yaml"
-            manifest_file.write_text('version: "2.0.0-alpha.152"\\n',
+            manifest_file.write_text('version: "2.0.0-alpha.152"\n',
                                      encoding="utf-8")
             state = app.state
             state.acceptance_directory = root / "private-study"
