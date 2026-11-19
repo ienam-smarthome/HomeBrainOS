@@ -65,6 +65,7 @@ from causal_outcome_frontier import (
 )
 from read_only_receipt_fallback import source_only_partial_answer
 from historical_publication import historical_publication_check
+from claim_receipt_contract import build_claim_receipt_contract
 from native_read_size_refusal import native_read_size_refusal
 from causal_claim_publication import (
     causal_publication_floor, causal_event_time_source_scope,
@@ -1213,6 +1214,9 @@ class Agent:
                 key: value for key, value in transition_verification.items()
                 if key != "answer"
             }
+            claim_receipt_contract = build_claim_receipt_contract(
+                question, verified_answer, receipts,
+            )
             return {
                 "success": bool(verified_answer), "prior_receipts_used": prior_receipts,
                 "answer": verified_answer or "The model returned an empty answer.",
@@ -1221,6 +1225,7 @@ class Agent:
                 "action_semantics_verification": action_contract_meta,
                 "causal_claim_verification": causal_claim_check,
                 "historical_claim_verification": historical_claim_check,
+                "claim_receipt_contract_shadow": claim_receipt_contract,
                 "action_performance": {
                     "model_reported_ms": round(sum(
                         m["total_ms"] for m in model_round_metrics
