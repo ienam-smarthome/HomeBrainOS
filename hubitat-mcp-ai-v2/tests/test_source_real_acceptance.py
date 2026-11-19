@@ -563,5 +563,78 @@ class Alpha152PermissionEvidenceTests(unittest.TestCase):
         self.assertFalse(result["read_only_permission_independently_verified"])
 
 
+
+class Alpha153ProspectivePackTests(unittest.TestCase):
+    def test_distinct_read_only_pack_and_source_reported_permissions(self):
+        with tempfile.TemporaryDirectory() as root:
+            directory = Path(root) / "alpha153"
+            acceptance.init_labels(
+                alpha145_config()["labels"], directory,
+                pack=acceptance.ALPHA153_PACK,
+            )
+            manifest = json.loads(
+                (directory / acceptance.MANIFEST).read_text(encoding="utf-8")
+            )
+            self.assertEqual(manifest["expected_addon_version"],
+                             acceptance.ALPHA153_VERSION)
+            self.assertEqual([row["id"] for row in manifest["cases"]],
+                             [f"a153-{n:02d}" for n in range(1, 11)])
+            self.assertNotIn("a152-", json.dumps(manifest))
+            self.assertTrue(all(
+                row["question"].endswith("Do not change anything.")
+                for row in manifest["cases"]
+            ))
+            for index, case in enumerate(manifest["cases"]):
+                item = export(case["question"], case["id"])
+                item["ui_version"] = acceptance.ALPHA153_VERSION
+                item["package_version"] = acceptance.ALPHA153_VERSION
+                item["package_version_provenance"] = (
+                    "bundled_manifest_no_build_arg"
+                )
+                if index == 0:
+                    item["permission_preflight_receipt"] = (
+                        Alpha152PermissionEvidenceTests.preflight()
+                    )
+                (directory / acceptance.EXPORT_DIRECTORY
+                 / (case["id"] + ".json")).write_text(
+                    json.dumps(item), encoding="utf-8",
+                )
+            report = acceptance.verify(directory)
+            self.assertEqual(report["cases_captured"], 10)
+            self.assertEqual(report["package_provenance_unverified_case_ids"], [])
+            self.assertEqual(report["permission_evidence"][
+                "per_client_write_enabled_reported"], False)
+            self.assertEqual(report["review_eligibility"],
+                             "needs_operator_source_and_first_attempt_attestation")
+            self.assertFalse(report["read_only_permission_independently_verified"])
+
+    def test_non_original_preflight_remains_ineligible(self):
+        with tempfile.TemporaryDirectory() as root:
+            directory = Path(root) / "alpha153"
+            acceptance.init_labels(
+                alpha145_config()["labels"], directory,
+                pack=acceptance.ALPHA153_PACK,
+            )
+            manifest = json.loads(
+                (directory / acceptance.MANIFEST).read_text(encoding="utf-8")
+            )
+            case = manifest["cases"][0]
+            item = export(case["question"], case["id"])
+            item["ui_version"] = acceptance.ALPHA153_VERSION
+            item["package_version"] = acceptance.ALPHA153_VERSION
+            item["package_version_provenance"] = "bundled_manifest_no_build_arg"
+            item["permission_preflight_receipt"] = {
+                **Alpha152PermissionEvidenceTests.preflight(),
+                "success": False,
+            }
+            (directory / acceptance.EXPORT_DIRECTORY
+             / (case["id"] + ".json")).write_text(
+                json.dumps(item), encoding="utf-8",
+            )
+            report = acceptance.verify(directory)
+            self.assertEqual(report["review_eligibility"],
+                             "requires_source_reported_read_only_client")
+
+
 if __name__ == "__main__":
     unittest.main()
