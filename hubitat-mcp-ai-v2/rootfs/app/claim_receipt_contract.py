@@ -348,9 +348,10 @@ def build_claim_receipt_contract(question: str, answer: str, receipts: list[dict
             )
             if tool == "hub_get_logs":
                 if log_receipt is None:
-                    continue
-                envelope, data, variant = log_receipt
-                packet["source_envelope_variant"] = variant
+                    envelope, data = None, None
+                else:
+                    envelope, data, variant = log_receipt
+                    packet["source_envelope_variant"] = variant
             else:
                 envelope, data = _response(receipt)
             if isinstance(envelope, dict) and isinstance(data, dict):
