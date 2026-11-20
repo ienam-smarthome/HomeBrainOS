@@ -66,6 +66,7 @@ from causal_outcome_frontier import (
 from read_only_receipt_fallback import source_only_partial_answer
 from review_answer_preservation import preserve_receipt_anchored_answer
 from historical_publication import historical_publication_check
+from event_sequence_publication import source_sequence_publication_check
 from claim_receipt_contract import build_claim_receipt_contract
 from native_read_size_refusal import native_read_size_refusal
 from inventory_read_limits import (
@@ -1228,6 +1229,29 @@ class Agent:
                     )
                     fallback_status = "historical_claim_publication_floor"
                     audit_status = "source_only_partial_after_claim_verification"
+            sequence_check = {"status": "not_applicable", "reason": None}
+            if (not native_action_receipts_seen and not current_write_attempted()
+                    and not is_explicit_device_imperative(question)
+                    and fallback_status == "not_used"):
+                sequence_check = source_sequence_publication_check(
+                    question, verified_answer, receipts,
+                )
+                if sequence_check["status"] == "unsafe":
+                    grounded = source_only_partial_answer(
+                        question, receipts, timezone_name=clock_timezone_name,
+                    )
+                    source_note = sequence_check.get("source_note", "")
+                    verified_answer = (
+                        (grounded or
+                         "**Source-only partial result — event chronology unresolved.**")
+                        + ("\n\n" + source_note if source_note else "")
+                    )
+                    fallback_status = "event_sequence_publication_floor"
+                    audit_status = "source_only_partial_after_sequence_verification"
+            sequence_check_meta = {
+                key: value for key, value in sequence_check.items()
+                if key != "source_note"
+            }
             action_contract_meta = {
                 key: value for key, value in action_contract.items()
                 if key != "answer"
@@ -1251,6 +1275,7 @@ class Agent:
                 "action_semantics_verification": action_contract_meta,
                 "causal_claim_verification": causal_claim_check,
                 "historical_claim_verification": historical_claim_check,
+                "event_sequence_verification": sequence_check_meta,
                 "claim_receipt_contract_shadow": claim_receipt_contract,
                 "action_performance": {
                     "model_reported_ms": round(sum(
