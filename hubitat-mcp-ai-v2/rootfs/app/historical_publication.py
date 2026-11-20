@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 
 from investigation_source_ledger import _response, _SAFE_FIELD, _SAFE_ID
+from native_past_log_receipt import original_past_log_source
 
 _CLAUSES = re.compile(r"\n+|(?<=[.!?;])\s+|\s+(?:but|however|yet)\s+", re.I)
 _SAFE_SCOPE = re.compile(r"^[A-Za-z0-9:+._-]{1,80}$")
@@ -80,11 +81,15 @@ def _scoped_receipts(receipts: list[dict]) -> list[dict]:
             continue
         if tool == "hub_list_device_events":
             field = "events"
-        elif tool == "hub_get_logs" and args.get("mode") == "past":
+            envelope, data = _response(receipt)
+        elif tool == "hub_get_logs":
+            parsed = original_past_log_source(receipt)
+            if parsed is None:
+                continue
+            envelope, data, _ = parsed
             field = "entries"
         else:
             continue
-        envelope, data = _response(receipt)
         if (not isinstance(envelope, dict) or not isinstance(data, dict)
                 or envelope.get("isError") is True or envelope.get("truncated") is True):
             continue
