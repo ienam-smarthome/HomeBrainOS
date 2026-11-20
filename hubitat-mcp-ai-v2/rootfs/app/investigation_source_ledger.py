@@ -7,6 +7,7 @@ Original receipts remain untouched and available to the model and Technical JSON
 from __future__ import annotations
 
 from collections import Counter
+from native_past_log_receipt import original_past_log_source
 from datetime import datetime
 import json
 import re
@@ -352,9 +353,16 @@ def source_review_ledger(receipts: list[dict], *, monitor_offered: bool = False)
                     devices = native["devices"]
                     recorded["returned_inventory_rows"] = len(devices)
                     recorded["inventory_is_historical_proof"] = False
+                elif name == "hub_get_logs":
+                    parsed = original_past_log_source(row)
+                    if parsed is not None:
+                        _, past, variant = parsed
+                        recorded["returned_log_rows"] = len(past["entries"])
+                        recorded["source_envelope_variant"] = variant
+                        recorded["source_total_scope_unverified"] = True
+                        recorded["log_count_is_execution_proof"] = False
                 elif isinstance(native.get("entries"), list):
-                    recorded["returned_log_rows"] = len(native["entries"])
-                    recorded["log_count_is_execution_proof"] = False
+                    recorded["native_document_parsed"] = True
                 else:
                     recorded["native_document_parsed"] = True
         items.append(recorded)
