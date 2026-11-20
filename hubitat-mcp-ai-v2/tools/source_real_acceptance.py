@@ -412,7 +412,60 @@ ALPHA153_CASES = (
      "Do not change anything."),
 )
 
+ALPHA154_PACK = "alpha154-prospective-v1"
+ALPHA154_VERSION = "2.0.0-alpha.154"
+ALPHA154_CASES = (
+    ("a154-01", "memory_window_source_scope",
+     "Compare the hub's current free memory with returned samples from the "
+     "preceding 80 minutes. Use the client UTC clock to state the exact "
+     "inclusive lower bound, distinguish samples outside it and identify "
+     "unobserved gaps. Do not change anything."),
+    ("a154-02", "numeric_inventory_coverage",
+     "Count distinct hub device IDs with numeric battery from 80 to 94 percent "
+     "inclusive using the returned source inventory. State the count, missing "
+     "values and actual pagination/coverage without unnecessary detailed "
+     "retrieval. Do not change anything."),
+    ("a154-03", "two_current_light_snapshots",
+     "For {light} and {second_light}, compare currently stored switch and "
+     "brightness states. Distinguish snapshot fields from native dated state "
+     "events and do not infer physical illumination. Do not change anything."),
+    ("a154-04", "reported_command_and_listeners",
+     "For {light}, describe the newest returned switch report and exact "
+     "timestamp. Distinguish reporter, listeners, native command issuer "
+     "and event-time decision, and state any attribute/row limits. "
+     "Do not change anything."),
+    ("a154-05", "trv_two_sample_separation",
+     "For {trv}, find the newest two recorded thermostat operating-state "
+     "samples and calculate the exact elapsed seconds. Explain what remains "
+     "unobserved between these records. Do not change anything."),
+    ("a154-06", "installed_application_execution",
+     "For the installed application {automation}, identify its exact app "
+     "identity and most recent dated execution-related evidence if returned. "
+     "Separate app log statements, native commands, device reports and "
+     "unverified later outcomes. Do not change anything."),
+    ("a154-07", "stored_energy_vs_dated_samples",
+     "For {metered_plug}, compare the stored energy value, device-wide "
+     "lastActivity and newest returned dated energy event. State which "
+     "times do not measure energy. Do not change anything."),
+    ("a154-08", "command_status_chronology",
+     "For {offline_device}, establish its current inventory identity and "
+     "place recent native command and health-status rows in chronological "
+     "order. Distinguish stored switch/energy fields from independently "
+     "dated measurements and do not invent an intervening state change. "
+     "Do not change anything."),
+    ("a154-09", "contact_transition_scope",
+     "For {contact_sensor}, give the newest OPEN and CLOSED reports from the "
+     "preceding seven hours, the earliest/latest returned timestamps, "
+     "and significant unobserved intervals. Do not change anything."),
+    ("a154-10", "native_past_log_grouping",
+     "Summarize native WARN past-log entries returned for the preceding "
+     "four hours by source. Separate actual returned rows, reported matches "
+     "and the source aggregate total without attributing an undocumented "
+     "scan or retention scope. Do not change anything."),
+)
+
 PROSPECTIVE_PACKS = {
+    ALPHA154_PACK: (ALPHA154_CASES, ALPHA154_VERSION),
     ALPHA153_PACK: (ALPHA153_CASES, ALPHA153_VERSION),
     ALPHA152_PACK: (ALPHA152_CASES, ALPHA152_VERSION),
     ALPHA151_PACK: (ALPHA151_CASES, ALPHA151_VERSION),
@@ -711,7 +764,9 @@ def verify(directory: Path, *, reviews: Path | None = None) -> dict:
         expected_version = manifest.get("expected_addon_version")
         if expected_version and record["build"]["version"] != expected_version:
             version_mismatches.append(ident)
-        if manifest.get("benchmark_pack") in (ALPHA152_PACK, ALPHA153_PACK) and (
+        if manifest.get("benchmark_pack") in (
+                ALPHA152_PACK, ALPHA153_PACK, ALPHA154_PACK,
+        ) and (
                 document.get("package_version") != expected_version
                 or document.get("package_version_provenance") not in (
                     "build_arg_and_bundled_manifest_match",
@@ -735,7 +790,7 @@ def verify(directory: Path, *, reviews: Path | None = None) -> dict:
     permission_evidence = _permission_evidence(
         source_exports,
         include_preflight=manifest.get("benchmark_pack") in (
-            ALPHA152_PACK, ALPHA153_PACK,
+            ALPHA152_PACK, ALPHA153_PACK, ALPHA154_PACK,
         ),
     )
     if (reviews is not None and manifest.get("benchmark_pack") in PROSPECTIVE_PACKS and
