@@ -69,6 +69,15 @@ _MATCHES_ONLY = re.compile(
 )
 
 
+# The native log "total" field has no reported scan/filter scope.
+# A correct per-source grouping does not license a made-up scan denominator.
+_LOG_TOTAL_SCAN_CLAIM = re.compile(
+    r"\b(?:aggregate\s+)?total\b[^.!?\n]{0,140}"
+    r"\b(?:scanned|examined|searched|processed)\b[^.!?\n]{0,100}"
+    r"\b(?:query|request|filter|window)\b", re.I,
+)
+
+
 def _scoped_receipts(receipts: list[dict]) -> list[dict]:
     scopes = []
     for index, receipt in enumerate(receipts[:40], 1):
@@ -133,6 +142,11 @@ def historical_publication_check(answer: str, receipts: list[dict]) -> tuple[str
         plain = clause.translate(str.maketrans("", "", "*_\x60"))
         if _LIMITED.search(plain):
             continue
+        if (_LOG_TOTAL_SCAN_CLAIM.search(plain)
+                and any(scope["tool"] == "hub_get_logs"
+                        and "total" in scope for scope in scopes)):
+            reason = "unverified_native_log_total_scope"
+            break
         # Each/every in a description of rows is different from each/every
         # execution generating or refreshing telemetry.
         if _MECHANISM.search(plain):
