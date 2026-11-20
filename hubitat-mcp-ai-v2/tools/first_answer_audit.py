@@ -189,7 +189,11 @@ def _native_log_scope(response_text: Any, call: dict[str, Any]) -> dict | None:
         if isinstance(nested, dict):
             past = nested.get("past")
         else:
-            past = body if body.get("mode") in ("past", None) else None
+            # Preserve the existing audit contract for ANY direct native
+            # log mode (including hubEvents), while recognising the extra
+            # nested modes.past result family. This offline metric never
+            # attributes a query-wide retention or scan scope to either.
+            past = body
         if (not isinstance(past, dict) or not isinstance(past.get("entries"), list)
                 or past.get("isError") is True or past.get("success") is False
                 or past.get("response_too_large") is True):
