@@ -68,6 +68,9 @@ from review_answer_preservation import preserve_receipt_anchored_answer
 from historical_publication import historical_publication_check
 from claim_receipt_contract import build_claim_receipt_contract
 from native_read_size_refusal import native_read_size_refusal
+from inventory_read_limits import (
+    detailed_inventory_block_reason, inventory_failure_recovery_note,
+)
 from causal_claim_publication import (
     causal_publication_floor, causal_event_time_source_scope,
     causal_original_source_ceiling, causal_requires_initiating_actor_source,
@@ -2485,6 +2488,15 @@ class Agent:
                         raise MCPError("Request deadline reached before this operation")
                     if "_invalid_arguments" in args:
                         raise MCPError(args["_invalid_arguments"])
+                    if name == "hub_list_devices" and isinstance(args, dict):
+                        inventory_problem = detailed_inventory_block_reason(
+                            args, receipts,
+                        )
+                        if inventory_problem is not None:
+                            # Strict denial-only performance boundary. No
+                            # native read executed, no device target selected,
+                            # and the summary/attribute source remains offered.
+                            raise MCPContractError(inventory_problem)
                     if stage_b_scoped_recovery_invoked:
                         # Stage B only validates MODEL-selected original
                         # source targets and bounded read scopes. No writes
@@ -2800,6 +2812,10 @@ class Agent:
                         model_result = self.present_native_result(result, args)
                         if source_size_refusal is not None:
                             model_result["client_source_limit"] = source_size_refusal
+                        if tool_error and name == "hub_list_devices":
+                            note = inventory_failure_recovery_note(args)
+                            if note is not None:
+                                model_result["client_inventory_read_recovery"] = note
                         if (name == "hub_list_device_events"
                                 and "appId" in args
                                 and "deviceId" not in args):
@@ -2930,6 +2946,10 @@ class Agent:
                         "error": (str(redact(str(exc))) or "Tool deadline exceeded")[:240],
                     }
                     error_payload = {"error": record["error"]}
+                    if name == "hub_list_devices":
+                        note = inventory_failure_recovery_note(args)
+                        if note is not None:
+                            error_payload["client_inventory_read_recovery"] = note
                     if one_off_rule_rejected:
                         record["result_kind"] = "one_off_rule_preflight_rejected"
                         record["operation_executed"] = False
