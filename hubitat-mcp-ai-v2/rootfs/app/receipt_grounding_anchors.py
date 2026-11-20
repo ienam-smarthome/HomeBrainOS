@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from investigation_source_ledger import _response, _SAFE_FIELD, _SAFE_ID
 from native_device_event_receipt import original_device_event_history
+from native_past_log_receipt import original_past_log_source
 
 
 def _id(value: object) -> str | None:
@@ -87,7 +88,13 @@ def receipt_grounding_anchors(receipts: list[dict], timezone_name: str | None) -
             if events:
                 result.append({"receipt_number": position, "events": events})
         elif tool in ("hub_get_logs", "hub_list_devices"):
-            envelope, data = _response(receipt)
+            if tool == "hub_get_logs":
+                parsed = original_past_log_source(receipt)
+                if parsed is None:
+                    continue
+                envelope, data, _ = parsed
+            else:
+                envelope, data = _response(receipt)
             if not isinstance(data, dict) or not isinstance(envelope, dict):
                 continue
             if envelope.get("isError") is True or data.get("isError") is True:
