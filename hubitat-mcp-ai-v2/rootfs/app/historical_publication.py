@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 
 from investigation_source_ledger import _response, _SAFE_FIELD, _SAFE_ID
+from native_past_log_receipt import original_past_log_source
 
 _CLAUSES = re.compile(r"\n+|(?<=[.!?;])\s+|\s+(?:but|however|yet)\s+", re.I)
 _SAFE_SCOPE = re.compile(r"^[A-Za-z0-9:+._-]{1,80}$")
@@ -68,6 +69,15 @@ _MATCHES_ONLY = re.compile(
 )
 
 
+# The native log "total" field has no reported scan/filter scope.
+# A correct per-source grouping does not license a made-up scan denominator.
+_LOG_TOTAL_SCAN_CLAIM = re.compile(
+    r"\b(?:aggregate\s+)?total\b[^.!?\n]{0,140}"
+    r"\b(?:scanned|examined|searched|processed)\b[^.!?\n]{0,100}"
+    r"\b(?:query|request|filter|window)\b", re.I,
+)
+
+
 def _scoped_receipts(receipts: list[dict]) -> list[dict]:
     scopes = []
     for index, receipt in enumerate(receipts[:40], 1):
@@ -80,11 +90,15 @@ def _scoped_receipts(receipts: list[dict]) -> list[dict]:
             continue
         if tool == "hub_list_device_events":
             field = "events"
-        elif tool == "hub_get_logs" and args.get("mode") == "past":
+            envelope, data = _response(receipt)
+        elif tool == "hub_get_logs":
+            parsed = original_past_log_source(receipt)
+            if parsed is None:
+                continue
+            envelope, data, _ = parsed
             field = "entries"
         else:
             continue
-        envelope, data = _response(receipt)
         if (not isinstance(envelope, dict) or not isinstance(data, dict)
                 or envelope.get("isError") is True or envelope.get("truncated") is True):
             continue
@@ -128,6 +142,11 @@ def historical_publication_check(answer: str, receipts: list[dict]) -> tuple[str
         plain = clause.translate(str.maketrans("", "", "*_\x60"))
         if _LIMITED.search(plain):
             continue
+        if (_LOG_TOTAL_SCAN_CLAIM.search(plain)
+                and any(scope["tool"] == "hub_get_logs"
+                        and "total" in scope for scope in scopes)):
+            reason = "unverified_native_log_total_scope"
+            break
         # Each/every in a description of rows is different from each/every
         # execution generating or refreshing telemetry.
         if _MECHANISM.search(plain):

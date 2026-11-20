@@ -66,8 +66,16 @@ from causal_outcome_frontier import (
 from read_only_receipt_fallback import source_only_partial_answer
 from review_answer_preservation import preserve_receipt_anchored_answer
 from historical_publication import historical_publication_check
+from event_sequence_publication import source_sequence_publication_check
+from memory_window_provenance import (
+    memory_history_window_index, public_memory_window_scope,
+    verify_memory_window_publication,
+)
 from claim_receipt_contract import build_claim_receipt_contract
 from native_read_size_refusal import native_read_size_refusal
+from inventory_read_limits import (
+    detailed_inventory_block_reason, inventory_failure_recovery_note,
+)
 from causal_claim_publication import (
     causal_publication_floor, causal_event_time_source_scope,
     causal_original_source_ceiling, causal_requires_initiating_actor_source,
@@ -1225,6 +1233,47 @@ class Agent:
                     )
                     fallback_status = "historical_claim_publication_floor"
                     audit_status = "source_only_partial_after_claim_verification"
+            sequence_check = {"status": "not_applicable", "reason": None}
+            if (not native_action_receipts_seen and not current_write_attempted()
+                    and not is_explicit_device_imperative(question)
+                    and fallback_status == "not_used"):
+                sequence_check = source_sequence_publication_check(
+                    question, verified_answer, receipts,
+                )
+                if sequence_check["status"] == "unsafe":
+                    grounded = source_only_partial_answer(
+                        question, receipts, timezone_name=clock_timezone_name,
+                    )
+                    source_note = sequence_check.get("source_note", "")
+                    verified_answer = (
+                        (grounded or
+                         "**Source-only partial result — event chronology unresolved.**")
+                        + ("\n\n" + source_note if source_note else "")
+                    )
+                    fallback_status = "event_sequence_publication_floor"
+                    audit_status = "source_only_partial_after_sequence_verification"
+            sequence_check_meta = {
+                key: value for key, value in sequence_check.items()
+                if key != "source_note"
+            }
+            memory_check = {
+                "status": "not_applicable", "reason": None,
+                "answer": verified_answer,
+            }
+            if (not native_action_receipts_seen and not current_write_attempted()
+                    and not is_explicit_device_imperative(question)
+                    and fallback_status == "not_used"):
+                memory_check = verify_memory_window_publication(
+                    question, verified_answer, receipts, clock_timezone_name,
+                )
+                verified_answer = memory_check["answer"]
+                if memory_check["status"] == "unsafe":
+                    fallback_status = "memory_window_publication_floor"
+                    audit_status = "source_only_memory_window_projection"
+            memory_meta = {
+                key: value for key, value in memory_check.items()
+                if key != "answer"
+            }
             action_contract_meta = {
                 key: value for key, value in action_contract.items()
                 if key != "answer"
@@ -1248,6 +1297,8 @@ class Agent:
                 "action_semantics_verification": action_contract_meta,
                 "causal_claim_verification": causal_claim_check,
                 "historical_claim_verification": historical_claim_check,
+                "event_sequence_verification": sequence_check_meta,
+                "memory_window_verification": memory_meta,
                 "claim_receipt_contract_shadow": claim_receipt_contract,
                 "action_performance": {
                     "model_reported_ms": round(sum(
@@ -2485,6 +2536,15 @@ class Agent:
                         raise MCPError("Request deadline reached before this operation")
                     if "_invalid_arguments" in args:
                         raise MCPError(args["_invalid_arguments"])
+                    if name == "hub_list_devices" and isinstance(args, dict):
+                        inventory_problem = detailed_inventory_block_reason(
+                            args, receipts,
+                        )
+                        if inventory_problem is not None:
+                            # Strict denial-only performance boundary. No
+                            # native read executed, no device target selected,
+                            # and the summary/attribute source remains offered.
+                            raise MCPContractError(inventory_problem)
                     if stage_b_scoped_recovery_invoked:
                         # Stage B only validates MODEL-selected original
                         # source targets and bounded read scopes. No writes
@@ -2800,6 +2860,10 @@ class Agent:
                         model_result = self.present_native_result(result, args)
                         if source_size_refusal is not None:
                             model_result["client_source_limit"] = source_size_refusal
+                        if tool_error and name == "hub_list_devices":
+                            note = inventory_failure_recovery_note(args)
+                            if note is not None:
+                                model_result["client_inventory_read_recovery"] = note
                         if (name == "hub_list_device_events"
                                 and "appId" in args
                                 and "deviceId" not in args):
@@ -2930,6 +2994,10 @@ class Agent:
                         "error": (str(redact(str(exc))) or "Tool deadline exceeded")[:240],
                     }
                     error_payload = {"error": record["error"]}
+                    if name == "hub_list_devices":
+                        note = inventory_failure_recovery_note(args)
+                        if note is not None:
+                            error_payload["client_inventory_read_recovery"] = note
                     if one_off_rule_rejected:
                         record["result_kind"] = "one_off_rule_preflight_rejected"
                         record["operation_executed"] = False
@@ -3011,6 +3079,20 @@ class Agent:
                 # never the original receipt or an actionable device detail.
                 record["response"] = content
                 model_context_content = content
+                if (record.get("success") is True
+                        and name == "hub_get_memory_history"
+                        and not native_action_receipts_seen):
+                    index = memory_history_window_index(
+                        question, [*receipts, record], clock_timezone_name,
+                    )
+                    if index is not None:
+                        model_context_content = (
+                            json.dumps({
+                                "client_memory_window_provenance":
+                                    public_memory_window_scope(index)
+                            }, ensure_ascii=False)
+                            + "\n" + model_context_content
+                        )
                 if (record.get("success") is True
                         and name == "hub_list_devices"
                         and review_kind(question) == "causal"

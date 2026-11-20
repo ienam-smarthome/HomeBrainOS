@@ -1,5 +1,25 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 20 November 2026 — alpha.154 candidate, alpha.153 unpromoted baseline
+
+The independently reviewed original alpha153 cohort reached an advisory
+5/10 useful complete first answers, below the >=80% target; the formal
+atomic grounded-claim denominator remains unmeasured. Source defects were
+confirmed in alpha153: unobserved switched-ON event and reversed chronology
+(case 08), five source failures during detailed inventory retries (case 02),
+native nested `modes.past` log receipts missing from offline audit (case 10)
+and a memory table row outside the exact client-clock cutoff (case 01).
+No old export was changed.
+
+Alpha154 code candidate adds a source-only same-device chronology publishing
+floor, exact decoded log envelope support across readers/publishers/audit,
+denial-only detailed-inventory limits, a clock-anchored memory history boundary
+and a separate alpha154 prospective pack. It does not add a source call,
+force an LLM round, alter approval logic, retry a device write or prove a
+model answer correct. `2.0.0-alpha.154` is NOT YET installed/source-real
+scored or accepted. See
+[the alpha154 design and test contract](HOMEBRAIN-V2-ALPHA154-EVIDENCE-CORRECTIONS-20261120.md).
+
 ## 19 November 2026 — alpha.153 candidate; alpha.152 does not pass quality
 
 The uploaded alpha152 original ten-case cohort was independently reviewed

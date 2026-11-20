@@ -183,14 +183,25 @@ def _native_log_scope(response_text: Any, call: dict[str, Any]) -> dict | None:
             body = json.loads(block["text"])
         except (TypeError, ValueError):
             continue
-        if (not isinstance(body, dict) or not isinstance(body.get("mode"), str)
-                or not isinstance(body.get("entries"), list)
-                or body.get("isError") is True or body.get("success") is False):
+        if not isinstance(body, dict) or body.get("isError") is True:
             continue
-        entries = body["entries"]
+        nested = body.get("modes")
+        if isinstance(nested, dict):
+            past = nested.get("past")
+        else:
+            # Preserve the existing audit contract for ANY direct native
+            # log mode (including hubEvents), while recognising the extra
+            # nested modes.past result family. This offline metric never
+            # attributes a query-wide retention or scan scope to either.
+            past = body
+        if (not isinstance(past, dict) or not isinstance(past.get("entries"), list)
+                or past.get("isError") is True or past.get("success") is False
+                or past.get("response_too_large") is True):
+            continue
+        entries = past["entries"]
         if not all(isinstance(entry, dict) for entry in entries):
             continue
-        matched = _optional_int(body.get("matched"))
+        matched = _optional_int(past.get("matched"))
         return {
             "rows_returned": len(entries),
             "reported_matched_exceeds_returned": (

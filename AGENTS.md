@@ -1,5 +1,21 @@
 # HomeBrainOS development agent instructions
 
+## 20 November 2026 — alpha.154 source-evidence correctness candidate
+
+Original alpha153 source-real cohort remains intact/unpromoted (5/10 advisory
+useful complete; case 08 unsupported ON and reversed command/status ordering,
+case 02 five oversized/detail failures, case 10 nested past-log unrecognised,
+case 01 out-of-window memory sample). Alpha154 source-bound chronology
+publication, unified direct/nested native log receipts, bounded failed
+detailed-inventory resource use, and client-clock memory sample windows are
+implemented with fictional regression tests. No new writes, automatic reads,
+model round, or permission bypass. Alpha154 uses a NEW private prospective
+pack. See
+[alpha154 evidence corrections](docs/HOMEBRAIN-V2-ALPHA154-EVIDENCE-CORRECTIONS-20261120.md).
+Neither CI nor the existing alpha153 source run demonstrates alpha154 answer
+quality. Preserve all earlier captures; require fresh independent source-real
+quality and source-reported per-client Read ON / Write OFF before promotion.
+
 ## 19 November 2026 — alpha.153 source-grounded publication candidate
 
 Alpha152's private original ten-case cohort remains frozen and unpromoted

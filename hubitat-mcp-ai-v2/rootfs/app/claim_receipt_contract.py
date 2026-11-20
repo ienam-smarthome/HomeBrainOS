@@ -13,6 +13,7 @@ import math
 import re
 
 from investigation_source_ledger import _response, _SAFE_FIELD, _SAFE_ID
+from native_past_log_receipt import original_past_log_source
 
 SCHEMA = "homebrain-v2-claim-receipt-contract-shadow.v1"
 _MAX_RECEIPTS = 40
@@ -341,7 +342,18 @@ def build_claim_receipt_contract(question: str, answer: str, receipts: list[dict
             "facts": [],
         }
         if packet["success"] and packet["operation_executed"]:
-            envelope, data = _response(receipt)
+            log_receipt = (
+                original_past_log_source(receipt)
+                if tool == "hub_get_logs" else None
+            )
+            if tool == "hub_get_logs":
+                if log_receipt is None:
+                    envelope, data = None, None
+                else:
+                    envelope, data, variant = log_receipt
+                    packet["source_envelope_variant"] = variant
+            else:
+                envelope, data = _response(receipt)
             if isinstance(envelope, dict) and isinstance(data, dict):
                 rows = data.get(
                     "events" if tool == "hub_list_device_events" else

@@ -16,6 +16,7 @@ from investigation_source_ledger import _SAFE_FIELD, _SAFE_ID, _response
 from native_device_event_receipt import original_device_event_history
 from native_command_provenance import original_command_rows
 from receipt_grounding_anchors import receipt_grounding_anchors
+from native_past_log_receipt import original_past_log_source
 
 _MAX_RECEIPTS = 40
 _MAX_EVENTS_PER_RECEIPT = 300
@@ -258,13 +259,12 @@ def _returned_past_log_groups(receipts: list[dict]) -> str | None:
                 or item.get("operation_executed") is False):
             continue
         args = item.get("arguments")
-        if not isinstance(args, dict) or args.get("mode") != "past":
+        if not isinstance(args, dict):
             continue
-        envelope, native = _response(item)
-        if (not isinstance(envelope, dict) or not isinstance(native, dict)
-                or envelope.get("isError") is True or native.get("isError") is True
-                or native.get("mode") != "past"):
+        parsed = original_past_log_source(item)
+        if parsed is None:
             continue
+        envelope, native, _ = parsed
         rows = native.get("entries")
         if not isinstance(rows, list):
             continue
