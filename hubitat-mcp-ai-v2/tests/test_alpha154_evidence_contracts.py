@@ -139,7 +139,7 @@ class SequenceContractTests(unittest.TestCase):
         self.assertEqual(evidence["status"], "unsafe")
         self.assertIn("intervening_switch_change_not_in_returned_events",
                       evidence["reason"])
-        self.assertIn("28", evidence["source_note"])
+        self.assertIn("1727.796 seconds after", evidence["source_note"])
         self.assertIn("healthStatus", evidence["source_note"])
         self.assertFalse(source_sequence_publication_check(
             "what happened?",
