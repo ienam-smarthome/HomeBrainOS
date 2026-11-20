@@ -67,6 +67,10 @@ from read_only_receipt_fallback import source_only_partial_answer
 from review_answer_preservation import preserve_receipt_anchored_answer
 from historical_publication import historical_publication_check
 from event_sequence_publication import source_sequence_publication_check
+from memory_window_provenance import (
+    memory_history_window_index, public_memory_window_scope,
+    verify_memory_window_publication,
+)
 from claim_receipt_contract import build_claim_receipt_contract
 from native_read_size_refusal import native_read_size_refusal
 from inventory_read_limits import (
@@ -1252,6 +1256,24 @@ class Agent:
                 key: value for key, value in sequence_check.items()
                 if key != "source_note"
             }
+            memory_check = {
+                "status": "not_applicable", "reason": None,
+                "answer": verified_answer,
+            }
+            if (not native_action_receipts_seen and not current_write_attempted()
+                    and not is_explicit_device_imperative(question)
+                    and fallback_status == "not_used"):
+                memory_check = verify_memory_window_publication(
+                    question, verified_answer, receipts, clock_timezone_name,
+                )
+                verified_answer = memory_check["answer"]
+                if memory_check["status"] == "unsafe":
+                    fallback_status = "memory_window_publication_floor"
+                    audit_status = "source_only_memory_window_projection"
+            memory_meta = {
+                key: value for key, value in memory_check.items()
+                if key != "answer"
+            }
             action_contract_meta = {
                 key: value for key, value in action_contract.items()
                 if key != "answer"
@@ -1276,6 +1298,7 @@ class Agent:
                 "causal_claim_verification": causal_claim_check,
                 "historical_claim_verification": historical_claim_check,
                 "event_sequence_verification": sequence_check_meta,
+                "memory_window_verification": memory_meta,
                 "claim_receipt_contract_shadow": claim_receipt_contract,
                 "action_performance": {
                     "model_reported_ms": round(sum(
@@ -3056,6 +3079,20 @@ class Agent:
                 # never the original receipt or an actionable device detail.
                 record["response"] = content
                 model_context_content = content
+                if (record.get("success") is True
+                        and name == "hub_get_memory_history"
+                        and not native_action_receipts_seen):
+                    index = memory_history_window_index(
+                        question, [*receipts, record], clock_timezone_name,
+                    )
+                    if index is not None:
+                        model_context_content = (
+                            json.dumps({
+                                "client_memory_window_provenance":
+                                    public_memory_window_scope(index)
+                            }, ensure_ascii=False)
+                            + "\n" + model_context_content
+                        )
                 if (record.get("success") is True
                         and name == "hub_list_devices"
                         and review_kind(question) == "causal"
