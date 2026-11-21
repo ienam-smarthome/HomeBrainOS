@@ -6,7 +6,7 @@
 
 - Report schema: homebrain-v2-source-real-acceptance-report.v1.
 - Frozen pack: alpha154-prospective-v1. Version: 2.0.0-alpha.154.
-- Manifest SHA-256: 6eb8cc086bfa28e82281166a031b3ce47ca5eecfeda3d894139003a583ff3ac7.
+- The sealed manifest digest is retained in the private owner's original report, not reproduced in public repository docs.
 - All ten cases a154-01 through a154-10 captured in order; no missing cases, version mismatches, reported prior-chat evidence or attempted device commands.
 - Model fingerprint consistent. Package provenance bundled_manifest_no_build_arg is permitted, but does not independently establish build integrity.
 - Report fields say original source, first-attempt provenance and read-only permission *independent verification* are all false.
