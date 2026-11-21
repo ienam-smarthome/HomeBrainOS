@@ -1,5 +1,32 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 21 November 2026 — alpha.154 redacted first-answer report received, quality not yet scored
+
+The owner provided an intact redacted capture report for the distinct
+alpha154-prospective-v1 cohort: ten captured original attempts, 21/21 successful
+read-only tool attempts, one failed first answer (a154-03), consistent model and
+package metadata, no device commands. Ten source-reported permission receipts
+show the dedicated per-client Read ON / Write OFF flags, but independent
+permission enforcement, first-attempt integrity and original-source verification
+remain unestablished. The redacted summary contains no raw answers, questions
+or original tool/source receipts, so **atomic claim grounding, useful-complete
+first answer rate, unsupported causal claims and promotion remain NOT MEASURED**.
+
+Mechanical review flags: event-history row limits in a154-04/05/07/08,
+past-log row limit in a154-06, matched-versus-returned log counts in
+a154-06/10, and maximum reported server elapsed 38.644s in a154-02.
+No inference that a returned row limit proves a wrong answer, or that a
+successful call proves a useful answer, is permitted. Prior alpha153 cohort
+remains immutable and is not repurposed as a new alpha154 baseline.
+
+A read-only, source-redacted report triage utility and fictional tests now
+produce a reproducible case-review order without grades, network calls,
+device actions or capture changes. See
+[alpha154 installed source-real triage](HOMEBRAIN-V2-ALPHA154-SOURCE-REAL-TRIAGE-20261121.md).
+Next collect all ten **untouched original JSON captures** and independently
+grade against source receipts before choosing a new runtime patch; preserve
+original 90%/80%/zero unsupported cause/safety promotion gates.
+
 ## 20 November 2026 — alpha.154 candidate, alpha.153 unpromoted baseline
 
 The independently reviewed original alpha153 cohort reached an advisory
