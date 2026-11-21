@@ -68,6 +68,10 @@ class TriageTests(unittest.TestCase):
         with self.assertRaises(InvalidReport):
             triage_report(invalid)
         invalid = example()
+        invalid["benchmark_pack"] = "PRIVATE SHOULD NOT LEAK"
+        with self.assertRaises(InvalidReport):
+            triage_report(invalid)
+        invalid = example()
         invalid["failed_first_answer_case_ids"] = ["unknown"]
         with self.assertRaises(InvalidReport):
             triage_report(invalid)
