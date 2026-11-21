@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,12 @@ class InvalidReport(ValueError):
 def _object(value: Any) -> dict:
     if not isinstance(value, dict):
         raise InvalidReport("Expected object")
+    return value
+
+
+def _safe_identifier(value: Any, name: str) -> str:
+    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}", value):
+        raise InvalidReport("Invalid " + name)
     return value
 
 
@@ -45,6 +52,8 @@ def triage_report(report: dict) -> dict:
     if (any(not isinstance(i, str) or not i or len(i) > 100 for i in ids)
             or len(ids) != len(set(ids))):
         raise InvalidReport("Invalid case IDs")
+    for ident in ids:
+        _safe_identifier(ident, "case ID")
     if len(ids) != _int(report.get("cases_captured"), "cases_captured"):
         raise InvalidReport("Captured case count mismatch")
     if len(ids) > _int(report.get("cases_expected"), "cases_expected"):
@@ -109,8 +118,8 @@ def triage_report(report: dict) -> dict:
     )
     return {
         "schema": TRIAGE_SCHEMA,
-        "benchmark_pack": report.get("benchmark_pack"),
-        "expected_addon_version": report.get("expected_addon_version"),
+        "benchmark_pack": _safe_identifier(report.get("benchmark_pack"), "benchmark pack"),
+        "expected_addon_version": _safe_identifier(report.get("expected_addon_version"), "version"),
         "captured_case_count": len(ids),
         "unscored": True,
         "promotion_ready": False,
