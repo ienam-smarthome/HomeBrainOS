@@ -1,13 +1,13 @@
 # Hubitat MCP AI v2 — native MCP client
 
-**Current candidate: alpha.145 (17 November 2026).** Alpha.145 preserves the
-bounded model-selected Stage B recovery checkpoint when a recorded proximal
-issuer still leaves its upstream event-time decision unresolved. All five
-exact-head workflows passed. Installed first-answer quality is not yet
-accepted: runtime development is frozen pending the distinct prospective,
-server-read-only alpha.145 cohort described in the
-[acceptance gate](../docs/HOMEBRAIN-V2-ALPHA145-PROSPECTIVE-ACCEPTANCE-20261117.md).
-Synthetic tests and green scorecard-integrity CI are not answer-quality scores.
+**Current code candidate: alpha.155 (23 November 2026).** The source-bound
+publication fixes from PR #1742 are merged. The separate Alpha155 package
+candidate adds a new ten-case prospective pack and version-bound private
+acceptance workflow, alongside the bounded memory and event-history
+projections. Package exact-head CI is pending; this candidate is not installed,
+released or accepted. V1 remains the maintained installation path. Synthetic
+tests and green CI are not answer-quality scores. See the
+[Alpha155 package and acceptance boundary](../docs/HOMEBRAIN-V2-ALPHA155-PACKAGE-CANDIDATE-20261123.md).
 
 **Alpha.119 (15 November 2026) — source-derived latest state transitions and causal restraint.** An installed alpha.118 heating-history test retrieved six successful native reads, but the model asserted an unverified focal TRV transition at a time taken from a separate thermostat and overlooked a later thermostat cycle. V2 now supplies a compact verified target/attribute/returned-window chronology index in its existing read-only source review, and protects explicit "when did device last change from A to B" final answers with a typed source-derived proof. Truncated histories, repeated identical states, peer-device events and command issuers cannot become a definite focal transition or cause. No new automatic historian calls, AI rounds or native writes; the redundant tool-free final audit is skipped only for this narrowly typed source publication. [Engineering note](../docs/HOMEBRAIN-V2-ALPHA119-TEMPORAL-TRANSITION-EVIDENCE-20261115.md).
 
