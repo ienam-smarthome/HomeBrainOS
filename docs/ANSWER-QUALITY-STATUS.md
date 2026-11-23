@@ -1,5 +1,48 @@
 # Answer Quality — active status and cross-chat handoff
 
+## 23 November 2026 — original alpha154 source review; expanded candidate only
+
+Original owner-private a153-01..10 and a154-01..10 Technical JSON captures were
+inspected. Alpha154's 21/21 successful native calls still produced a wrong
+battery range count (5 instead of 6), wrong missing-attribute count (174 instead
+of 169), an empty two-light stored-state answer, and a log-total-only answer
+without requested source grouping. Further defects: memory delta described as
+36 KB rather than 36,074.5 KB; same-value TRV rows led to an unsupported
+intervening-state story; contact event gaps were reverse-ordered and treated
+as continuity evidence. These are source-specific findings, NOT a complete
+independently calibrated claim numerator/denominator.
+
+Draft PR #1742 now adds source-bound read-only projections for inventory
+counts, empty focused snapshots, log source grouping, exact memory statistics,
+newest-two event timing, and chronological contact gaps. It does not make
+extra native/model calls, alter action/approval paths or change any installed
+version. The prior alpha153/154 cohorts remain frozen and cannot be replayed
+as prospective post-change acceptance. Pending: exact-head CI, independent
+full source grading, a new unseen version/pack, true dedicated token
+enforcement and clean prospective first-answer review. See
+[post-alpha154 source evidence](HOMEBRAIN-V2-POST-ALPHA154-SOURCE-PROJECTIONS-20261123.md).
+
+## 23 November 2026 — original-source alpha154 review, code candidate only
+
+Original owner-private a153-01..10 and a154-01..10 Technical JSON captures were
+inspected. Alpha154's 21/21 successful native calls still produced a wrong
+battery range count (5 instead of 6 on the returned 200-device projected
+page), wrong missing-attribute count (174 instead of 169), an empty two-light
+stored-state answer, and a log-total-only answer lacking requested grouping.
+Further identified limitations include 36 versus 36074.5 KB memory delta,
+an unverified door-state continuity inference and uncertain intervening TRV
+states. These are source-specific findings, NOT a complete independently
+calibrated claim numerator/denominator.
+
+A post-alpha154 **code candidate** adds output-only, strictly source-bound
+numeric inventory enumeration, current snapshot recovery after an empty model
+reply, and native past-log source-group publication. It is not yet an installed
+alpha155 build; previous acceptance cohorts remain frozen and unpromotable
+against new code. Pending: exact-head CI, independent full source grading,
+new unseen version/pack, true dedicated token enforcement and clean
+prospective first-answer review. See
+[post-alpha154 source evidence](HOMEBRAIN-V2-POST-ALPHA154-SOURCE-PROJECTIONS-20261123.md).
+
 ## 21 November 2026 — alpha.154 redacted first-answer report received, quality not yet scored
 
 The owner provided an intact redacted capture report for the distinct
