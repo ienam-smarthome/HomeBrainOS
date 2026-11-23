@@ -64,6 +64,12 @@ from causal_outcome_frontier import (
     causal_outcome_frontier, OUTCOME_FIRST_CHECKPOINT,
 )
 from read_only_receipt_fallback import source_only_partial_answer
+from bounded_source_projection import (
+    bounded_numeric_inventory_answer,
+    focused_stored_snapshot_answer,
+    grouped_past_log_answer,
+)
+
 from review_answer_preservation import preserve_receipt_anchored_answer
 from historical_publication import historical_publication_check
 from event_sequence_publication import source_sequence_publication_check
@@ -1139,6 +1145,36 @@ class Agent:
         def completed_answer(
             answer: str, audit_status: str, *, fallback_status: str = "not_used"
         ) -> dict[str, Any]:
+            # Read-only, bounded source projections are based ONLY on original
+            # successful native receipts. They neither dispatch a new read nor
+            # alter model/native write, approval or scheduling paths. Output
+            # claims remain explicitly scoped to the returned source rows.
+            source_projection_status = "not_used"
+            if (not native_action_receipts_seen and not current_write_attempted()
+                    and not is_explicit_device_imperative(question)
+                    and fallback_status == "not_used"):
+                projected = bounded_numeric_inventory_answer(question, receipts)
+                if projected is not None:
+                    answer = projected
+                    fallback_status = "bounded_numeric_inventory_projection"
+                    audit_status = "source_only_bounded_inventory_count"
+                    source_projection_status = "bounded_numeric_inventory_count"
+                else:
+                    projected = grouped_past_log_answer(question, receipts)
+                    if projected is not None:
+                        answer = projected
+                        fallback_status = "bounded_past_log_source_groups"
+                        audit_status = "source_only_past_log_groups"
+                        source_projection_status = "bounded_returned_past_log_groups"
+                    elif not isinstance(answer, str) or not answer.strip():
+                        projected = focused_stored_snapshot_answer(
+                            question, receipts
+                        )
+                        if projected is not None:
+                            answer = projected
+                            fallback_status = "empty_model_current_inventory_partial"
+                            audit_status = "source_only_partial_no_model_audit"
+                            source_projection_status = "focused_stored_snapshot"
             # Exact ALL-RETURNED-event requests get a typed, source-derived
             # chronology rather than an unverified model enumeration. This is
             # an output-only contract: no new tool/model pass, native write or
@@ -1299,6 +1335,13 @@ class Agent:
                 "historical_claim_verification": historical_claim_check,
                 "event_sequence_verification": sequence_check_meta,
                 "memory_window_verification": memory_meta,
+                "bounded_source_projection": {
+                    "status": source_projection_status,
+                    "origin": "original_successful_read_only_receipts",
+                    "extra_model_calls": 0,
+                    "extra_native_calls": 0,
+                    "independent_physical_effect_verified": False,
+                },
                 "claim_receipt_contract_shadow": claim_receipt_contract,
                 "action_performance": {
                     "model_reported_ms": round(sum(
