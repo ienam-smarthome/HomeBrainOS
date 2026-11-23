@@ -1303,7 +1303,7 @@ class Agent:
             }
             if (not native_action_receipts_seen and not current_write_attempted()
                     and not is_explicit_device_imperative(question)
-                    and fallback_status == "not_used"):
+                    and fallback_status in ("not_used", "historical_claim_publication_floor")):
                 memory_check = verify_memory_window_publication(
                     question, verified_answer, receipts, clock_timezone_name,
                 )
@@ -1332,7 +1332,10 @@ class Agent:
             temporal_projection_meta = {"status": "not_applicable"}
             if (not native_action_receipts_seen and not current_write_attempted()
                     and not is_explicit_device_imperative(question)
-                    and fallback_status in ("not_used", "event_sequence_publication_floor")):
+                    and fallback_status in (
+                        "not_used", "event_sequence_publication_floor",
+                        "historical_claim_publication_floor",
+                    )):
                 event_projection = bounded_newest_two_event_answer(
                     question, receipts,
                 )
