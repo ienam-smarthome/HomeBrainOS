@@ -91,8 +91,8 @@ def memory_window_statistics_answer(
     The mean is an arithmetic mean of returned samples, not time-weighted.
     """
     if (not isinstance(question, str)
-            or not re.search(r"\\bfree\\s+memory\\b", question, re.I)
-            or not re.search(r"\\b(?:compare|average|mean|minimum|maximum|range)\\b", question, re.I)):
+            or not re.search(r"\bfree\s+memory\b", question, re.I)
+            or not re.search(r"\b(?:compare|average|mean|minimum|maximum|range)\b", question, re.I)):
         return None
     history_receipts = [
         row for row in receipts[:24] if isinstance(row, dict)
@@ -230,7 +230,7 @@ def memory_window_statistics_answer(
 
 
 def _normal(value: str) -> str:
-    return re.sub(r"[\\s_-]+", "", value).casefold()
+    return re.sub(r"[\s_-]+", "", value).casefold()
 
 
 def _safe_event_value(attribute: str, value: object) -> str | None:
@@ -238,7 +238,7 @@ def _safe_event_value(attribute: str, value: object) -> str | None:
         text = value.strip().lower()
         if text in _SAFE_STATE.get(attribute, frozenset()):
             return text
-        if re.fullmatch(r"-?\\d{1,8}(?:\\.\\d{1,4})?", text):
+        if re.fullmatch(r"-?\d{1,8}(?:\.\d{1,4})?", text):
             return text
     elif type(value) in (int, float) and math.isfinite(float(value)) and abs(value) < 10**8:
         return str(value)
@@ -296,9 +296,9 @@ def _event_receipt_candidates(
 def bounded_newest_two_event_answer(question: str, receipts: list[dict]) -> dict | None:
     """Publish exactly two source-returned samples without inventing trajectory."""
     if (not isinstance(question, str)
-            or not re.search(r"\\b(?:(?:newest|latest|most recent)\\s+two|two\\s+(?:newest|latest))\\b", question, re.I)
-            or not re.search(r"\\b(?:samples?|events?)\\b", question, re.I)
-            or not re.search(r"\\belapsed\\b", question, re.I)):
+            or not re.search(r"\b(?:(?:newest|latest|most recent)\s+two|two\s+(?:newest|latest))\b", question, re.I)
+            or not re.search(r"\b(?:samples?|events?)\b", question, re.I)
+            or not re.search(r"\belapsed\b", question, re.I)):
         return None
     attribute = None
     lowered = question.lower()
@@ -357,7 +357,7 @@ def bounded_newest_two_event_answer(question: str, receipts: list[dict]) -> dict
 
 def _requested_hours(question: str) -> int | None:
     match = re.search(
-        r"\\b(?:last|past|preceding|previous)\\s+(\\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\\s+hours?\\b",
+        r"\b(?:last|past|preceding|previous)\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+hours?\b",
         question, re.I,
     )
     if not match:
@@ -370,9 +370,9 @@ def _requested_hours(question: str) -> int | None:
 def bounded_contact_event_sequence_answer(question: str, receipts: list[dict]) -> dict | None:
     """Sort returned contact rows chronologically and bound gaps to that list."""
     if (not isinstance(question, str)
-            or not re.search(r"\\b(?:open|closed)\\b", question, re.I)
-            or not re.search(r"\\b(?:earliest|latest)\\b", question, re.I)
-            or not re.search(r"\\b(?:gaps?|unobserved intervals?)\\b", question, re.I)):
+            or not re.search(r"\b(?:open|closed)\b", question, re.I)
+            or not re.search(r"\b(?:earliest|latest)\b", question, re.I)
+            or not re.search(r"\b(?:gaps?|unobserved intervals?)\b", question, re.I)):
         return None
     hours = _requested_hours(question)
     if hours is None:
