@@ -476,7 +476,7 @@ ALPHA155_CASES = (
      "live reading. Do not change anything."),
     ("a155-02", "numeric_battery_inventory",
      "Using the returned inventory pages, count distinct device IDs with "
-     "numeric battery readings from 80 to 94 percent inclusive. Report numeric, "
+     "numeric battery from 80 to 94 percent inclusive. Report numeric, "
      "missing and nonnumeric values separately and disclose actual page coverage "
      "and hasMore status. Do not change anything."),
     ("a155-03", "two_current_light_snapshots",
