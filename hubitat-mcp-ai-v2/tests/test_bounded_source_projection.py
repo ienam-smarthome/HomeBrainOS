@@ -94,7 +94,7 @@ class SourceProjectionTests(unittest.TestCase):
         self.assertIn("Fixture One", answer)
         self.assertIn("switch = on", answer)
         self.assertIn("level = 40", answer)
-        self.assertIn("not independently dated", answer.lower())
+        self.assertIn("no independently dated", answer.lower())
         poisoned = receipt("hub_list_devices", first["arguments"],
                            {"devices": [{"id": "DEV-01", "label": "<script>",
                                          "currentStates": {"switch": "on"}}],
