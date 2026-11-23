@@ -823,7 +823,7 @@ def verify(directory: Path, *, reviews: Path | None = None) -> dict:
         if expected_version and record["build"]["version"] != expected_version:
             version_mismatches.append(ident)
         if manifest.get("benchmark_pack") in (
-                ALPHA152_PACK, ALPHA153_PACK, ALPHA154_PACK,
+                ALPHA152_PACK, ALPHA153_PACK, ALPHA154_PACK, ALPHA155_PACK,
         ) and (
                 document.get("package_version") != expected_version
                 or document.get("package_version_provenance") not in (
@@ -848,7 +848,7 @@ def verify(directory: Path, *, reviews: Path | None = None) -> dict:
     permission_evidence = _permission_evidence(
         source_exports,
         include_preflight=manifest.get("benchmark_pack") in (
-            ALPHA152_PACK, ALPHA153_PACK, ALPHA154_PACK,
+            ALPHA152_PACK, ALPHA153_PACK, ALPHA154_PACK, ALPHA155_PACK,
         ),
     )
     if (reviews is not None and manifest.get("benchmark_pack") in PROSPECTIVE_PACKS and
