@@ -464,7 +464,65 @@ ALPHA154_CASES = (
      "scan or retention scope. Do not change anything."),
 )
 
+
+ALPHA155_PACK = "alpha155-prospective-v1"
+ALPHA155_VERSION = "2.0.0-alpha.155"
+ALPHA155_CASES = (
+    ("a155-01", "memory_window_statistics",
+     "Compare the hub's free-memory history over the preceding 80 minutes. "
+     "Calculate the arithmetic mean, minimum, maximum and range from in-window "
+     "returned samples; give the latest sample's difference from the mean, "
+     "exact UTC boundary and sampling gaps. Separate history samples from a "
+     "live reading. Do not change anything."),
+    ("a155-02", "numeric_battery_inventory",
+     "Using the returned inventory pages, count distinct device IDs with "
+     "numeric battery readings from 80 to 94 percent inclusive. Report numeric, "
+     "missing and nonnumeric values separately and disclose actual page coverage "
+     "and hasMore status. Do not change anything."),
+    ("a155-03", "two_current_light_snapshots",
+     "For {light} and {second_light}, compare currently stored switch and "
+     "brightness values. Identify each device separately; say explicitly if "
+     "any requested field is absent. Do not infer dated events or physical "
+     "light output. Do not change anything."),
+    ("a155-04", "trv_sample_interval",
+     "For {trv}, find the newest two recorded thermostat operating-state "
+     "samples and calculate the exact elapsed seconds between them. State "
+     "what cannot be known about the intervening trajectory. Do not change anything."),
+    ("a155-05", "contact_gap_chronology",
+     "For {contact_sensor}, give the newest OPEN and CLOSED reports from the "
+     "preceding seven hours. Sort returned event timestamps chronologically, "
+     "identify earliest and latest rows and significant gaps, and do not infer "
+     "continuous contact state or that unseen events did not occur. "
+     "Do not change anything."),
+    ("a155-06", "warning_log_source_grouping",
+     "Summarize native WARN past-log entries returned for the preceding four "
+     "hours by source. Separate actual returned rows, reported matches and the "
+     "source aggregate total, and explain what the total does not establish "
+     "about scan or retention scope. Do not change anything."),
+    ("a155-07", "command_status_chronology",
+     "For {offline_device}, place the newest returned native command and "
+     "health-status events in chronological order. Distinguish health status "
+     "from dated physical measurements and do not infer an unreturned switch "
+     "transition. Do not change anything."),
+    ("a155-08", "application_execution_evidence",
+     "For the installed application {automation}, identify its exact app "
+     "identity and most recent dated execution-related evidence if returned. "
+     "Separate app log statements, native commands, device reports and "
+     "unverified later outcomes. Do not change anything."),
+    ("a155-09", "current_heating_attributes",
+     "Compare the currently reported heating setpoints and operating states of "
+     "{thermostat} and {trv}. Identify unavailable attributes explicitly and "
+     "keep current values separate from historical demand or cause. "
+     "Do not change anything."),
+    ("a155-10", "energy_history_scope",
+     "For {metered_plug}, report the newest two dated energy-total events and "
+     "their timestamps. Calculate differences only when both source values "
+     "support the same metric; distinguish stored energy from lastActivity and "
+     "do not infer continuous intervening load. Do not change anything."),
+)
+
 PROSPECTIVE_PACKS = {
+    ALPHA155_PACK: (ALPHA155_CASES, ALPHA155_VERSION),
     ALPHA154_PACK: (ALPHA154_CASES, ALPHA154_VERSION),
     ALPHA153_PACK: (ALPHA153_CASES, ALPHA153_VERSION),
     ALPHA152_PACK: (ALPHA152_CASES, ALPHA152_VERSION),
