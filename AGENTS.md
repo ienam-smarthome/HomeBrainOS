@@ -1,5 +1,29 @@
 # HomeBrainOS development agent instructions
 
+## 23 November 2026 — original alpha154 receipts reviewed; source-projection candidate expanded
+
+The owner supplied untouched original alpha153/alpha154 ten-case Technical JSON
+exports; raw private files are not committed. Alpha154 had a wrong battery
+range count (5 claimed, 6 returned qualifying IDs), wrong missing count
+(174 claimed, 169 absent), an empty focused stored-state answer, and WARN log
+totals without requested source grouping. Further source findings: memory
+delta was misreported as 36 KB instead of 36,074.5 KB; two idle TRV event rows
+were used to speculate about an unobserved trajectory; contact-gap rows were
+presented out of chronological order and used to infer continuous closed state.
+No formal atomic-claim score is claimed.
+
+The open draft PR #1742 now adds bounded read-only source projections for:
+numeric inventory ranges, empty focused snapshots, source-grouped original
+past logs, memory-window statistics, two-row event intervals, and chronologically
+sorted contact-event gaps. All use existing original successful receipts;
+no extra model/native calls, writes, permissions or scheduler changes.
+Synthetic tests cover arithmetic, chronology, metadata validation and
+fail-closed paths. No installed version is bumped and old private cohorts
+remain frozen/unpromotable against new code. See
+[original-source findings and candidate boundary](docs/HOMEBRAIN-V2-POST-ALPHA154-SOURCE-PROJECTIONS-20261123.md).
+Require exact-head CI, new unseen pack and independent source-real review
+before any release. Do not change V1, scheduler or native write/approval.
+
 ## 23 November 2026 — original alpha154 receipts independently inspected, bounded candidate
 
 The owner supplied untouched original alpha153/alpha154 ten-case Technical JSON
