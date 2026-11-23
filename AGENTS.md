@@ -1,28 +1,30 @@
 # HomeBrainOS development agent instructions
 
-## 23 November 2026 — original alpha154 receipts reviewed; source-projection candidate expanded
+## 23 November 2026 — Alpha155 package candidate after PR #1742 merge
 
-The owner supplied untouched original alpha153/alpha154 ten-case Technical JSON
-exports; raw private files are not committed. Alpha154 had a wrong battery
-range count (5 claimed, 6 returned qualifying IDs), wrong missing count
-(174 claimed, 169 absent), an empty focused stored-state answer, and WARN log
-totals without requested source grouping. Further source findings: memory
-delta was misreported as 36 KB instead of 36,074.5 KB; two idle TRV event rows
-were used to speculate about an unobserved trajectory; contact-gap rows were
-presented out of chronological order and used to infer continuous closed state.
-No formal atomic-claim score is claimed.
+PR #1742 is merged into main; its four exact-head CI workflows passed. Its
+source-bound publication changes are output-only and do not add native reads,
+model rounds, writes or permission changes. A separate Alpha155 package
+candidate is being prepared on branch
+`agent/v2-alpha155-prospective-package-20261123`: version
+`2.0.0-alpha.155`, distinct ten-case `alpha155-prospective-v1` acceptance
+pack and private workspace `/data/homebrain-v2-alpha155-acceptance`.
 
-The open draft PR #1742 now adds bounded read-only source projections for:
-numeric inventory ranges, empty focused snapshots, source-grouped original
-past logs, memory-window statistics, two-row event intervals, and chronologically
-sorted contact-event gaps. All use existing original successful receipts;
-no extra model/native calls, writes, permissions or scheduler changes.
-Synthetic tests cover arithmetic, chronology, metadata validation and
-fail-closed paths. No installed version is bumped and old private cohorts
-remain frozen/unpromotable against new code. See
-[original-source findings and candidate boundary](docs/HOMEBRAIN-V2-POST-ALPHA154-SOURCE-PROJECTIONS-20261123.md).
-Require exact-head CI, new unseen pack and independent source-real review
-before any release. Do not change V1, scheduler or native write/approval.
+The new pack covers memory arithmetic, numeric inventory coverage, two-light
+snapshots, TRV sample intervals, contact chronology, WARN source grouping,
+command/health ordering, app execution evidence, current heating attributes
+and energy history. Alpha153/154 original captures remain immutable diagnostic
+baselines and must not be reused for prospective acceptance. Raw household
+captures and labels remain private.
+
+This is **not installed, released or empirically accepted**. Require exact-head
+CI, package identity review, dedicated per-client Read ON / Write OFF
+enforcement verification, and a fresh first-attempt capture/independent
+original-source grade before promotion. Source-reported permission receipts
+are not independent enforcement proof. No V1, scheduler, ventilation,
+blocking or native write/approval changes. See
+[Alpha155 package and acceptance boundary](docs/HOMEBRAIN-V2-ALPHA155-PACKAGE-CANDIDATE-20261123.md).
+
 
 ## 23 November 2026 — original alpha154 receipts independently inspected, bounded candidate
 

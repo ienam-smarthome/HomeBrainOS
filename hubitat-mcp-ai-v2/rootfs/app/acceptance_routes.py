@@ -1,4 +1,4 @@
-"""Private, operator-driven alpha.154 acceptance under the V2 UI boundary."""
+"""Private, operator-driven alpha.155 acceptance under the V2 UI boundary."""
 from __future__ import annotations
 
 import json
@@ -17,7 +17,7 @@ from prospective_routes import guard
 from prospective_source_ab import ReadOnlyMCP, verify_read_only_client
 
 router = APIRouter()
-STUDY = Path("/data/homebrain-v2-alpha154-acceptance")
+STUDY = Path("/data/homebrain-v2-alpha155-acceptance")
 PRIVATE = {"Cache-Control": "no-store"}
 
 
@@ -32,7 +32,7 @@ def _package_identity() -> tuple[str | None, str]:
     """Use the image's bundled config even when Supervisor omits BUILD_VERSION.
 
     The bundled manifest and running app version must both match the sealed
-    alpha154 pack. A supplied but conflicting BUILD_VERSION always fails.
+    alpha155 pack. A supplied but conflicting BUILD_VERSION always fails.
     Neither the user-provided label data nor the study's manifest is trusted
     as the package's version source.
     """
@@ -94,7 +94,7 @@ async def acceptance_page():
 
 @router.post("/api/acceptance/prepare")
 async def prepare(body: Labels, request: Request):
-    from source_real_acceptance import ALPHA154_PACK, AcceptanceError, init_labels
+    from source_real_acceptance import ALPHA155_PACK, AcceptanceError, init_labels
 
     directory = _study(request)
     if directory.exists():
@@ -102,7 +102,7 @@ async def prepare(body: Labels, request: Request):
     # Make the parent private before the CLI helper writes labels or prompts.
     directory.mkdir(mode=0o700)
     try:
-        result = init_labels(body.labels, directory, pack=ALPHA154_PACK)
+        result = init_labels(body.labels, directory, pack=ALPHA155_PACK)
     except AcceptanceError as exc:
         if not any(directory.iterdir()):
             directory.rmdir()
@@ -154,19 +154,19 @@ async def export(case_id: str, request: Request):
 
 @router.post("/api/acceptance/{case_id}/capture")
 async def capture(case_id: str, body: CaptureConsent, request: Request):
-    from source_real_acceptance import ALPHA154_VERSION, AcceptanceError
+    from source_real_acceptance import ALPHA155_VERSION, AcceptanceError
 
     directory = _study(request)
     if not body.model_and_private_evidence_consent:
         raise HTTPException(400, "Confirm use of the configured model with private evidence")
     app = request.app
-    if app.version != ALPHA154_VERSION:
-        raise HTTPException(409, "This study requires exactly V2 Preview alpha.154")
+    if app.version != ALPHA155_VERSION:
+        raise HTTPException(409, "This study requires exactly V2 Preview alpha.155")
     package_version, provenance = _package_identity()
-    if (package_version != ALPHA154_VERSION
+    if (package_version != ALPHA155_VERSION
             or provenance not in TRUSTED_PACKAGE_PROVENANCE):
         raise HTTPException(
-            409, "Cannot verify the installed alpha.154 bundle and runtime "
+            409, "Cannot verify the installed alpha.155 bundle and runtime "
                  "version. Refresh/rebuild the add-on from the current repository "
                  "before capturing any first attempt.",
         )

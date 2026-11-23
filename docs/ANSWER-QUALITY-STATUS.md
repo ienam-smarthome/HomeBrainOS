@@ -1,26 +1,33 @@
 # Answer Quality — active status and cross-chat handoff
 
-## 23 November 2026 — original alpha154 source review; expanded candidate only
+## 23 November 2026 — Alpha155 package candidate after PR #1742 merge
 
-Original owner-private a153-01..10 and a154-01..10 Technical JSON captures were
-inspected. Alpha154's 21/21 successful native calls still produced a wrong
-battery range count (5 instead of 6), wrong missing-attribute count (174 instead
-of 169), an empty two-light stored-state answer, and a log-total-only answer
-without requested source grouping. Further defects: memory delta described as
-36 KB rather than 36,074.5 KB; same-value TRV rows led to an unsupported
-intervening-state story; contact event gaps were reverse-ordered and treated
-as continuity evidence. These are source-specific findings, NOT a complete
-independently calibrated claim numerator/denominator.
+PR #1742 is merged into main (source-projection code; four exact-head CI
+workflows passed). A separate Alpha155 package candidate is now being prepared
+on branch `agent/v2-alpha155-prospective-package-20261123`. It sets the V2
+add-on/runtime version to `2.0.0-alpha.155`, creates a distinct
+`alpha155-prospective-v1` ten-case first-answer pack, and moves the private
+acceptance workspace to `/data/homebrain-v2-alpha155-acceptance`.
 
-Draft PR #1742 now adds source-bound read-only projections for inventory
-counts, empty focused snapshots, log source grouping, exact memory statistics,
-newest-two event timing, and chronological contact gaps. It does not make
-extra native/model calls, alter action/approval paths or change any installed
-version. The prior alpha153/154 cohorts remain frozen and cannot be replayed
-as prospective post-change acceptance. Pending: exact-head CI, independent
-full source grading, a new unseen version/pack, true dedicated token
-enforcement and clean prospective first-answer review. See
-[post-alpha154 source evidence](HOMEBRAIN-V2-POST-ALPHA154-SOURCE-PROJECTIONS-20261123.md).
+The new pack probes memory-window arithmetic, numeric battery inventory
+coverage, two-device current snapshots, newest-two TRV sample timing,
+chronological contact gaps, WARN log source grouping, command/health chronology,
+application execution evidence, current heating attributes and energy-history
+scope. It uses the existing private label fields and does not include source
+answers or a household-specific answer key. Alpha153/154 original captures
+remain immutable diagnostics and are not reused.
+
+The package candidate is **not installed, released or empirically accepted**.
+The package/route/test changes still require exact-head CI and review. A fresh
+ten-case capture must be made only after installation, using a dedicated
+per-client Read ON / Write OFF token. The source-reported preflight is not
+independent proof of server-side enforcement. Original-source review and
+human scoring remain required; do not claim the 90% grounded-claim or 80%
+useful-first-answer targets from synthetic tests. No Hubitat writes, new
+native reads, automation/scheduler changes or V1 changes are part of this
+package preparation. See
+[Alpha155 package and acceptance boundary](HOMEBRAIN-V2-ALPHA155-PACKAGE-CANDIDATE-20261123.md).
+
 
 ## 23 November 2026 — original-source alpha154 review, code candidate only
 
