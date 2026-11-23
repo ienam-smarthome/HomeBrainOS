@@ -469,7 +469,7 @@ ALPHA155_PACK = "alpha155-prospective-v1"
 ALPHA155_VERSION = "2.0.0-alpha.155"
 ALPHA155_CASES = (
     ("a155-01", "memory_window_statistics",
-     "Compare the hub's free-memory history over the preceding 80 minutes. "
+     "Compare the hub's free memory history over the preceding 80 minutes. "
      "Calculate the arithmetic mean, minimum, maximum and range from in-window "
      "returned samples; give the latest sample's difference from the mean, "
      "exact UTC boundary and sampling gaps. Separate history samples from a "
