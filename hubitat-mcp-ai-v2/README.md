@@ -4,7 +4,7 @@
 publication fixes from PR #1742 are merged. The separate Alpha155 package
 candidate adds a new ten-case prospective pack and version-bound private
 acceptance workflow, alongside the bounded memory and event-history
-projections. Package exact-head CI is pending; this candidate is not installed,
+projections. All five exact-head GitHub workflows passed; this candidate is not installed,
 released or accepted. V1 remains the maintained installation path. Synthetic
 tests and green CI are not answer-quality scores. See the
 [Alpha155 package and acceptance boundary](../docs/HOMEBRAIN-V2-ALPHA155-PACKAGE-CANDIDATE-20261123.md).
