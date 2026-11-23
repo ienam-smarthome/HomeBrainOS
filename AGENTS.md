@@ -1,5 +1,23 @@
 # HomeBrainOS development agent instructions
 
+## 21 November 2026 — alpha.154 installed report received; semantic quality ungraded
+
+An owner-supplied redacted alpha154 ten-case first-answer report is available.
+It reports 10/10 captures, 21/21 successful native attempts, one failed
+first answer (a154-03), four event-row-limit cases and one past-log-row-limit
+case. Source-reported per-client Read ON / Write OFF exists in ten preflights,
+but independent enforcement, original-source and first-attempt attestations
+are absent. No independent claim accuracy/usefulness/cause grade can be made
+from this report; alpha154 is **NOT PROMOTED**. Preserve original captures and
+get all ten original per-case JSON receipts before selecting a new runtime fix.
+
+A separate report-only offline triage CLI flags cases for private source
+review without accessing devices, claiming semantic success, or altering
+the frozen pack. See
+[alpha154 installed redacted report triage](docs/HOMEBRAIN-V2-ALPHA154-SOURCE-REAL-TRIAGE-20261121.md).
+The code addition is tools/tests/docs only: no V1/V2 installed runtime,
+MCP permissions, automation, model routing or native writes change.
+
 ## 20 November 2026 — alpha.154 source-evidence correctness candidate
 
 Original alpha153 source-real cohort remains intact/unpromoted (5/10 advisory
