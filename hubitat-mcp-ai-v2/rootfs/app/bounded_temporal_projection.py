@@ -191,6 +191,12 @@ def memory_window_statistics_answer(
             f"Nearest sample before the window: `{_stamp(nearest_before[0])}` — "
             f"{_number(nearest_before[1], 1)} KB (outside the inclusive lower bound)."
         )
+        earliest_before = min(preceding, key=lambda item: item[0])
+        if earliest_before[0] < nearest_before[0]:
+            lines.append(
+                f"Earlier outside-window samples span from `{_stamp(earliest_before[0])}` "
+                f"through `{_stamp(nearest_before[0])}`."
+            )
     if nearest_after:
         lines.append(
             f"Nearest sample after the client time: `{_stamp(nearest_after[0])}` — "
