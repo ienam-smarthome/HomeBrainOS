@@ -3,13 +3,14 @@
 ## Status
 
 - Source-projection PR #1742 is merged into `main`; its four exact-head CI workflows passed.
-- A separate Alpha155 package candidate is being prepared on branch
-  `agent/v2-alpha155-prospective-package-20261123`.
+- PR #1743 is merged into `main`; the Alpha155 package candidate is now in the
+  repository's main branch.
 - The candidate version is `2.0.0-alpha.155`.
 - The prospective pack is `alpha155-prospective-v1`, with ten distinct
   `a155-01` through `a155-10` prompts.
 - The acceptance workspace is isolated at
   `/data/homebrain-v2-alpha155-acceptance`.
+- All five exact-head GitHub workflows passed, including V2 tests and container smoke.
 - This is code preparation only: it is not installed, released, captured or promoted.
 
 ## What Alpha155 tests
@@ -61,9 +62,8 @@ used as prospective post-change evidence.
 
 ## Remaining release gates
 
-1. Exact-head CI for this Alpha155 package branch; fix all failures before merge.
-2. Review package/runtime/config version identity and acceptance route isolation.
-3. Install the exact Alpha155 package in Home Assistant; do not treat GitHub CI
+1. Exact-head CI and package/runtime/config version checks have passed.
+2. Install the exact Alpha155 package in Home Assistant; do not treat GitHub CI
    as installation or first-answer evidence.
 4. Independently verify the dedicated MCP token cannot perform native writes.
 5. Seal the new private Alpha155 manifest and capture each first answer once.
