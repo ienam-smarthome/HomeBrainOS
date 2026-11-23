@@ -1,5 +1,35 @@
 # V2 post-alpha154 source-bound output candidate — 23 November 2026
 
+## Expanded bounded temporal projections — draft PR #1742
+
+The same owner-private original captures confirm three additional output
+defects; the raw JSON remains outside the repository:
+
+- **a154-01 memory arithmetic:** 16 in-window returned samples have arithmetic
+  mean 925,122.5 KB, min 881,840 KB, max 976,616 KB, range 94,776 KB. The
+  latest returned sample is 889,048 KB, i.e. 36,074.5 KB below the mean—not
+  36 KB. The source has no instantaneous live-memory read in this capture.
+  A new source-only summary displays the exact client-clock inclusive window,
+  all 16 samples, nearest outside sample, sample mean/range and boundary/internal
+  gaps; it labels the latest history sample as a sample, not a live reading.
+- **a154-05 TRV history:** the two newest returned thermostatOperatingState
+  rows are both idle and separated by 1,181.156 seconds. The receipt requested
+  limit 2 and reports that limit reached. A source-only answer reports the two
+  timestamps and exact interval but explicitly does not infer the state
+  trajectory, previous value, command issuer or cause.
+- **a154-09 contact history:** 11 returned contact rows are sorted by timestamp
+  before identifying latest OPEN/CLOSED and computing gaps. The two largest
+  adjacent returned-row gaps are 3h 7m 40.747s and 1h 22m 35.433s. This is
+  explicitly not evidence that the contact stayed closed/open or that unseen
+  rows/commands were absent.
+
+The new bounded_temporal_projection.py module is output-only and consumes
+only original successful memory/event receipts. It adds no reads, retries,
+model rounds, native writes or permission changes. Synthetic regressions
+cover memory arithmetic, row sorting, exact interval math, metadata mismatch,
+wrong-target rejection and continuity caveats. These do not replace fresh
+installed source-real acceptance.
+
 **Candidate only; do not call this an installed or accepted alpha155 package.**
 
 ## Independent original-source intake
