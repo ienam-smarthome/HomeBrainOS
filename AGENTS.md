@@ -1,5 +1,25 @@
 # HomeBrainOS development agent instructions
 
+## 23 November 2026 — original alpha154 receipts independently inspected, bounded candidate
+
+The owner supplied untouched original alpha153/alpha154 ten-case Technical JSON
+exports; raw private files are not committed. Alpha154 had a genuine wrong
+battery range count (5 claimed, 6 returned qualifying IDs) and missing count
+(174 claimed, 169 absent), an empty focused stored-state answer, and WARN log
+totals without requested source grouping. The memory-window case also made a
+36 KB vs 36,074.5 KB numerical-difference error; contact-gap continuity was
+overstated. Original-source evidence, not a redacted report alone, now supports
+these specific observations. No formal 90% atomic-claim score is claimed.
+
+A separate **post-alpha154 candidate** PR adds read-only source-bound numeric
+inventory counts, empty focused-snapshot recovery and existing original
+past-log source grouping at final publication. No installed version is bumped;
+old private cohorts remain frozen and cannot be treated as prospective
+post-change acceptance. See
+[original-source finding and boundary](docs/HOMEBRAIN-V2-POST-ALPHA154-SOURCE-PROJECTIONS-20261123.md).
+Do not change V1, scheduler, native write/approval or source selection. Require
+exact-head CI, new unseen pack and new independent source-real review.
+
 ## 21 November 2026 — alpha.154 installed report received; semantic quality ungraded
 
 An owner-supplied redacted alpha154 ten-case first-answer report is available.
