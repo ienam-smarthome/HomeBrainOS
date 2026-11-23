@@ -4,11 +4,10 @@
 
 PR #1742 is merged into main; its four exact-head CI workflows passed. Its
 source-bound publication changes are output-only and do not add native reads,
-model rounds, writes or permission changes. A separate Alpha155 package
-candidate is being prepared on branch
-`agent/v2-alpha155-prospective-package-20261123`: version
-`2.0.0-alpha.155`, distinct ten-case `alpha155-prospective-v1` acceptance
-pack and private workspace `/data/homebrain-v2-alpha155-acceptance`.
+model rounds, writes or permission changes. PR #1743 is now merged into main. Its Alpha155 package candidate uses version
+`2.0.0-alpha.155`, a distinct ten-case `alpha155-prospective-v1` acceptance
+pack and private workspace `/data/homebrain-v2-alpha155-acceptance`. All five
+exact-head GitHub workflows passed.
 
 The new pack covers memory arithmetic, numeric inventory coverage, two-light
 snapshots, TRV sample intervals, contact chronology, WARN source grouping,
@@ -17,10 +16,10 @@ and energy history. Alpha153/154 original captures remain immutable diagnostic
 baselines and must not be reused for prospective acceptance. Raw household
 captures and labels remain private.
 
-This is **not installed, released or empirically accepted**. Require exact-head
-CI, package identity review, dedicated per-client Read ON / Write OFF
+This is **not installed, released or empirically accepted**. Package identity
+and exact-head CI have passed; dedicated per-client Read ON / Write OFF
 enforcement verification, and a fresh first-attempt capture/independent
-original-source grade before promotion. Source-reported permission receipts
+original-source grade remain required before promotion. Source-reported permission receipts
 are not independent enforcement proof. No V1, scheduler, ventilation,
 blocking or native write/approval changes. See
 [Alpha155 package and acceptance boundary](docs/HOMEBRAIN-V2-ALPHA155-PACKAGE-CANDIDATE-20261123.md).
