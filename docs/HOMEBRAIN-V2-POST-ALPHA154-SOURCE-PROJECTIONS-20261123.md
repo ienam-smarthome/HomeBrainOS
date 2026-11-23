@@ -1,6 +1,6 @@
 # V2 post-alpha154 source-bound output candidate — 23 November 2026
 
-## Expanded bounded temporal projections — draft PR #1742
+## Expanded bounded temporal projections — merged PR #1742
 
 The same owner-private original captures confirm three additional output
 defects; the raw JSON remains outside the repository:
@@ -23,12 +23,15 @@ defects; the raw JSON remains outside the repository:
   explicitly not evidence that the contact stayed closed/open or that unseen
   rows/commands were absent.
 
-The new bounded_temporal_projection.py module is output-only and consumes
-only original successful memory/event receipts. It adds no reads, retries,
-model rounds, native writes or permission changes. Synthetic regressions
-cover memory arithmetic, row sorting, exact interval math, metadata mismatch,
+PR #1742 merged this output-only bounded_temporal_projection.py module to
+main. It consumes only original successful memory/event receipts and adds no
+reads, retries, model rounds, native writes or permission changes. Four
+exact-head GitHub CI workflows passed on the PR. Synthetic regressions cover
+memory arithmetic, row sorting, exact interval math, metadata mismatch,
 wrong-target rejection and continuity caveats. These do not replace fresh
-installed source-real acceptance.
+installed source-real acceptance. A separate Alpha155 package/acceptance
+candidate is tracked in
+[the Alpha155 package note](HOMEBRAIN-V2-ALPHA155-PACKAGE-CANDIDATE-20261123.md).
 
 **Candidate only; do not call this an installed or accepted alpha155 package.**
 
