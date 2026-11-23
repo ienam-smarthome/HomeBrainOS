@@ -3,11 +3,11 @@
 ## 23 November 2026 — Alpha155 package candidate after PR #1742 merge
 
 PR #1742 is merged into main (source-projection code; four exact-head CI
-workflows passed). A separate Alpha155 package candidate is now being prepared
-on branch `agent/v2-alpha155-prospective-package-20261123`. It sets the V2
-add-on/runtime version to `2.0.0-alpha.155`, creates a distinct
-`alpha155-prospective-v1` ten-case first-answer pack, and moves the private
-acceptance workspace to `/data/homebrain-v2-alpha155-acceptance`.
+workflows passed). PR #1743 is now merged into main. It sets the V2 add-on/runtime version to
+`2.0.0-alpha.155`, creates a distinct `alpha155-prospective-v1` ten-case
+first-answer pack, and moves the private acceptance workspace to
+`/data/homebrain-v2-alpha155-acceptance`. All five exact-head GitHub workflows
+passed.
 
 The new pack probes memory-window arithmetic, numeric battery inventory
 coverage, two-device current snapshots, newest-two TRV sample timing,
@@ -18,8 +18,8 @@ answers or a household-specific answer key. Alpha153/154 original captures
 remain immutable diagnostics and are not reused.
 
 The package candidate is **not installed, released or empirically accepted**.
-The package/route/test changes still require exact-head CI and review. A fresh
-ten-case capture must be made only after installation, using a dedicated
+Package/route/test CI and metadata validation have passed. A fresh ten-case
+capture must be made only after installation, using a dedicated
 per-client Read ON / Write OFF token. The source-reported preflight is not
 independent proof of server-side enforcement. Original-source review and
 human scoring remain required; do not claim the 90% grounded-claim or 80%
