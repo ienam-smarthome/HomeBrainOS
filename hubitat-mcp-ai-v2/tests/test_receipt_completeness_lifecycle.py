@@ -61,7 +61,7 @@ class CompletenessFinalModelTests(unittest.IsolatedAsyncioTestCase):
             result=await model.answer(
                 "Did a fictional valve remain heating continuously throughout "
                 "the last three hours? Do not change anything.",
-                [],mcp,90,enable_causal_follow_through=False)
+                [],mcp,90,enable_causal_follow_through=False,enable_compute_nudge=False)
         finally:
             await model.close()
         self.assertTrue(result["success"])

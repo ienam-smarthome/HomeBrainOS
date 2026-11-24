@@ -305,7 +305,7 @@ class PublicationIntegrationTests(unittest.IsolatedAsyncioTestCase):
             result = await agent.answer(
                 "Why did a device start earlier?", [],
                 FakeMCP(inventory), 90, enable_source_review=False,
-                enable_final_claim_audit=False,
+                enable_final_claim_audit=False, enable_compute_nudge=False,
             )
         finally:
             await agent.close()

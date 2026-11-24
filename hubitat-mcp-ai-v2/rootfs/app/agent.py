@@ -361,6 +361,15 @@ _PRIOR_TOOL = "homebrain_read_prior_evidence"
 _CATALOG_TOOL = "homebrain_inspect_mcp_catalog"
 
 
+COMPUTE_NUDGE = (
+    "Internal check (not from the user): a returned source holds a large row list and "
+    "no homebrain_compute_receipt call was made. If your draft states any count, range, "
+    "average, ranking, total or time gap over those rows, call homebrain_compute_receipt "
+    "now (receipt_indexes for paged results) and use its exact output. If it states no "
+    "such figure, reply with your draft answer unchanged."
+)
+
+
 class CatalogToolUnavailable(MCPError):
     """A model-selected name is absent from this request's live tools/list."""
 
@@ -864,6 +873,7 @@ class Agent:
         prior_evidence: str = "", prior_receipts: int = 0,
         prior_reader=None, enable_source_review: bool = True,
         device_monitor=None, enable_final_claim_audit: bool = True,
+        enable_compute_nudge: bool = True,
         enable_causal_follow_through: bool = True,
         enable_action_proposal_review: bool = True,
         hub_timezone: str | None = None,
@@ -1643,6 +1653,8 @@ class Agent:
                 fallback_status=status,
             )
 
+        row_list_receipt_seen = False
+        compute_nudge_sent = False
         while True:
             if hasattr(mcp, "cached_leaf_schemas"):
                 tools = model_tools(catalog, mcp.cached_leaf_schemas())
@@ -1995,6 +2007,18 @@ class Agent:
                     if partial is not None:
                         return partial
                 return completed_answer(text, "not_invoked")
+
+            if (enable_compute_nudge and not calls and text and row_list_receipt_seen
+                    and not compute_nudge_sent
+                    and not any(r.get("result_kind") == "local_compute" for r in receipts)
+                    and deadline - time.monotonic() > 25):
+                # Structural, not wording-based: a large row list was returned
+                # and no local computation ran. One bounded chance to replace
+                # any figure derived by inspection with an exact computation.
+                compute_nudge_sent = True
+                messages.append({"role": "assistant", "content": text})
+                messages.append({"role": "user", "content": COMPUTE_NUDGE})
+                continue
 
             if not calls:
                 # A source-sufficiency/audit round can consume the remaining
@@ -2977,6 +3001,7 @@ class Agent:
                             row_hint = rows_hint(result, len(receipts) + 1)
                             if row_hint is not None:
                                 model_result["client_row_compute_hint"] = row_hint
+                                row_list_receipt_seen = True
                         if tool_error and name == "hub_list_devices":
                             note = inventory_failure_recovery_note(args)
                             if note is not None:

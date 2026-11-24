@@ -195,6 +195,7 @@ class ModelSelectedRecoveryTests(unittest.IsolatedAsyncioTestCase):
                 "Why did the fixture thermostat report heating, and which "
                 "input requested it? Do not change anything.",
                 [], hub, 120, enable_final_claim_audit=False,
+                enable_compute_nudge=False,
             )
         finally:
             await model.close()

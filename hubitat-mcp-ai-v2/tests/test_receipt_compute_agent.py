@@ -80,7 +80,7 @@ class ComputeInsideAgentLoop(unittest.IsolatedAsyncioTestCase):
             {"content": "done", "tool_calls": []},
         ])
         try:
-            await agent.answer("list my devices", [], hub, 60)
+            await agent.answer("list my devices", [], hub, 60, enable_compute_nudge=False)
         finally:
             await agent.close()
         tool_msg = agent.tool_messages[-1][-1]["content"]
@@ -107,3 +107,34 @@ class ComputeInsideAgentLoop(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ComputeNudge(unittest.IsolatedAsyncioTestCase):
+    async def run_script(self, script):
+        agent = Scripted(script)
+        try:
+            reply = await agent.answer("how many devices have a battery?", [], Hub(), 90)
+        finally:
+            await agent.close()
+        return agent, reply
+
+    async def test_inspected_answer_gets_one_compute_chance(self):
+        agent, reply = await self.run_script([
+            {"content": "", "tool_calls": [call("hub_list_devices", {})]},
+            {"content": "About 3 devices.", "tool_calls": []},
+            {"content": "", "tool_calls": [call("homebrain_compute_receipt", {
+                "operation": "count", "receipt_index": 1,
+                "where": [{"field": "currentStates.battery", "op": "exists"}]})]},
+            {"content": "Exact count from the computation.", "tool_calls": []},
+        ])
+        self.assertEqual(agent.script, [])
+        self.assertTrue(any(c["name"] == "homebrain_compute_receipt" for c in reply["tool_calls"]))
+
+    async def test_nudge_is_sent_only_once(self):
+        agent, reply = await self.run_script([
+            {"content": "", "tool_calls": [call("hub_list_devices", {})]},
+            {"content": "A draft with no figures.", "tool_calls": []},
+            {"content": "A draft with no figures.", "tool_calls": []},
+        ])
+        self.assertEqual(agent.script, [])
+        self.assertIn("draft", reply["answer"])
