@@ -195,6 +195,38 @@ class RowsHint(unittest.TestCase):
         self.assertEqual(out["rows_in_list"], 12)
 
 
+class RowCoverage(unittest.TestCase):
+    def result(self, total, cursor=None):
+        rows = [{"name": f"d{i}", "stateSize": 1000 + i} for i in range(12)]
+        body = {"modes": {"devices": {"total": total, "entries": rows}}}
+        if cursor:
+            body["modes"]["devices"]["nextCursor"] = cursor
+        return {"content": [{"type": "text", "text": json.dumps(body)}]}
+
+    def test_partial_page_is_reported_with_cursor(self):
+        from receipt_compute import rows_hint
+        cov = rows_hint(self.result(293, "12"), 1)["coverage"]
+        self.assertTrue(cov["partial"])
+        self.assertEqual((cov["rows_returned"], cov["source_reported_total"], cov["next_cursor"]),
+                         (12, 293, "12"))
+
+    def test_complete_page_is_not_partial(self):
+        from receipt_compute import rows_hint
+        self.assertFalse(rows_hint(self.result(12), 1)["coverage"]["partial"])
+
+    def test_no_total_means_no_coverage_claim(self):
+        from receipt_compute import rows_hint
+        rows = [{"a": i} for i in range(12)]
+        res = {"content": [{"type": "text", "text": json.dumps({"entries": rows})}]}
+        self.assertNotIn("coverage", rows_hint(res, 1))
+
+    def test_byte_fields_get_kb_conversions(self):
+        rec = {"name": "hub_get_logs", "success": True, "result_kind": "tool_result",
+               "response": json.dumps(self.result(12))}
+        out = compute([rec], {"operation": "max", "field": "stateSize"})
+        self.assertEqual(out["unit_conversions_from_bytes"]["result"]["KB_decimal"], 1.011)
+
+
 class MemoryHistoryWindow(unittest.TestCase):
     def receipt(self):
         rows = [{"timestamp": f"11-24 {h:02d}:{m:02d}:00", "freeMemoryKB": v}

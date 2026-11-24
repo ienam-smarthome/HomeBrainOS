@@ -267,6 +267,16 @@ def compute(receipts: list[dict], args: dict) -> dict:
     out = _compute(receipts, args)
     field = args.get("field") if isinstance(args, dict) else None
     local = out if isinstance(out, dict) else None
+    if isinstance(local, dict) and isinstance(field, str) and field.lower() in ("statesize",) \
+            or isinstance(field, str) and field.lower().endswith("bytes"):
+        converted = {}
+        for key in ("result", "min", "max"):
+            value = local.get(key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                converted[key] = {"KB_decimal": round(value / 1000, 6),
+                                  "KiB_binary": round(value / 1024, 6)}
+        if converted:
+            local["unit_conversions_from_bytes"] = converted
     if isinstance(local, dict) and isinstance(field, str) and field.lower().endswith("kb"):
         converted = {}
         for key in ("result", "min", "max"):
@@ -496,7 +506,7 @@ def rows_hint(result: Any, receipt_index: int) -> dict | None:
     path, rows = located
     if len(rows) < HINT_MIN_ROWS or len(rows) > MAX_ROWS:
         return None
-    return {
+    hint = {
         "source": "client observation of this result's shape; not hub data",
         "receipt_index": receipt_index,
         "rows_path": path,
@@ -508,6 +518,38 @@ def rows_hint(result: Any, receipt_index: int) -> dict | None:
                 "pass receipt_indexes=[all page receipts]. Missing/unreturned rows "
                 "stay unknown."),
     }
+    coverage = _row_coverage(result, path, len(rows))
+    if coverage is not None:
+        hint["coverage"] = coverage
+    return hint
+
+
+def _row_coverage(result: Any, path: str, returned: int) -> dict | None:
+    """Report rows the source says exist but did not return (shape-based)."""
+    try:
+        parent = _walk(result, [p for p in path.split(".") if p != ""][:-1])
+    except ComputeError:
+        return None
+    if not isinstance(parent, dict):
+        return None
+    reported = next((parent[k] for k in ("total", "matched", "totalCount")
+                     if isinstance(parent.get(k), (int, float))
+                     and not isinstance(parent.get(k), bool)), None)
+    cursor = parent.get("nextCursor")
+    if reported is None and not cursor:
+        return None
+    partial = (reported is not None and returned < reported) or bool(cursor)
+    out: dict[str, Any] = {"rows_returned": returned, "source_reported_total": reported,
+                           "partial": partial}
+    if cursor:
+        out["next_cursor"] = cursor
+    if partial:
+        out["use"] = ("This is only part of what the source holds. A ranking, count or "
+                      "maximum over these rows covers only these rows: say so in the answer "
+                      "(for example 'N of M rows'). To read more, call the same tool again "
+                      "with the next_cursor exactly as returned, following the tool's own "
+                      "paging rules; if that read fails, report the result as partial.")
+    return out
 
 
 # Field meanings for the hub's per-device runtime table, keyed on the declared
