@@ -1281,7 +1281,8 @@ def is_read_only_review_tool(name: str) -> bool:
     this supplemental checkpoint. The original model loop is untouched.
     """
     return name in {"homebrain_read_prior_evidence", "homebrain_read_device_monitor",
-                    "homebrain_inspect_mcp_catalog", "homebrain_read_clock"} or (
+                    "homebrain_inspect_mcp_catalog", "homebrain_read_clock",
+                    "homebrain_compute_receipt"} or (
         isinstance(name, str)
         and name.startswith(("hub_read_", "hub_get_", "hub_list_", "hub_search_"))
     )

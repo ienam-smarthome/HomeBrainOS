@@ -19,7 +19,7 @@ from time_evidence import native_document
 
 _NON_OBSERVATIONS = frozenset({
     "homebrain_read_prior_evidence", "homebrain_inspect_mcp_catalog",
-    "homebrain_read_clock",
+    "homebrain_read_clock", "homebrain_compute_receipt",
 })
 _READ_RESULT_TYPES = frozenset({"tool_result", "local_monitor_read"})
 

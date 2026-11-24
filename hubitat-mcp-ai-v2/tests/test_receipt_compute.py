@@ -1,0 +1,141 @@
+"""Regressions for deterministic computation over rows already returned.
+
+Cases mirror the alpha154 owner-capture failures (miscounted battery range,
+36 KB vs 36,074.5 KB memory arithmetic, adjacent-row gaps) using fictional data.
+"""
+from __future__ import annotations
+
+import json
+import sys
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "rootfs" / "app"))
+
+from receipt_compute import ComputeError, TOOL_NAME, compute  # noqa: E402
+from investigation_review import is_read_only_review_tool  # noqa: E402
+
+
+def native(payload, name="hub_list_devices", args=None, **extra):
+    outer = {"content": [{"type": "text", "text": json.dumps(payload)}]}
+    row = {"name": name, "arguments": args or {}, "success": True,
+           "result_kind": "tool_result", "response": json.dumps(outer)}
+    row.update(extra)
+    return row
+
+
+class InventoryCounting(unittest.TestCase):
+    def setUp(self):
+        devices = ([{"id": str(i), "battery": b} for i, b in
+                    enumerate([80, 85, 90, 94, 94, 80, 79, 95, 100])]
+                   + [{"id": f"x{i}"} for i in range(20)]
+                   + [{"id": "s", "battery": "n/a"}])
+        self.receipts = [native({"devices": devices, "hasMore": True})]
+
+    def test_battery_range_counts_exactly_and_reports_skips(self):
+        out = compute(self.receipts, {
+            "operation": "count",
+            "where": [{"field": "battery", "op": "gte", "value": 80},
+                      {"field": "battery", "op": "lte", "value": 94}]})
+        self.assertEqual(out["count"], 6)
+        self.assertEqual(out["rows_in_list"], 30)
+        self.assertEqual(out["rows_path"], "content.0.text.devices")
+        self.assertTrue(out["covers_only_rows_the_source_returned"])
+
+    def test_missing_and_nonnumeric_are_reported_not_guessed(self):
+        out = compute(self.receipts, {"operation": "mean", "field": "battery"})
+        self.assertEqual(out["rows_missing_field"], 20)
+        self.assertEqual(out["rows_non_numeric"], 1)
+        self.assertEqual(out["rows_used"], 9)
+
+    def test_group_and_unique(self):
+        g = compute(self.receipts, {"operation": "group_count", "field": "battery"})
+        self.assertEqual(g["groups"][0]["count"], 2)
+        self.assertIn(g["groups"][0]["value"], ("80", "94"))
+        u = compute(self.receipts, {"operation": "unique_count", "field": "id"})
+        self.assertEqual(u["unique_count"], 30)
+
+
+class MemoryArithmetic(unittest.TestCase):
+    def test_difference_between_latest_and_mean_is_not_36kb(self):
+        values = [881840, 976616, 889048, 925000, 940000]
+        receipts = [native({"entries": [{"freeMemory": v} for v in values]},
+                           name="hub_get_memory_history")]
+        out = compute(receipts, {"operation": "mean", "field": "freeMemory"})
+        self.assertEqual(out["result"], sum(values) / len(values))
+        self.assertEqual(out["min"], 881840)
+        self.assertEqual(out["max"], 976616)
+        d = compute(receipts, {"operation": "diff", "field": "freeMemory"})
+        self.assertEqual(d["difference"], 940000 - 881840)
+
+
+class Timestamps(unittest.TestCase):
+    ROWS = [{"time": "2026-11-20T10:00:00Z", "value": "open"},
+            {"time": "2026-11-20T10:20:00Z", "value": "closed"},
+            {"time": "2026-11-20T09:00:00Z", "value": "open"},   # unsorted on purpose
+            {"time": "2026-11-20T13:07:40.747Z", "value": "open"},
+            {"time": "bad", "value": "x"}]
+
+    def test_gaps_sorted_exactly_and_flagged_as_not_proof(self):
+        out = compute([native({"events": self.ROWS})], {"operation": "time_gaps", "field": "time"})
+        top = out["largest_gaps"][0]
+        self.assertEqual(top["seconds"], 10060.747)
+        self.assertEqual(top["readable"], "2h 47m 40.747s")
+        self.assertEqual(out["rows_unparseable_time"], 1)
+        self.assertTrue(out["gaps_are_between_returned_rows_not_proof_of_no_events"])
+
+    def test_span(self):
+        out = compute([native({"events": self.ROWS[:4]})], {"operation": "diff", "field": "time"})
+        self.assertEqual(out["kind"], "timestamp_span")
+        self.assertEqual(out["seconds"], 14860.747)
+
+    def test_naive_timestamps_are_not_guessed(self):
+        rows = [{"t": "2026-11-20T10:00:00"}, {"t": "2026-11-20T11:00:00"}]
+        out = compute([native({"events": rows})], {"operation": "time_gaps", "field": "t"})
+        self.assertEqual(out["rows_unparseable_time"], 2)
+        self.assertEqual(out["largest_gaps"], [])
+
+    def test_sort_descending_with_limit(self):
+        out = compute([native({"events": self.ROWS[:4]})],
+                      {"operation": "sort", "field": "time", "descending": True, "limit": 2})
+        self.assertEqual([r["value"] for r in out["rows"]], ["open", "closed"])
+        self.assertTrue(out["rows_truncated_to_limit"])
+
+
+class Refusals(unittest.TestCase):
+    def test_truncated_receipt_refused(self):
+        r = native({})
+        r["response"] = json.dumps({"truncated": True, "visible_prefix": "[{"})
+        with self.assertRaisesRegex(ComputeError, "truncated"):
+            compute([r], {"operation": "count"})
+
+    def test_failed_or_local_receipts_refused_and_listed(self):
+        bad = native({"devices": [{"id": 1}]}, success=False)
+        good = native({"devices": [{"id": 1}]}, name="hub_get_x", args={"a": 1})
+        clock = {"name": "homebrain_read_clock", "success": True,
+                 "result_kind": "local_clock_read", "response": "{}"}
+        with self.assertRaisesRegex(ComputeError, "usable receipts"):
+            compute([bad, good, clock], {"operation": "count", "receipt_index": 3})
+        self.assertEqual(compute([bad, good, clock], {"operation": "count"})["receipt_index"], 2)
+
+    def test_unknown_args_and_operations(self):
+        r = [native({"devices": []})]
+        with self.assertRaises(ComputeError):
+            compute(r, {"operation": "count", "code": "1+1"})
+        with self.assertRaises(ComputeError):
+            compute(r, {"operation": "eval"})
+        with self.assertRaises(ComputeError):
+            compute(r, {"operation": "sum"})   # needs field
+
+    def test_no_receipts(self):
+        with self.assertRaises(ComputeError):
+            compute([], {"operation": "count"})
+
+
+class Classification(unittest.TestCase):
+    def test_local_tool_is_read_only(self):
+        self.assertTrue(is_read_only_review_tool(TOOL_NAME))
+
+
+if __name__ == "__main__":
+    unittest.main()
