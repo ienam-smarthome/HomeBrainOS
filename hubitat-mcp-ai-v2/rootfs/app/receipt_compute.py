@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from datetime import UTC, datetime
 from typing import Any
 
@@ -45,7 +46,9 @@ TOOL_DEFINITION = {
             "largest gaps between adjacent rows), diff(field; newest minus "
             "oldest ISO timestamp, or last minus first numeric in returned order). "
             "Timestamps must be ISO strings with a UTC offset or Z; naive or epoch "
-            "values are not guessed. Output reports rows used and skipped. "
+            "values are not guessed. The one exception: lt/lte/gt/gte on 'MM-DD HH:MM:SS' "
+            "stamps (as hub history rows use) compare as text within one calendar year, so a "
+            "time window can be a where range on that field. Output reports rows used and skipped. "
             "It reads no hub data and proves nothing about rows the source did not return."
         ),
         "parameters": {
@@ -135,6 +138,8 @@ def _find_rows(value: Any, depth: int = 0) -> tuple[str, list] | None:
                     queue.append((f"{prefix}.{i}" if prefix else str(i), child, level + 1))
         elif isinstance(node, dict) and level < 7:
             for key, child in node.items():
+                if isinstance(key, str) and key.startswith("client_"):
+                    continue  # client-added annotations are not source rows
                 queue.append((f"{prefix}.{key}" if prefix else key, child, level + 1))
     return best
 
@@ -187,6 +192,9 @@ def _instant(value: Any) -> datetime | None:
     return None
 
 
+_MD_STAMP = re.compile(r"^\d\d-\d\d \d\d:\d\d:\d\d$")
+
+
 def _matches(row: dict, clause: dict) -> bool:
     field, op = clause.get("field"), clause.get("op")
     if not isinstance(field, str) or op not in _COMPARATORS:
@@ -206,6 +214,9 @@ def _matches(row: dict, clause: dict) -> bool:
     if op == "contains":
         return str(expected).lower() in str(actual).lower()
     a, e = _number(actual), _number(expected)
+    if (a is None or e is None) and _MD_STAMP.match(str(actual)) and _MD_STAMP.match(str(expected)):
+        sa, se = str(actual), str(expected)
+        return {"lt": sa < se, "lte": sa <= se, "gt": sa > se, "gte": sa >= se}[op]
     if a is None or e is None:
         ia, ie = _instant(actual), _instant(expected)
         if ia is None or ie is None:
@@ -251,7 +262,24 @@ def _receipt_rows(receipt: dict, rows_path: str | None) -> tuple[str, list]:
     return path, found
 
 
-def compute(receipts: list[dict], args: dict) -> dict:  # noqa: C901
+def compute(receipts: list[dict], args: dict) -> dict:
+    """Compute, then add unit conversions for fields whose name ends in KB."""
+    out = _compute(receipts, args)
+    field = args.get("field") if isinstance(args, dict) else None
+    local = out if isinstance(out, dict) else None
+    if isinstance(local, dict) and isinstance(field, str) and field.lower().endswith("kb"):
+        converted = {}
+        for key in ("result", "min", "max"):
+            value = local.get(key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                converted[key] = {"MB_decimal": round(value / 1000, 6),
+                                  "MiB_binary": round(value / 1024, 6)}
+        if converted:
+            local["unit_conversions_from_KB"] = converted
+    return out
+
+
+def _compute(receipts: list[dict], args: dict) -> dict:  # noqa: C901
     """Compute from structured model arguments over this request's receipts."""
     allowed = {"receipt_index", "receipt_indexes", "rows_path", "where", "operation", "field",
                "descending", "limit"}

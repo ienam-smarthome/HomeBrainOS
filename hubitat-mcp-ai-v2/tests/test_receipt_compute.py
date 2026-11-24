@@ -195,6 +195,34 @@ class RowsHint(unittest.TestCase):
         self.assertEqual(out["rows_in_list"], 12)
 
 
+class MemoryHistoryWindow(unittest.TestCase):
+    def receipt(self):
+        rows = [{"timestamp": f"11-24 {h:02d}:{m:02d}:00", "freeMemoryKB": v}
+                for h, m, v in [(18, 10, 1000), (18, 30, 900), (18, 35, 800), (19, 0, 700)]]
+        outer = {"content": [{"type": "text", "text": json.dumps({"entries": rows})}],
+                 "client_cpu_load_context": {"returned_samples": [{"load": 1}] * 10}}
+        return {"name": "hub_get_memory_history", "arguments": {}, "success": True,
+                "result_kind": "tool_result", "response": json.dumps(outer)}
+
+    def test_client_annotation_lists_are_not_source_rows(self):
+        out = compute([self.receipt()], {"operation": "mean", "field": "freeMemoryKB"})
+        self.assertEqual(out["rows_in_list"], 4)
+        self.assertEqual(out["result"], 850)
+
+    def test_month_day_stamp_window_filters_rows(self):
+        out = compute([self.receipt()], {
+            "operation": "mean", "field": "freeMemoryKB",
+            "where": [{"field": "timestamp", "op": "gte", "value": "11-24 18:20:00"}]})
+        self.assertEqual(out["rows_after_filter"], 3)
+        self.assertEqual(out["result"], 800)
+        self.assertEqual(out["min"], 700)
+
+    def test_kb_fields_get_decimal_and_binary_conversions(self):
+        out = compute([self.receipt()], {"operation": "mean", "field": "freeMemoryKB"})
+        self.assertEqual(out["unit_conversions_from_KB"]["result"]["MB_decimal"], 0.85)
+        self.assertAlmostEqual(out["unit_conversions_from_KB"]["result"]["MiB_binary"], 0.830078, places=5)
+
+
 class GapsInTimeOrder(unittest.TestCase):
     def test_time_gaps_lists_every_gap_oldest_first(self):
         rows = [{"date": "2026-11-24T10:00:30.000+0000"}, {"date": "2026-11-24T10:00:00.000+0000"},

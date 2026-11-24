@@ -109,3 +109,10 @@ answers and its round-time cost.
 - Memory (alpha.160): `hub_get_logs` devices rows carry `pct` (share of device runtime) and `total` (runtime ms). The answer called `pct` a share of hub memory. The prompt rule alone did not prevent it.
 - Battery (alpha.160): the model repeated an identical `limit: 200` read, generated ~5,000 tokens without computing, then timed out.
 - alpha.161: `client_field_meaning` note on `hub_get_logs` runtime tables (gated on tool name and returned field names); identical successful read-only calls in one request are refused with a pointer to the earlier receipt; `_find_rows` searches deeper so nested log rows get the compute hint.
+
+## alpha.161 review and alpha.162
+
+- Battery (alpha.161): 6 devices in 80-94 and 151 with no battery value, list complete (181 of 181, `hasMore=false`); an independent recount of the receipt matches. Residual: the answer adds an unneeded claim that lexical and numeric comparison agree.
+- Memory window (alpha.161): figures were right, but the answer said they were computed with the compute tool on the 16-entry window when the tool was run over the wrong list (a client-added `returned_samples` list) and could not filter by time. It also gave MiB when MB was asked.
+- alpha.162: `_find_rows` skips `client_*` keys; lt/lte/gt/gte compare `MM-DD HH:MM:SS` stamps as text within one calendar year; fields ending in `KB` get `unit_conversions_from_KB` (decimal MB and MiB) for result/min/max.
+- Not done: no guard yet for an answer that claims compute-tool provenance without a matching `local_compute` receipt.
