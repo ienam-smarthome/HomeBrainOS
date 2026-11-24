@@ -1,6 +1,6 @@
 # V2 deterministic receipt computation (homebrain_compute_receipt)
 
-**Status:** code candidate, not installed or accepted. No V2 version bump yet.
+**Status:** code candidate, packaged as V2 `2.0.0-alpha.156`; not installed or accepted. PR #1744 first merged it under the alpha.155 label; the follow-up bump corrects that provenance. The alpha155 sealed pack covers exactly the memory/battery/gap cases this tool targets, so it must not be reused for alpha.156.
 
 ## Problem
 Post-alpha154 source review found final answers whose facts were present in
