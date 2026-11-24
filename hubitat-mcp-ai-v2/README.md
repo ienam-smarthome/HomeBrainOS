@@ -1,6 +1,8 @@
 # Hubitat MCP AI v2 — native MCP client
 
-**Current code candidate: alpha.159 (24 November 2026).** Live alpha.158 reruns showed the model sometimes ignores the compute hint (one run answered 155 devices with no battery value; the receipt gives 151). Alpha.159 gives it one bounded chance to recompute when a large row list was returned and no compute call was made. Not installed; quality unmeasured.
+**Current code candidate: alpha.160 (24 November 2026).** Removes the AI Evaluation tab and Acceptance study link from the UI (backend routes remain), tells the model never to relabel a source field as a different quantity (a runtime `total` is not memory), and returns time gaps in chronological order. Not installed; quality unmeasured.
+
+Previous candidate: alpha.159 (24 November 2026). Live alpha.158 reruns showed the model sometimes ignores the compute hint (one run answered 155 devices with no battery value; the receipt gives 151). Alpha.159 gives it one bounded chance to recompute when a large row list was returned and no compute call was made. Not installed; quality unmeasured.
 
 Previous candidate: alpha.158 (24 November 2026). Live alpha.157 showed a 181-device inventory arriving as two pages that the compute tool could not combine; alpha.158 adds `receipt_indexes` (pages combined, duplicate ids counted once). Not installed; quality unmeasured.
 
