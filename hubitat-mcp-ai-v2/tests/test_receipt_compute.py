@@ -195,5 +195,42 @@ class RowsHint(unittest.TestCase):
         self.assertEqual(out["rows_in_list"], 12)
 
 
+class PagedReceipts(unittest.TestCase):
+    """The alpha.157 capture: one 181-device inventory returned as two pages."""
+
+    def pages(self, overlap=False):
+        p1 = [{"id": str(i), "currentStates": ({"battery": str(60 + (i % 40))} if i % 3 == 0 else {})}
+              for i in range(100)]
+        p2 = [{"id": str(i), "currentStates": ({"battery": str(60 + (i % 40))} if i % 3 == 0 else {})}
+              for i in range(99 if overlap else 100, 181)]
+        return [native({"devices": p1, "count": 100, "total": 181, "hasMore": True}),
+                native({"devices": p2, "count": len(p2), "total": 181, "hasMore": False})]
+
+    def test_one_page_alone_undercounts_two_pages_are_exact(self):
+        recs = self.pages()
+        where = [{"field": "currentStates.battery", "op": "gte", "value": 80},
+                 {"field": "currentStates.battery", "op": "lte", "value": 94}]
+        one = compute(recs, {"operation": "count", "receipt_index": 1, "where": where})["count"]
+        both = compute(recs, {"operation": "count", "receipt_indexes": [1, 2], "where": where})
+        expected = sum(1 for i in range(181) if i % 3 == 0 and 80 <= 60 + (i % 40) <= 94)
+        self.assertEqual(both["count"], expected)
+        self.assertLess(one, both["count"])
+        self.assertEqual(both["rows_in_list"], 181)
+        self.assertEqual([r["rows"] for r in both["receipts_combined"]], [100, 81])
+
+    def test_overlapping_pages_count_each_id_once(self):
+        out = compute(self.pages(overlap=True), {"operation": "count", "receipt_indexes": [1, 2]})
+        self.assertEqual(out["rows_in_list"], 181)
+        self.assertEqual(out["duplicate_id_rows_removed"], 1)
+
+    def test_bad_multi_arguments_are_refused(self):
+        recs = self.pages()
+        for bad in ([1], [1, 1], [1, 9], "1,2"):
+            with self.assertRaises(ComputeError):
+                compute(recs, {"operation": "count", "receipt_indexes": bad})
+        with self.assertRaises(ComputeError):
+            compute(recs, {"operation": "count", "receipt_index": 1, "receipt_indexes": [1, 2]})
+
+
 if __name__ == "__main__":
     unittest.main()
