@@ -34,7 +34,8 @@ TOOL_DEFINITION = {
             "counting, averaging, sorting or subtracting timestamps yourself. "
             "receipt_index (optional) is the 1-based position of an earlier call in "
             "this request; omit it to use the most recent successful native data "
-            "read. If it is wrong the error lists the usable receipts. rows_path is a dotted path to the list "
+            "read. For a paginated result pass receipt_indexes=[page receipts] to "
+            "combine them. If it is wrong the error lists the usable receipts. rows_path is a dotted path to the list "
             "(e.g. 'devices' or 'content.0.text.entries'); omit it to use the "
             "largest list of objects. Optional where=[{field,op,value}] filters rows "
             "first (op: eq, ne, lt, lte, gt, gte, contains, exists, missing; "
@@ -51,6 +52,13 @@ TOOL_DEFINITION = {
             "type": "object",
             "properties": {
                 "receipt_index": {"type": "integer", "minimum": 1},
+                "receipt_indexes": {
+                    "type": "array", "minItems": 2, "maxItems": 12,
+                    "items": {"type": "integer", "minimum": 1},
+                    "description": ("Pages of ONE paginated result: rows from these "
+                                    "receipts are combined (rows with the same id "
+                                    "are counted once and reported)."),
+                },
                 "rows_path": {"type": "string", "maxLength": 200},
                 "where": {
                     "type": "array", "maxItems": 8,
@@ -217,29 +225,7 @@ def _fmt_seconds(seconds: float) -> str:
     return f"{'-' if seconds < 0 else ''}{hours}h {minutes}m {secs + frac:.3f}s"
 
 
-def compute(receipts: list[dict], args: dict) -> dict:  # noqa: C901
-    """Compute from structured model arguments over this request's receipts."""
-    allowed = {"receipt_index", "rows_path", "where", "operation", "field",
-               "descending", "limit"}
-    if not isinstance(args, dict) or set(args) - allowed:
-        raise ComputeError("Unexpected arguments for receipt computation")
-    operation = args.get("operation")
-    if operation not in _OPS:
-        raise ComputeError(f"operation must be one of {', '.join(_OPS)}")
-    eligible = [i for i, r in enumerate(receipts, 1)
-                if r.get("success") is True and r.get("result_kind") == "tool_result"]
-    catalog = [{"receipt_index": i, "tool": receipts[i - 1].get("name"),
-                "arguments": receipts[i - 1].get("arguments")} for i in eligible[-12:]]
-    index = args.get("receipt_index")
-    if index is None:
-        if not eligible:
-            raise ComputeError("No successful native data read exists in this request yet")
-        index = eligible[-1]
-    if type(index) is not int or index not in eligible:
-        raise ComputeError(
-            "receipt_index is not a successful native data read in this request; "
-            f"usable receipts: {json.dumps(catalog, default=str)[:1500]}")
-    receipt = receipts[index - 1]
+def _receipt_rows(receipt: dict, rows_path: str | None) -> tuple[str, list]:
     raw = receipt.get("response")
     if not isinstance(raw, str):
         raise ComputeError("That receipt has no stored response")
@@ -251,22 +237,81 @@ def compute(receipts: list[dict], args: dict) -> dict:  # noqa: C901
         raise ComputeError(
             "That receipt was truncated by the context limit; computing on it would "
             "silently omit rows. Re-query with a narrower scope.")
-    # Native results are wrapped as mcp_result/content text parts; start from the
-    # unmodified source if the client added observational wrappers.
     root = payload.get("mcp_result", payload) if isinstance(payload, dict) else payload
-    path_text = args.get("rows_path")
-    if path_text:
-        if not isinstance(path_text, str):
-            raise ComputeError("rows_path must be text")
-        found = _walk(root, [p for p in path_text.split(".") if p != ""])
-        rows_path = path_text
+    if rows_path:
+        found = _walk(root, [p for p in rows_path.split(".") if p != ""])
+        path = rows_path
     else:
         located = _find_rows(root)
         if located is None:
             raise ComputeError("No list of objects found; supply rows_path")
-        rows_path, found = located
+        path, found = located
     if not isinstance(found, list):
         raise ComputeError("rows_path does not point to a list")
+    return path, found
+
+
+def compute(receipts: list[dict], args: dict) -> dict:  # noqa: C901
+    """Compute from structured model arguments over this request's receipts."""
+    allowed = {"receipt_index", "receipt_indexes", "rows_path", "where", "operation", "field",
+               "descending", "limit"}
+    if not isinstance(args, dict) or set(args) - allowed:
+        raise ComputeError("Unexpected arguments for receipt computation")
+    operation = args.get("operation")
+    if operation not in _OPS:
+        raise ComputeError(f"operation must be one of {', '.join(_OPS)}")
+    eligible = [i for i, r in enumerate(receipts, 1)
+                if r.get("success") is True and r.get("result_kind") == "tool_result"]
+    catalog = [{"receipt_index": i, "tool": receipts[i - 1].get("name"),
+                "arguments": receipts[i - 1].get("arguments")} for i in eligible[-12:]]
+    multi = args.get("receipt_indexes")
+    if multi is not None and "receipt_index" in args:
+        raise ComputeError("Use receipt_index or receipt_indexes, not both")
+    if multi is not None:
+        if (not isinstance(multi, list) or not 2 <= len(multi) <= 12
+                or any(type(i) is not int for i in multi) or len(set(multi)) != len(multi)):
+            raise ComputeError("receipt_indexes must be 2-12 distinct integers")
+        indexes = list(multi)
+    else:
+        index = args.get("receipt_index")
+        if index is None:
+            if not eligible:
+                raise ComputeError("No successful native data read exists in this request yet")
+            index = eligible[-1]
+        indexes = [index]
+    for index in indexes:
+        if type(index) is not int or index not in eligible:
+            raise ComputeError(
+                "receipt_index is not a successful native data read in this request; "
+                f"usable receipts: {json.dumps(catalog, default=str)[:1500]}")
+    path_text = args.get("rows_path")
+    if path_text is not None and not isinstance(path_text, str):
+        raise ComputeError("rows_path must be text")
+    found: list = []
+    per_receipt: list[dict] = []
+    rows_path = path_text or ""
+    for index in indexes:
+        path_used, page_rows = _receipt_rows(receipts[index - 1], path_text)
+        rows_path = rows_path or path_used
+        per_receipt.append({"receipt_index": index, "rows": len(page_rows),
+                            "tool": receipts[index - 1].get("name")})
+        found.extend(page_rows)
+    receipt = receipts[indexes[0] - 1]
+    index = indexes[0]
+    duplicates_removed = 0
+    if len(indexes) > 1:
+        seen_ids: set[str] = set()
+        unique_rows = []
+        for row in found:
+            row_id = row.get("id") if isinstance(row, dict) else None
+            if row_id is not None:
+                key = json.dumps(row_id, sort_keys=True, default=str)
+                if key in seen_ids:
+                    duplicates_removed += 1
+                    continue
+                seen_ids.add(key)
+            unique_rows.append(row)
+        found = unique_rows
     if len(found) > MAX_ROWS:
         raise ComputeError(f"List has {len(found)} rows (limit {MAX_ROWS})")
     rows = [r for r in found if isinstance(r, dict)]
@@ -277,8 +322,10 @@ def compute(receipts: list[dict], args: dict) -> dict:  # noqa: C901
     selected = [r for r in rows if all(_matches(r, c) for c in where)]
     out: dict[str, Any] = {
         "source": "client computation over an earlier successful receipt in this request",
-        "receipt_index": index,
+        "receipt_index": index if len(indexes) == 1 else indexes,
         "receipt_tool": receipt.get("name"),
+        "receipts_combined": per_receipt if len(indexes) > 1 else None,
+        "duplicate_id_rows_removed": duplicates_removed if len(indexes) > 1 else None,
         "rows_path": rows_path,
         "rows_in_list": len(found),
         "rows_non_object_ignored": non_object,
@@ -427,6 +474,7 @@ def rows_hint(result: Any, receipt_index: int) -> dict | None:
         "field_names_seen": _field_names(rows),
         "use": (f"For any count, range, average, ranking or timestamp gap over "
                 f"these rows call {TOOL_NAME} with receipt_index={receipt_index} "
-                "rather than calculating by inspection. Missing/unreturned rows "
+                "rather than calculating by inspection. If this is one page of several, "
+                "pass receipt_indexes=[all page receipts]. Missing/unreturned rows "
                 "stay unknown."),
     }

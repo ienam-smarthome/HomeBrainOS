@@ -59,3 +59,22 @@ receipt index, list path, real (including one-level nested) field names, and an
 instruction to use the tool. It is derived from result SHAPE only, never from
 the user's wording. Prompt now requires decimal MB. Still unmeasured: re-run the
 same three questions on alpha.157 and check that the tool is called and exact.
+
+## Live alpha.157 review and alpha.158 change
+
+Re-ask of the battery question on alpha.157: the model made three native reads
+(one rejected `detailed`+`attributeNames` call, then two `summary` pages of 100
+and 81 of 181 devices). The new `client_row_compute_hint` reached it on both
+pages with correct paths and fields, but the run ended in an Ollama Cloud model
+timeout after ~134 s with no answer and no compute call. Two real defects:
+
+1. The tool computed over ONE receipt, but a 181-device inventory is returned as
+   pages (100 + 81), so a single-page computation would undercount.
+   Alpha.158 adds `receipt_indexes` (2-12 pages), counting duplicate ids once and
+   reporting per-page rows and duplicates removed. On the real capture, receipts
+   [2, 3] give 8 devices in 80-94 and 151 with no battery, with 181 rows.
+2. The model timeout is a provider/transport failure, not a runtime defect; it
+   shows the model-led loop has no fallback when the model stalls after the data
+   is already retrieved. Not changed here.
+
+Still unmeasured: whether the model calls the tool at all when it does answer.
