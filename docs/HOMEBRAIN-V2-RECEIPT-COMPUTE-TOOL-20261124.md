@@ -116,3 +116,9 @@ answers and its round-time cost.
 - Memory window (alpha.161): figures were right, but the answer said they were computed with the compute tool on the 16-entry window when the tool was run over the wrong list (a client-added `returned_samples` list) and could not filter by time. It also gave MiB when MB was asked.
 - alpha.162: `_find_rows` skips `client_*` keys; lt/lte/gt/gte compare `MM-DD HH:MM:SS` stamps as text within one calendar year; fields ending in `KB` get `unit_conversions_from_KB` (decimal MB and MiB) for result/min/max.
 - Not done: no guard yet for an answer that claims compute-tool provenance without a matching `local_compute` receipt.
+
+## alpha.162 review and alpha.163
+
+- Memory (alpha.162): answer used `stateSize` (bytes of stored state) as a labelled proxy and gave a correct decimal free-memory figure, but ranked only the 50 rows returned of 293 (`total: 293`, `nextCursor: "50"`) without saying the ranking was partial. Two paging retries failed (a list-valued `mode` with a cursor; then `cursor 50` reported out of range, cause not established).
+- alpha.163: `client_row_compute_hint.coverage` (rows returned, source-reported total, next cursor, `partial`) derived from the result's own `total`/`matched`/`nextCursor` fields, never from user wording; compute adds `unit_conversions_from_bytes` for `stateSize` and `*Bytes` fields.
+- Not done: no enforcement that the final answer states partial coverage; the odd `size=20` cursor error is uninvestigated.

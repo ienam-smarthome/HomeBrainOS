@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-**Current code candidate: alpha.162 (24 November 2026).** Live alpha.161 captures: the battery answer was exact (recounted from all 181 rows); the memory-window answer had correct figures but claimed a compute step that did not run, gave MiB when MB was asked, and the compute tool could not filter a time window and had picked a client-added sample list as its rows. Alpha.162 makes the compute tool ignore `client_*` annotation lists, accept `MM-DD HH:MM:SS` stamps in lt/lte/gt/gte (so a window is a where range), and add decimal-MB and MiB conversions for KB fields. Not installed; quality unmeasured.
+**Current code candidate: alpha.163 (24 November 2026).** Live alpha.162 memory answer: it ranked `stateSize` (bytes, correctly labelled a proxy) but only over the first 50 of 293 device rows without saying so, and its paging retries failed. Alpha.163 attaches a structural `coverage` note (rows returned vs the source's reported total, next cursor) to any row result that is partial, and the compute tool adds KB conversions for byte fields. Not installed; quality unmeasured.
 
 Previous candidate: alpha.160 (24 November 2026). Removes the AI Evaluation tab and Acceptance study link from the UI (backend routes remain), tells the model never to relabel a source field as a different quantity (a runtime `total` is not memory), and returns time gaps in chronological order. Not installed; quality unmeasured.
 
