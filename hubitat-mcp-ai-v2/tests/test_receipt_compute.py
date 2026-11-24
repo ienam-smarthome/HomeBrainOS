@@ -195,6 +195,15 @@ class RowsHint(unittest.TestCase):
         self.assertEqual(out["rows_in_list"], 12)
 
 
+class GapsInTimeOrder(unittest.TestCase):
+    def test_time_gaps_lists_every_gap_oldest_first(self):
+        rows = [{"date": "2026-11-24T10:00:30.000+0000"}, {"date": "2026-11-24T10:00:00.000+0000"},
+                {"date": "2026-11-24T10:05:00.000+0000"}]
+        out = compute([native({"events": rows})], {"operation": "time_gaps", "field": "date"})
+        self.assertEqual([g["seconds"] for g in out["gaps_in_time_order"]], [30.0, 270.0])
+        self.assertEqual([g["seconds"] for g in out["largest_gaps"]], [270.0, 30.0])
+
+
 class PagedReceipts(unittest.TestCase):
     """The alpha.157 capture: one 181-device inventory returned as two pages."""
 

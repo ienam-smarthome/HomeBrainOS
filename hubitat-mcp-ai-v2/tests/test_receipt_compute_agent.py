@@ -138,3 +138,10 @@ class ComputeNudge(unittest.IsolatedAsyncioTestCase):
         ])
         self.assertEqual(agent.script, [])
         self.assertIn("draft", reply["answer"])
+
+
+class FieldMeaningRule(unittest.TestCase):
+    def test_prompt_forbids_relabelling_source_fields(self):
+        from agent import _SKILL as SYSTEM_PROMPT  # noqa: WPS433
+        for phrase in ("never relabel it", "requested quantity is unavailable", "state the mix"):
+            self.assertIn(phrase, SYSTEM_PROMPT)

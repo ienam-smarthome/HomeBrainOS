@@ -262,16 +262,12 @@ class FrozenEvaluationTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(FrozenEvaluationError):
             freeze_capture(p)
 
-    async def test_ui_contains_explicit_consent_and_no_auto_run(self):
+    async def test_ui_has_no_evaluation_or_acceptance_entry_points(self):
         ui = (ROOT / "rootfs" / "app" / "ui.html").read_text(encoding="utf-8")
-        self.assertIn("id=\"evaluationTab\"", ui)
-        self.assertIn("id=\"evalConsent\"", ui)
-        self.assertIn("id=\"evalRun\"", ui)
-        self.assertIn("send_private_evidence_to_configured_model:true", ui)
-        self.assertIn("technicalDetails", ui)
-        self.assertIn("api/evaluation/replay", ui)
-        self.assertIn('const UI_VERSION="2.0.0-alpha.159"', ui)
-        self.assertIn("byId('evalConsent').checked=false", ui)
+        for gone in ('id="evaluationTab"', 'id="evalConsent"', "api/evaluation/replay",
+                     'href="acceptance"', "AI Evaluation", "Acceptance study"):
+            self.assertNotIn(gone, ui)
+        self.assertIn('const UI_VERSION="2.0.0-alpha.160"', ui)
 
 
 if __name__ == "__main__":

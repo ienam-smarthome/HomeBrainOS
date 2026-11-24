@@ -148,14 +148,6 @@ AUDIT_SELECTORS = {
         "#diagnostics #timelineReadout",
         "#diagnostics .graph-popout-link",
     ],
-    "evaluation": [
-        "#evaluation .card h2",
-        "#evaluation .card p.muted",
-        "#evaluation .eval-meta",
-        "#evaluation .eval-upload",
-        "#evaluation .eval-consent span",
-        "#evaluation .eval-review-stage h3",
-    ],
 }
 
 
@@ -236,24 +228,6 @@ def main():
                                     path=str(OUT / f"after-{color}-{device}-diagnostics.png"),
                                     full_page=False,
                                 )
-                                page.locator("#evaluationTab").click()
-                                # The claim review creates these sections only
-                                # after a real model comparison. Populate only
-                                # their inert heading for computed-style checks.
-                                page.evaluate("""() => {
-                                  const review=document.querySelector('#evalReviewCard');
-                                  const stage=document.createElement('div');
-                                  stage.className='eval-review-stage';
-                                  const title=document.createElement('h3');
-                                  title.textContent='Fictional human-review stage';
-                                  stage.appendChild(title);
-                                  review.appendChild(stage);
-                                }""")
-                                check_contrast(page, "evaluation", color, device)
-                                page.screenshot(
-                                    path=str(OUT / f"after-{color}-{device}-evaluation.png"),
-                                    full_page=False,
-                                )
                             context.close()
                 finally:
                     server.shutdown()
@@ -261,7 +235,7 @@ def main():
                     server.server_close()
         finally:
             browser.close()
-    print("Saved before/after V2 Ask and after-Diagnostics/Evaluation fixture screenshots:", OUT)
+    print("Saved before/after V2 Ask and after-Diagnostics fixture screenshots:", OUT)
 
 if __name__ == "__main__":
     main()

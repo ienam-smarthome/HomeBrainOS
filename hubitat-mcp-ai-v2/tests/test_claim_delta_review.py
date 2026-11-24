@@ -119,22 +119,12 @@ class ClaimDeltaReviewTests(unittest.TestCase):
         with self.assertRaises(module.ClaimDeltaError):
             module.validate(value)
 
-    def test_ui_is_session_only_and_explicitly_manually_graded(self):
+    def test_evaluation_review_ui_is_removed(self):
         ui = (ROOT / "rootfs" / "app" / "ui.html").read_text(encoding="utf-8")
-        self.assertIn('const UI_VERSION="2.0.0-alpha.159"', ui)
-        for snippet in ("id=\"evalReviewDownload\"", "id=\"evalScoreGrid\"",
-                        "id=\"evalOriginalReceipts\"", "evaluationManualReview()",
-                        "evaluationDownloadReview()", "unsupported_introduced",
-                        "supported_fact_lost", "source_scope_changed",
-                        "No rating is inferred", "claim_changes"):
-            self.assertIn(snippet, ui)
-        self.assertIn("byId('evalReviewDownload').disabled=!outcome?.complete", ui)
-        self.assertIn("evaluationDownloadPrivate(reviewed,'PRIVATE-homebrain-v2-reviewed.json')", ui)
-        self.assertIn("byId('evalOriginalReceipts').textContent=JSON.stringify(original,null,2)", ui)
-        manual=ui[ui.index("function evaluationResetReview()"):ui.index("function reloadInterface()")]
-        self.assertNotIn("localStorage.", manual)
-        self.assertNotIn("sessionStorage.", manual)
-        self.assertIn("const causalSame=cs.every(v=>(v===null)===(cs[0]===null))", manual)
+        self.assertIn('const UI_VERSION="2.0.0-alpha.160"', ui)
+        for gone in ("evalReviewDownload", "evaluationManualReview", "evaluationDownloadPrivate",
+                     "evalOriginalReceipts"):
+            self.assertNotIn(gone, ui)
 
 
 if __name__ == "__main__":
