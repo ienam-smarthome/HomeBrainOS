@@ -73,6 +73,22 @@ class ComputeInsideAgentLoop(unittest.IsolatedAsyncioTestCase):
         last_tool_msg = agent.tool_messages[-1][-1]["content"]
         self.assertEqual(json.loads(last_tool_msg)["local_computation"]["count"], 6)
 
+    async def test_large_result_carries_structural_hint_with_true_receipt_index(self):
+        hub = Hub()
+        agent = Scripted([
+            {"content": "", "tool_calls": [call("hub_list_devices", {})]},
+            {"content": "done", "tool_calls": []},
+        ])
+        try:
+            await agent.answer("list my devices", [], hub, 60)
+        finally:
+            await agent.close()
+        tool_msg = agent.tool_messages[-1][-1]["content"]
+        hint = json.loads(tool_msg)["client_row_compute_hint"]
+        self.assertEqual(hint["receipt_index"], 1)
+        self.assertEqual(hint["rows_returned"], len(DEVICES))
+        self.assertIn("battery", hint["field_names_seen"])
+
     async def test_bad_receipt_is_a_contract_error_not_a_hub_call(self):
         hub = Hub()
         agent = Scripted([

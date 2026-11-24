@@ -109,7 +109,7 @@ from monitor_evidence import monitor_evidence_scope
 from retrieval_coverage import FileReadCoverage, file_chunk_scope, event_attribute_scope
 from receipt_compute import (
     TOOL_NAME as COMPUTE_TOOL, TOOL_DEFINITION as COMPUTE_TOOL_DEFINITION,
-    ComputeError, compute as compute_receipt,
+    ComputeError, compute as compute_receipt, rows_hint,
 )
 from time_evidence import (
     TOOL_NAME as CLOCK_TOOL, TOOL_DEFINITION as CLOCK_TOOL_DEFINITION,
@@ -267,6 +267,8 @@ substituting a similar named device without confirmation.
 A device's general lastActivity timestamp is NOT the timestamp of its
 stored power/energy/health attribute; only that attribute's dated native
 event or separately timestamped measurement supports a measurement time.
+Convert KB to MB by dividing by 1,000 (decimal) unless the user asks for MiB;
+never label a divide-by-1,024 figure as MB.
 Keep KB (decimal), MiB (binary) and MB (decimal) conversion explicit and
 do not attribute two different observations' discrepancy to a cause without
 a discriminating receipt.
@@ -2971,6 +2973,10 @@ class Agent:
                         model_result = self.present_native_result(result, args)
                         if source_size_refusal is not None:
                             model_result["client_source_limit"] = source_size_refusal
+                        elif not tool_error:
+                            row_hint = rows_hint(result, len(receipts) + 1)
+                            if row_hint is not None:
+                                model_result["client_row_compute_hint"] = row_hint
                         if tool_error and name == "hub_list_devices":
                             note = inventory_failure_recovery_note(args)
                             if note is not None:

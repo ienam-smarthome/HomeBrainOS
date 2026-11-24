@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "rootfs" / "app"))
 
-from receipt_compute import ComputeError, TOOL_NAME, compute  # noqa: E402
+from receipt_compute import ComputeError, TOOL_NAME, compute, rows_hint  # noqa: E402
 from investigation_review import is_read_only_review_tool  # noqa: E402
 
 
@@ -135,6 +135,64 @@ class Refusals(unittest.TestCase):
 class Classification(unittest.TestCase):
     def test_local_tool_is_read_only(self):
         self.assertTrue(is_read_only_review_tool(TOOL_NAME))
+
+
+class LiveCaptureShapes(unittest.TestCase):
+    """Shapes from the alpha.156 live captures, with fictional values."""
+
+    def test_nested_string_battery_counts_exactly(self):
+        devices = []
+        for i, b in enumerate(["94", "80", "79", "95", "85", "100", "90", "94", "81", "50"]):
+            devices.append({"id": str(i), "currentStates": {"battery": b}})
+        devices += [{"id": f"n{i}", "currentStates": {}} for i in range(20)]
+        rec = [native({"devices": devices, "count": 30, "total": 30})]
+        inrange = compute(rec, {"operation": "count", "where": [
+            {"field": "currentStates.battery", "op": "gte", "value": 80},
+            {"field": "currentStates.battery", "op": "lte", "value": 94}]})
+        self.assertEqual(inrange["count"], 6)   # 94,80,85,90,94,81
+        none = compute(rec, {"operation": "count", "where": [
+            {"field": "currentStates.battery", "op": "missing"}]})
+        self.assertEqual(none["count"], 20)
+
+    def test_newest_first_events_skipped_row_gap_is_not_reported(self):
+        times = ["15:50:08.121", "15:49:02.667", "15:48:42.144", "15:47:46.649",
+                 "15:47:45.550", "15:47:12.918", "15:30:57.123", "15:30:25.685",
+                 "15:23:44.757", "15:23:08.671"]
+        events = [{"name": "motion", "date": f"2026-11-24T{t}+0000"} for t in times]
+        out = compute([native({"device": "x", "events": events})],
+                      {"operation": "time_gaps", "field": "date", "limit": 3})
+        self.assertEqual([g["seconds"] for g in out["largest_gaps"]],
+                         [975.795, 400.928, 65.454])
+        # a gap that skips the 15:48:42 row (76.018 s) must never appear
+        self.assertNotIn(76.018, [g["seconds"] for g in out["largest_gaps"]])
+
+
+class RowsHint(unittest.TestCase):
+    def test_hint_names_receipt_path_and_nested_fields(self):
+        payload = {"devices": [{"id": str(i), "currentStates": {"battery": "9"}}
+                               for i in range(12)]}
+        res = {"content": [{"type": "text", "text": json.dumps(payload)}]}
+        hint = rows_hint(res, 4)
+        self.assertEqual(hint["receipt_index"], 4)
+        self.assertEqual(hint["rows_path"], "content.0.text.devices")
+        self.assertEqual(hint["rows_returned"], 12)
+        self.assertIn("currentStates.battery", hint["field_names_seen"])
+        self.assertIn(TOOL_NAME, hint["use"])
+
+    def test_no_hint_for_short_lists_or_scalars(self):
+        res = {"content": [{"type": "text", "text": json.dumps({"devices": [{"id": 1}] * 9})}]}
+        self.assertIsNone(rows_hint(res, 1))
+        self.assertIsNone(rows_hint({"content": [{"type": "text", "text": "ok"}]}, 1))
+
+    def test_hint_does_not_disturb_later_computation(self):
+        payload = {"devices": [{"id": str(i), "v": i} for i in range(12)]}
+        res = {"content": [{"type": "text", "text": json.dumps(payload)}]}
+        wrapped = dict(res, client_row_compute_hint=rows_hint(res, 1))
+        r = {"name": "hub_list_devices", "arguments": {}, "success": True,
+             "result_kind": "tool_result", "response": json.dumps(wrapped)}
+        out = compute([r], {"operation": "sum", "field": "v"})
+        self.assertEqual(out["result"], 66)
+        self.assertEqual(out["rows_in_list"], 12)
 
 
 if __name__ == "__main__":

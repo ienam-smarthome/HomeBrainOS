@@ -384,3 +384,49 @@ def compute(receipts: list[dict], args: dict) -> dict:  # noqa: C901
                 "difference": _clean(usable[-1] - usable[0]), "rows_used": len(usable),
                 "rows_non_numeric": len(present) - len(usable)})
     return out
+
+
+HINT_MIN_ROWS = 10
+_HINT_MAX_FIELDS = 40
+
+
+def _field_names(rows: list) -> list[str]:
+    """Top-level and one-level-nested field names seen in the first rows."""
+    seen: dict[str, None] = {}
+    for row in rows[:200]:
+        if not isinstance(row, dict):
+            continue
+        for key, value in row.items():
+            seen.setdefault(key, None)
+            value = _decode(value)
+            if isinstance(value, dict):
+                for inner in list(value)[:20]:
+                    seen.setdefault(f"{key}.{inner}", None)
+    return list(seen)[:_HINT_MAX_FIELDS]
+
+
+def rows_hint(result: Any, receipt_index: int) -> dict | None:
+    """Structural pointer for a native result holding many rows.
+
+    Based only on the SHAPE of the returned source (a list of objects), never on
+    the user's wording, so it stays within the no-prompt-keyword rule. It names
+    the receipt, list path and real field names so the model can compute counts,
+    ranges, averages, rankings and gaps exactly instead of by inspection.
+    """
+    located = _find_rows(result)
+    if located is None:
+        return None
+    path, rows = located
+    if len(rows) < HINT_MIN_ROWS or len(rows) > MAX_ROWS:
+        return None
+    return {
+        "source": "client observation of this result's shape; not hub data",
+        "receipt_index": receipt_index,
+        "rows_path": path,
+        "rows_returned": len(rows),
+        "field_names_seen": _field_names(rows),
+        "use": (f"For any count, range, average, ranking or timestamp gap over "
+                f"these rows call {TOOL_NAME} with receipt_index={receipt_index} "
+                "rather than calculating by inspection. Missing/unreturned rows "
+                "stay unknown."),
+    }

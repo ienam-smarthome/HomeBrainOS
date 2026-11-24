@@ -1,6 +1,8 @@
 # Hubitat MCP AI v2 — native MCP client
 
-**Current code candidate: alpha.156 (24 November 2026).** Adds the read-only `homebrain_compute_receipt` tool (deterministic count/filter/aggregate/gap over rows already returned this request; see [the note](../docs/HOMEBRAIN-V2-RECEIPT-COMPUTE-TOOL-20261124.md)). It changes the runtime tool surface, so the sealed `alpha155-prospective-v1` pack must NOT be run against alpha.156; a new sealed pack is required before any quality claim. Not installed; quality unmeasured.
+**Current code candidate: alpha.157 (24 November 2026).** Live alpha.156 captures showed the model never called `homebrain_compute_receipt` and miscounted (see [the note](../docs/HOMEBRAIN-V2-RECEIPT-COMPUTE-TOOL-20261124.md)); alpha.157 adds a shape-based `client_row_compute_hint` to large native results and a decimal-MB rule. Not installed; quality unmeasured.
+
+Previous candidate: alpha.156 (24 November 2026). Adds the read-only `homebrain_compute_receipt` tool (deterministic count/filter/aggregate/gap over rows already returned this request; see [the note](../docs/HOMEBRAIN-V2-RECEIPT-COMPUTE-TOOL-20261124.md)). It changes the runtime tool surface, so the sealed `alpha155-prospective-v1` pack must NOT be run against alpha.156; a new sealed pack is required before any quality claim. Not installed; quality unmeasured.
 
 Previous candidate: alpha.155 (23 November 2026). The source-bound
 publication fixes from PR #1742 are merged. The separate Alpha155 package
