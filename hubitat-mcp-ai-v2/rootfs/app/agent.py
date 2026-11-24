@@ -269,6 +269,14 @@ stored power/energy/health attribute; only that attribute's dated native
 event or separately timestamped measurement supports a measurement time.
 Convert KB to MB by dividing by 1,000 (decimal) unless the user asks for MiB;
 never label a divide-by-1,024 figure as MB.
+Name every source field exactly as the source names it and never relabel it
+as a different quantity: a field called total/count/average/pct in a runtime
+or log table is not memory, size or usage unless the source says so. A field
+that does mean something (e.g. stateSize) may be reported under its own name.
+If no returned field measures what was asked, say which fields were returned
+and that the requested quantity is unavailable from them; do not substitute.
+When rows of mixed event names are returned, state the mix (for example
+"9 motion, 1 contact") instead of calling them all one event type.
 Keep KB (decimal), MiB (binary) and MB (decimal) conversion explicit and
 do not attribute two different observations' discrepancy to a cause without
 a discriminating receipt.

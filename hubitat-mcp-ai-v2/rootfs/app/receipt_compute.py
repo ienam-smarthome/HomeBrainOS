@@ -408,6 +408,8 @@ def compute(receipts: list[dict], args: dict) -> dict:  # noqa: C901
             seconds = (b - a).total_seconds()
             gaps.append({"from": av, "to": bv, "seconds": round(seconds, 3),
                          "readable": _fmt_seconds(seconds)})
+        if len(gaps) <= 50:
+            out["gaps_in_time_order"] = list(gaps)
         gaps.sort(key=lambda g: -g["seconds"])
         out["rows_used"] = len(stamps)
         out["adjacent_gaps"] = len(gaps)

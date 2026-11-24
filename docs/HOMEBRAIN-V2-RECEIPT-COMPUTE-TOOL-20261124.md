@@ -96,3 +96,9 @@ over those rows with the tool or return the draft unchanged. The trigger is the
 shape of the source and the loop state, never the wording of the question.
 Switch: `enable_compute_nudge` (default on). Unmeasured: how often this changes
 answers and its round-time cost.
+
+## alpha.160
+
+- UI: removed the AI Evaluation tab and Acceptance study link (backend routes `/api/evaluation/replay` and the acceptance router remain, unreachable from the UI).
+- Prompt: source fields keep their own names (a runtime `total` is not memory); unavailable quantities are stated as unavailable; mixed event names are reported as a mix.
+- `time_gaps` now also returns `gaps_in_time_order` (up to 50 gaps) beside `largest_gaps`.

@@ -222,29 +222,9 @@ button{transition:border-color .15s ease,background-color .15s ease}button:hover
 @media(max-width:410px){.overview-tile{padding:10px}.overview-tile strong{font-size:24px}.overview-head p{max-width:210px}}
 
 
-.eval-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:14px}
-.eval-pair pre{max-height:480px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
-.eval-upload{display:block;margin:12px 0;font-size:14px}
-.eval-upload input{max-width:100%;padding:7px}
-.eval-consent{display:flex;align-items:flex-start;gap:10px;line-height:1.5;margin:16px 0}
-.eval-consent input{margin-top:5px}
-.eval-meta{font-size:12px;color:var(--muted);line-height:1.5}
-@media(max-width:650px){.eval-pair{grid-template-columns:1fr}.app-tabs{width:100%;overflow-x:auto}.app-tabs button{white-space:nowrap;padding:9px 11px}}
+@media(max-width:650px){.app-tabs{width:100%;overflow-x:auto}.app-tabs button{white-space:nowrap;padding:9px 11px}}
 
-.eval-review-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:12px 0}
-.eval-review-stage{background:#101b2c;border:1px solid var(--edge);border-radius:11px;padding:12px;min-width:0}
-.eval-review-stage h3{color:var(--txt);margin-bottom:12px}
-.eval-review-stage label{display:flex;flex-direction:column;gap:5px;margin-top:10px;font-size:12px;line-height:1.5}
-.eval-review-stage select,.eval-claim-item input,.eval-claim-item select,.eval-review-case select{background:#0e1522;color:var(--txt);border:1px solid var(--edge);border-radius:8px;padding:9px;max-width:100%;font-size:13px}
-.eval-claim-item{display:grid;grid-template-columns:1fr 1fr;gap:9px;padding:12px;background:#101b2c;border:1px solid var(--edge);border-radius:10px;margin:10px 0}
-.eval-claim-item label{display:flex;flex-direction:column;gap:5px;font-size:12px}
-.eval-claim-item .review-wide{grid-column:1/-1}
-.eval-claim-item input{width:100%}
-.eval-review-case{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.eval-review-summary{white-space:pre-wrap;line-height:1.5;font-size:13px;color:var(--muted);margin:12px 0}
-@media(max-width:680px){.eval-review-grid{grid-template-columns:1fr}.eval-claim-item{grid-template-columns:1fr}}
-
-/* alpha.81 command-first UI (V2 only). Existing diagnostics and evaluation are intact. */
+/* alpha.81 command-first UI (V2 only). Diagnostics are intact. */
 :root{--hb-bg:#0b1421;--hb-panel:#142136;--hb-edge:#30445e;--hb-text:#eff5ff;--hb-sub:#b5c6dd;--hb-accent:#83bfff;--hb-ink:#071c32;--hb-tile:#1a2b43}
 body{background:var(--hb-bg);color:var(--hb-text)}
 header{position:relative;z-index:25}.header-status{position:relative}
@@ -377,29 +357,25 @@ button,textarea,select{color:var(--hb-text);border-color:var(--hb-edge);backgrou
 }
 /* alpha.82: fix alpha.81 legacy dark-panel / light-text-token collision.
    Preserve dark, source-colored SVG/canvas plots but give their surrounding
-   metric cards, legend, controls and evaluation forms a true light surface. */
+   metric cards, legend, controls a true light surface. */
 @media(prefers-color-scheme:light){
   :root{
     --bg:#f2f5fa;--panel:#ffffff;--edge:#c9d4e4;
     --txt:#182640;--muted:#52617a;--blue:#165da9;
     --green:#0c6950;--amber:#90600b;
   }
-  #diagnostics .metric,#diagnostics .card,#evaluation .card{
+  #diagnostics .metric,#diagnostics .card{
     background:#ffffff;color:#182640;border-color:#c9d4e4;
     box-shadow:0 5px 20px #263b5610;
   }
-  #diagnostics .metric strong,#diagnostics .card h2,
-  #evaluation .card h2,#evaluation .card h3{
+  #diagnostics .metric strong,#diagnostics .card h2{
     color:#182640;
   }
   #diagnostics .metric small,#diagnostics .muted,#diagnostics .timeline-meta,
   #diagnostics .timeline-readout,#diagnostics .plot-stats,
   #diagnostics .legend,#diagnostics .graph-zoom-hint,#diagnostics .session-note,
   #diagnostics .diag-controls label,#diagnostics .timeline-event,
-  #diagnostics #source,#evaluation .muted,#evaluation .eval-meta,
-  #evaluation .eval-upload,#evaluation .eval-consent,
-  #evaluation .eval-review-summary,#evaluation .eval-review-case,
-  #evaluation .eval-review-stage label,#evaluation .eval-claim-item label{
+  #diagnostics #source{
     color:#52617a;
   }
   #diagnostics .metric small{font-size:12px}
@@ -414,26 +390,8 @@ button,textarea,select{color:var(--hb-text);border-color:var(--hb-edge);backgrou
     background:#d8e6f8;color:#164b85;
   }
   #diagnostics #hint{color:#f1f7ff;border-color:#405a79}
-  #diagnostics pre,#evaluation pre{background:#edf2f9;color:#182640;border:1px solid #cfdae8}
+  #diagnostics pre{background:#edf2f9;color:#182640;border:1px solid #cfdae8}
   #diagnostics .timeline-scroll{background:#101b2b}
-  #evaluation .eval-review-stage,#evaluation .eval-claim-item{
-    background:#edf2f9;color:#182640;border-color:#c9d4e4;
-  }
-  #evaluation .eval-review-stage select,#evaluation .eval-claim-item input,
-  #evaluation .eval-claim-item select,#evaluation .eval-review-case select,
-  #evaluation #evalFile{
-    color:#182640;background:#fff;border-color:#b7c6db;
-  }
-  #evaluation button.primary:not(:disabled){
-    color:#fff;background:#165da9;border-color:#165da9;
-  }
-  #evaluation button:disabled{
-    opacity:1;background:#e4eaf3;color:#566780;border-color:#c9d4e4;
-  }
-  #evaluation button:not(.primary):not(:disabled){
-    color:#182640;background:#fff;border-color:#b7c6db;
-  }
-  #evaluation .eval-consent input{accent-color:#165da9}
 }
 /* Do not apply light-mode text to dark plotting surfaces or graph tooltip. */
 /* alpha.83 System Health: source-only findings, never a polling subsystem. */
@@ -491,7 +449,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 <body>
 <header><div class="header-inner"><div class="brand"><div class="brand-mark" aria-hidden="true">⌘</div><div class="brand-copy"><h1>Hubitat MCP AI <span class="brand-v">v2</span></h1><small>HomeBrainOS · Smart home assistant</small></div></div><div class="header-status"><button type="button" id="statusPill" aria-controls="statusPanel" aria-expanded="false" onclick="toggleStatusPill()"><span id="state">Checking configuration…</span></button><div id="statusPanel" class="status-popover" hidden><strong>V2 connection details</strong><p id="statusMeta">Model and MCP status not yet loaded.</p><div id="statusMonitor"></div><button id="checkConnection" type="button" onclick="checkMonitorSource()">Check Hub & Device Monitor</button></div><button id="reloadUI" hidden onclick="reloadInterface()">Reload interface</button></div></div></header>
 <main>
-<nav class="app-tabs" aria-label="Main navigation"><button id="askTab" class="active" onclick="tab('ask')">Ask / Chat</button><button id="systemHealthTab" onclick="tab('systemHealth')">System Health</button><button id="diagnosticsTab" onclick="tab('diagnostics')">Hub Diagnostics</button><button id="evaluationTab" onclick="tab('evaluation')">AI Evaluation</button><a href="acceptance">Acceptance study</a></nav>
+<nav class="app-tabs" aria-label="Main navigation"><button id="askTab" class="active" onclick="tab('ask')">Ask / Chat</button><button id="systemHealthTab" onclick="tab('systemHealth')">System Health</button><button id="diagnosticsTab" onclick="tab('diagnostics')">Hub Diagnostics</button></nav>
 <section id="ask" class="active"><div class="ask-grid"><div class="ask-main">
 <div class="card compose-card" id="commandBar"><div class="row compose-heading"><div><h2>Ask HomeBrain</h2><p class="compose-subtitle">Ask a question or request a device action · powered by live MCP evidence</p></div><button id="newConversation" class="right" onclick="newConversation()">New chat</button></div>
 <div class="row monitor-row" hidden><span class="monitor-indicator" aria-hidden="true"></span><small id="monitorSourceStatus" class="muted" role="status" aria-live="polite">Saved history · checking connection…</small><button type="button" onclick="checkMonitorSource()" id="checkMonitor" title="One read-only status request; no device changes">Check connection</button></div>
@@ -603,76 +561,10 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 </div>
 </section>
 
-<section id="evaluation" aria-label="Optional AI evaluation">
-<div class="card">
- <h2>AI Evaluation · experimental</h2>
- <div class="card" id="cloudProbeCard">
-  <h3>Cloud tool-calling test</h3>
-  <p class="muted">One explicit request to the selected cloud provider (OpenRouter or Ollama Cloud), with a fictional read-only test tool. No Hubitat/MCP calls, household data, or real device changes. Uses one free-model request or may incur paid-model charges when paid mode is explicitly configured.</p>
-  <div class="row">
-   <button type="button" id="cloudProbeRun" onclick="testCloudToolCalling()">Test cloud tool calling</button>
-   <span id="cloudProbeStatus" class="eval-meta" role="status" aria-live="polite">Not tested. Results are synthetic and do not prove live MCP accuracy.</span>
-  </div>
- </div>
- <p class="muted">We previously compared V1 with V2 to measure overall capability and first-answer quality. This is a separate test: does reviewing V2's own answer with identical original MCP evidence improve factual accuracy enough to justify extra model rounds and delay?</p>
- <p class="muted">The experiment has <strong>no Hubitat or MCP tools</strong>. It reuses frozen original receipts. It cannot check new sources, decide correctness automatically, or replace independent V1 versus V2 acceptance testing.</p>
- <div class="row">
-  <button type="button" onclick="evaluationUseLastAsk()">Use latest Ask evidence</button>
-  <span class="eval-meta" id="evalModel">Configured model: checking…</span>
- </div>
- <label class="eval-upload" for="evalFile">Or select an older private Technical JSON file
-  <input id="evalFile" type="file" accept=".json,application/json" onchange="evaluationPickFile(this)">
- </label>
- <p id="evalSource" class="eval-meta" role="status">No original evidence selected. Run a normal read-only Ask first, or choose its PRIVATE JSON file.</p>
- <label class="eval-consent" for="evalConsent">
-  <input type="checkbox" id="evalConsent" onchange="evaluationToggle()">
-  <span>I approve sending these <strong>private original MCP receipts</strong> to the currently configured AI model for this one comparison. The model may be hosted in the cloud and may charge for three rounds. No Hubitat commands will be executed.</span>
- </label>
- <div class="row">
-  <button id="evalRun" type="button" class="primary" onclick="evaluationRun()" disabled>Compare answers · 3 model rounds</button>
-  <button id="evalDownload" type="button" onclick="evaluationDownload()" disabled>Download PRIVATE results JSON</button>
- </div>
- <p id="evalStatus" role="status" aria-live="polite" class="eval-meta">Not started. Evidence stays in this browser session until you explicitly run a comparison.</p>
-</div>
-<div class="card" id="evalResults" hidden>
- <h2>Frozen-evidence comparison</h2>
- <p id="evalSummary" class="eval-meta"></p>
- <div class="eval-pair">
-  <div><h3>Initial answer · one model round</h3><pre id="evalInitial"></pre></div>
-  <div><h3>Reviewed answer · three model rounds</h3><pre id="evalReviewed"></pre></div>
- </div>
- <details><summary>Intermediate source-review answer</summary><pre id="evalIntermediate"></pre></details>
- <p class="eval-meta">Different wording does not prove improvement. Compare definite claims against the original successful receipts, scope limits, chronology, and reporter versus initiator before assigning human scores. Do not use this same-incident regression as a new holdout.</p>
 
- <details><summary>Original MCP receipts · private source evidence</summary>
-  <p class="eval-meta">Use these exact original read results, source limits and failed calls to judge every claim. This view never makes a new device or model request.</p>
-  <pre id="evalOriginalReceipts">No source selected.</pre>
- </details>
- <div class="card" id="evalReviewCard">
-  <h3>Manual claim-delta worksheet · experimental</h3>
-  <p class="eval-meta">Human judgement only. Score each answer against the original successful receipts, not its confidence or writing style. Use causal N/A only when truly inapplicable. No additional model calls are made.</p>
-  <label class="eval-review-case">Case type
-   <select id="evalCaseRole" onchange="evaluationReviewUpdated()">
-    <option value="unspecified">Not classified</option>
-    <option value="fresh_case">New, independent question</option>
-    <option value="regression_control">Previously tested regression question</option>
-   </select>
-  </label>
-  <div id="evalScoreGrid" class="eval-review-grid" aria-label="Human grades for all three AI stages"></div>
-  <div class="row" style="margin-top:16px">
-   <h3>Documented claim changes</h3>
-   <button type="button" class="right" onclick="evaluationAddClaim()">+ Record a change</button>
-  </div>
-  <p class="eval-meta">Record unsupported claims introduced/corrected and supported facts lost/recovered between adjacent stages. Cite the original receipt or its scope. An empty record does NOT establish that no claims changed.</p>
-  <div id="evalClaimList"></div>
-  <p id="evalReviewStatus" class="eval-review-summary" role="status">Enter human scores to calculate review-stage differences.</p>
-  <button id="evalReviewDownload" type="button" onclick="evaluationDownloadReview()" disabled>Download PRIVATE scored review JSON</button>
- </div>
-</div>
-</section>
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.159";
+const UI_VERSION="2.0.0-alpha.160";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let activeAskController=null, askGeneration=0;
@@ -682,8 +574,7 @@ let lastUnpreparedQuestion=null;
 let copyFeedbackTimer=null,copyAttempt=0;
 let ttsInfo={enabled:false};
 let cachedHealthOverview=null,cachedRuntimeStatus=null;
-let evaluationCapture=null,evaluationResult=null,evaluationBusy=false;
-function tab(which){if(!['ask','systemHealth','diagnostics','evaluation'].includes(which))return;for(const id of ['ask','systemHealth','diagnostics','evaluation']){byId(id).classList.toggle('active',id===which);byId(id+'Tab').classList.toggle('active',id===which)}if(which==='systemHealth'){renderSystemHealth(cachedHealthOverview);renderRuntimeHealth(cachedRuntimeStatus);}if(which==='diagnostics')refreshDiagnostics();if(which==='evaluation')byId('evalModel').textContent='Configured model: '+(configuredModel||'not configured');}
+function tab(which){if(!['ask','systemHealth','diagnostics'].includes(which))return;for(const id of ['ask','systemHealth','diagnostics']){byId(id).classList.toggle('active',id===which);byId(id+'Tab').classList.toggle('active',id===which)}if(which==='systemHealth'){renderSystemHealth(cachedHealthOverview);renderRuntimeHealth(cachedRuntimeStatus);}if(which==='diagnostics')refreshDiagnostics();}
 async function readJson(url, init){const r=await fetch(url,{...init,cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.detail||('HTTP '+r.status));return d;}
 
 async function testCloudToolCalling(){
@@ -702,239 +593,6 @@ async function testCloudToolCalling(){
  finally{button.disabled=false}
 }
 
-function evaluationToggle(){
- byId('evalRun').disabled=!evaluationCapture||!byId('evalConsent').checked||evaluationBusy;
-}
-function evaluationSetCapture(capture,source){
- evaluationCapture=capture;
- evaluationResult=null;
- evaluationResetReview();
- byId('evalResults').hidden=true;
- byId('evalDownload').disabled=true;
- byId('evalConsent').checked=false;
- byId('evalSource').textContent=source;
- byId('evalStatus').textContent='Evidence selected locally. Consent is required for every run.';
- evaluationToggle();
-}
-function evaluationUseLastAsk(){
- const previous=technicalDetails;
- if(!previous||!Array.isArray(previous.response?.tool_calls)||!previous.response.tool_calls.length){
-  byId('evalSource').textContent='Latest Ask has no original MCP receipts to replay. Ask a read-only question first.';
-  return;
- }
- evaluationSetCapture(previous,
-  'Latest Ask selected: '+previous.response.tool_calls.length+' original MCP attempts · '+(previous.captured_at||'time unknown'));
-}
-async function evaluationPickFile(input){
- const file=input.files?.[0];if(!file)return;
- if(file.size>1024*1024){
-  byId('evalSource').textContent='File exceeds the 1 MiB private capture limit.';input.value='';return;
- }
- try{
-  const capture=JSON.parse(await file.text());
-  if(!capture||typeof capture!=='object'||Array.isArray(capture))throw new Error('Invalid JSON object');
-  evaluationSetCapture(capture,'Private file selected: '+file.name+' · '+Math.round(file.size/1024)+' KiB');
- }catch(_){byId('evalSource').textContent='Unable to parse private Technical JSON file.';}
- input.value='';
-}
-async function evaluationRun(){
- if(!evaluationCapture||!byId('evalConsent').checked||evaluationBusy)return;
- const current=evaluationCapture; // local snapshot; never sent without consent
- evaluationBusy=true;evaluationToggle();
- byId('evalStatus').textContent='Running three tool-free model rounds using frozen original receipts…';
- try{
-  const result=await readJson('api/evaluation/replay',{
-   method:'POST',
-   headers:{'Content-Type':'application/json','X-Homebrain-Request':'1'},
-   body:JSON.stringify({capture:current,send_private_evidence_to_configured_model:true})
-  });
-  evaluationResult={ui_version:UI_VERSION,configured_model:configuredModel,
-    captured_at:new Date().toISOString(),result};
-  const stages=result.stages||[];
-  byId('evalInitial').textContent=stages[0]?.answer||'No initial answer';
-  byId('evalIntermediate').textContent=stages[1]?.answer||'No intermediate answer';
-  byId('evalReviewed').textContent=stages[2]?.answer||'No reviewed answer';
-  byId('evalSummary').textContent=result.original_tool_receipts+' original receipts ('+
-    result.successful_tool_receipts+' successful, '+result.failed_tool_receipts+' failed) · '+
-    result.model_rounds+' model rounds · '+(result.elapsed_ms/1000).toFixed(2)+'s · no MCP calls';
-  byId('evalStatus').textContent='Comparison complete. Human evidence review is still required.';
-  const original=evaluationCapture.response?.tool_calls||evaluationCapture.tool_calls||[];
-  byId('evalOriginalReceipts').textContent=JSON.stringify(original,null,2);
-  evaluationResetReview();
-  byId('evalResults').hidden=false;
-  byId('evalDownload').disabled=false;
- }catch(error){
-  byId('evalStatus').textContent='Replay not completed: '+String(error.message||'Unknown failure');
- }finally{
-  evaluationBusy=false;byId('evalConsent').checked=false;evaluationToggle();
- }
-}
-
-const REVIEW_STAGES=[
- ['single_answer','Initial answer'],
- ['source_review','After source review'],
- ['source_review_and_audit','After final audit']
-];
-const REVIEW_CRITERIA=[
- ['factual_grounding','Factual grounding'],
- ['source_completeness','Source completeness'],
- ['causal_calibration','Causal calibration'],
- ['usefulness','Usefulness']
-];
-const REVIEW_CHANGE_KINDS=[
- ['unsupported_introduced','Unsupported claim introduced'],
- ['unsupported_corrected','Unsupported claim corrected'],
- ['supported_fact_lost','Supported fact lost'],
- ['supported_fact_recovered','Supported fact recovered'],
- ['source_scope_changed','Source/absence scope changed'],
- ['neutral_wording','Wording only']
-];
-function evaluationResetReview(){
- const grid=byId('evalScoreGrid');
- grid.replaceChildren();
- byId('evalClaimList').replaceChildren();
- byId('evalCaseRole').value='unspecified';
- for(const [stage,title] of REVIEW_STAGES){
-  const card=document.createElement('div');
-  card.className='eval-review-stage';
-  const h=document.createElement('h3');h.textContent=title;card.appendChild(h);
-  for(const [criterion,label] of REVIEW_CRITERIA){
-   const wrapper=document.createElement('label');wrapper.textContent=label;
-   const select=document.createElement('select');
-   select.dataset.stage=stage;select.dataset.criterion=criterion;
-   select.setAttribute('aria-label',title+' — '+label);
-   select.add(new Option('Not scored',''));
-   select.add(new Option('0 — unsupported','0'));
-   select.add(new Option('1 — partial','1'));
-   select.add(new Option('2 — supported','2'));
-   if(criterion==='causal_calibration')select.add(new Option('N/A — not applicable','na'));
-   select.addEventListener('change',evaluationReviewUpdated);
-   wrapper.appendChild(select);card.appendChild(wrapper);
-  }
-  grid.appendChild(card);
- }
- byId('evalReviewDownload').disabled=true;
- byId('evalReviewStatus').textContent=
-  'Human review pending. No rating is inferred from model confidence or source count.';
-}
-function evaluationAddClaim(){
- if(!evaluationResult||byId('evalClaimList').children.length>=32)return;
- const card=document.createElement('div');
- card.className='eval-claim-item';
- const selector=(caption,options)=>{
-  const label=document.createElement('label');label.textContent=caption;
-  const field=document.createElement('select');
-  for(const [value,name] of options)field.add(new Option(name,value));
-  field.addEventListener('change',evaluationReviewUpdated);
-  label.appendChild(field);card.appendChild(label);return field;
- };
- selector('Stage transition',[
-  ['source_review','Initial → Source review'],
-  ['final_audit','Source review → Final audit']
- ]);
- selector('Human classification',REVIEW_CHANGE_KINDS);
- const input=(caption,placeholder)=>{
-  const label=document.createElement('label');
-  label.className='review-wide';label.textContent=caption;
-  const field=document.createElement('input');
-  field.type='text';field.maxLength=500;field.placeholder=placeholder;
-  field.addEventListener('input',evaluationReviewUpdated);
-  label.appendChild(field);card.appendChild(label);return field;
- };
- input('Specific claim changed','Describe the factual claim before and after');
- input('Original receipt reference','Tool name, receipt index, timestamp or source-scope field');
- const remove=document.createElement('button');remove.type='button';
- remove.textContent='Remove claim change';
- remove.addEventListener('click',()=>{card.remove();evaluationReviewUpdated()});
- card.appendChild(remove);
- byId('evalClaimList').appendChild(card);
- evaluationReviewUpdated();
-}
-function evaluationManualReview(){
- if(!evaluationResult||evaluationResult.result?.stages?.length!==3)return null;
- const stage_scores={};let complete=true;
- for(const [stage] of REVIEW_STAGES){
-  const ratings={};
-  for(const [criterion] of REVIEW_CRITERIA){
-   const elem=Array.from(byId('evalScoreGrid').querySelectorAll('select[data-stage]'))
-     .find(s=>s.dataset.stage===stage&&s.dataset.criterion===criterion);
-   const v=elem?.value||'';
-   if(!v){complete=false;continue}
-   ratings[criterion]=v==='na'?null:Number(v);
-  }
-  stage_scores[stage]=ratings;
- }
- const cs=REVIEW_STAGES.map(([stage])=>stage_scores[stage].causal_calibration);
- const causalSame=cs.every(v=>(v===null)===(cs[0]===null));
- if(!causalSame)complete=false;
- const claim_changes=[];
- for(const item of byId('evalClaimList').children){
-  const selects=item.querySelectorAll('select'),inputs=item.querySelectorAll('input');
-  const claim=inputs[0]?.value.trim()||'';
-  const receipt_reference=inputs[1]?.value.trim()||'';
-  if(claim.length<5||receipt_reference.length<3)complete=false;
-  claim_changes.push({
-   transition:selects[0]?.value,kind:selects[1]?.value,
-   claim,receipt_reference
-  });
- }
- const review={
-  schema:'homebrain-v2-manual-claim-delta.v1',
-  reviewed_at_utc:new Date().toISOString(),
-  evidence_sha256:evaluationResult.result.evidence_sha256,
-  case_role:byId('evalCaseRole').value,
-  stage_scores,claim_changes
- };
- return {complete,causalSame,review};
-}
-function evaluationReviewUpdated(){
- const outcome=evaluationManualReview();
- byId('evalReviewDownload').disabled=!outcome?.complete;
- if(!outcome){
-  byId('evalReviewStatus').textContent='Run the frozen comparison first.';return;
- }
- if(!outcome.complete){
-  byId('evalReviewStatus').textContent=outcome.causalSame
-   ? 'Complete all 12 human scores and every added claim/source reference before exporting.'
-   : 'Causal N/A must be consistent across all three stages.';return;
- }
- const scores=REVIEW_STAGES.map(([stage])=>
-  Object.values(outcome.review.stage_scores[stage]).filter(x=>x!==null)
-   .reduce((a,b)=>a+b,0));
- const max=Object.values(outcome.review.stage_scores.single_answer)
-  .filter(x=>x!==null).length*2;
- const ms=evaluationResult.result.stages[2].cumulative_elapsed_ms
-  -evaluationResult.result.stages[0].cumulative_elapsed_ms;
- const signed=n=>(n>0?'+':'')+n;
- byId('evalReviewStatus').textContent=
-  'Human grades — initial '+scores[0]+'/'+max+', source review '+scores[1]+'/'+max+
-  ', final audit '+scores[2]+'/'+max+
-  '. Final minus initial: '+signed(scores[2]-scores[0])+
-  ' points. Extra review time: '+(ms/1000).toFixed(2)+'s. '+
-  outcome.review.claim_changes.length+' manually recorded claim changes; '+
-  (outcome.review.claim_changes.length
-   ? 'claims require independent source verification.'
-   : 'none documented does not prove that no claims changed.');
-}
-function evaluationDownloadReview(){
- const outcome=evaluationManualReview();
- if(!outcome?.complete)return;
- const reviewed={...evaluationResult,manual_review:outcome.review};
- evaluationDownloadPrivate(reviewed,'PRIVATE-homebrain-v2-reviewed.json');
-}
-function evaluationDownloadPrivate(data,name){
- const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
- const url=URL.createObjectURL(blob),link=document.createElement('a');
- link.href=url;link.download=name;
- document.body.appendChild(link);link.click();link.remove();
- setTimeout(()=>URL.revokeObjectURL(url),1000);
-}
-
-function evaluationDownload(){
- if(!evaluationResult)return;
- evaluationDownloadPrivate(evaluationResult,'PRIVATE-homebrain-v2-evaluation.json');
-}
-
 function reloadInterface(){
  const url=new URL(window.location.href);url.searchParams.set('ui_refresh',String(Date.now()));window.location.replace(url.href);
 }
@@ -950,7 +608,6 @@ async function loadStatus(){
   configuredModel=d.model;
   cachedRuntimeStatus=d;
   renderRuntimeHealth(d);
-  byId('evalModel').textContent='Configured model: '+(d.model||'not configured');
   const monitor=d.device_monitor||{};
   byId('monitorSourceStatus').textContent=monitor.configured
     ? 'Hub & Device Monitor: configured · connection not tested'
