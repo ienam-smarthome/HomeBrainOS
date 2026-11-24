@@ -102,3 +102,10 @@ answers and its round-time cost.
 - UI: removed the AI Evaluation tab and Acceptance study link (backend routes `/api/evaluation/replay` and the acceptance router remain, unreachable from the UI).
 - Prompt: source fields keep their own names (a runtime `total` is not memory); unavailable quantities are stated as unavailable; mixed event names are reported as a mix.
 - `time_gaps` now also returns `gaps_in_time_order` (up to 50 gaps) beside `largest_gaps`.
+
+## alpha.160 review and alpha.161
+
+- Front-door gaps (alpha.160): all 9 gaps match the compute receipt, in order; the largest (75.888 s) is correct. Residual: the answer speculates about a "labeling mismatch" although the device is a contact sensor whose returned events are all `motion` reported via the SwitchBot hub.
+- Memory (alpha.160): `hub_get_logs` devices rows carry `pct` (share of device runtime) and `total` (runtime ms). The answer called `pct` a share of hub memory. The prompt rule alone did not prevent it.
+- Battery (alpha.160): the model repeated an identical `limit: 200` read, generated ~5,000 tokens without computing, then timed out.
+- alpha.161: `client_field_meaning` note on `hub_get_logs` runtime tables (gated on tool name and returned field names); identical successful read-only calls in one request are refused with a pointer to the earlier receipt; `_find_rows` searches deeper so nested log rows get the compute hint.

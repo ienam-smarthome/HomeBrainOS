@@ -109,7 +109,7 @@ from monitor_evidence import monitor_evidence_scope
 from retrieval_coverage import FileReadCoverage, file_chunk_scope, event_attribute_scope
 from receipt_compute import (
     TOOL_NAME as COMPUTE_TOOL, TOOL_DEFINITION as COMPUTE_TOOL_DEFINITION,
-    ComputeError, compute as compute_receipt, rows_hint,
+    ComputeError, compute as compute_receipt, field_meaning_note, rows_hint,
 )
 from time_evidence import (
     TOOL_NAME as CLOCK_TOOL, TOOL_DEFINITION as CLOCK_TOOL_DEFINITION,
@@ -2679,6 +2679,21 @@ class Agent:
                             # native read executed, no device target selected,
                             # and the summary/attribute source remains offered.
                             raise MCPContractError(inventory_problem)
+                    if name and is_read_only_review_tool(name):
+                        # Identical structured read already returned in this
+                        # request: point at that receipt instead of repeating it.
+                        repeated = next((
+                            index for index, prior in enumerate(receipts, 1)
+                            if prior.get("name") == name and prior.get("success")
+                            and prior.get("result_kind") == "tool_result"
+                            and prior.get("arguments") == redact(args)
+                        ), None)
+                        if repeated is not None:
+                            raise MCPContractError(
+                                f"Identical {name} read with the same arguments already "
+                                f"succeeded as receipt {repeated}. Do not repeat it; use "
+                                "that receipt (homebrain_compute_receipt for counts, "
+                                "ranges or gaps) or change the arguments.")
                     if stage_b_scoped_recovery_invoked:
                         # Stage B only validates MODEL-selected original
                         # source targets and bounded read scopes. No writes
@@ -3010,6 +3025,9 @@ class Agent:
                             if row_hint is not None:
                                 model_result["client_row_compute_hint"] = row_hint
                                 row_list_receipt_seen = True
+                            meaning = field_meaning_note(name, result)
+                            if meaning is not None:
+                                model_result["client_field_meaning"] = meaning
                         if tool_error and name == "hub_list_devices":
                             note = inventory_failure_recovery_note(args)
                             if note is not None:

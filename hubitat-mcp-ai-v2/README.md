@@ -1,6 +1,8 @@
 # Hubitat MCP AI v2 — native MCP client
 
-**Current code candidate: alpha.160 (24 November 2026).** Removes the AI Evaluation tab and Acceptance study link from the UI (backend routes remain), tells the model never to relabel a source field as a different quantity (a runtime `total` is not memory), and returns time gaps in chronological order. Not installed; quality unmeasured.
+**Current code candidate: alpha.161 (24 November 2026).** Live alpha.160 captures: the front-door gap answer was exact; the memory answer still presented the hub's per-device runtime share (`pct`) as memory, and a battery run timed out after repeating an identical read. Alpha.161 attaches a field-meaning note to `hub_get_logs` runtime tables (runtime ms, share of runtime, state bytes; none is memory), refuses to re-run an identical successful read in the same request, and lets the row-list hint find lists nested inside log results. Not installed; quality unmeasured.
+
+Previous candidate: alpha.160 (24 November 2026). Removes the AI Evaluation tab and Acceptance study link from the UI (backend routes remain), tells the model never to relabel a source field as a different quantity (a runtime `total` is not memory), and returns time gaps in chronological order. Not installed; quality unmeasured.
 
 Previous candidate: alpha.159 (24 November 2026). Live alpha.158 reruns showed the model sometimes ignores the compute hint (one run answered 155 devices with no battery value; the receipt gives 151). Alpha.159 gives it one bounded chance to recompute when a large row list was returned and no compute call was made. Not installed; quality unmeasured.
 
