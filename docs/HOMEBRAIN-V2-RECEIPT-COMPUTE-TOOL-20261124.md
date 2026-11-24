@@ -33,3 +33,29 @@ prospective cohort before any quality claim; bump the V2 alpha version when
 packaging so acceptance provenance stays exact.
 
 Tests: `hubitat-mcp-ai-v2/tests/test_receipt_compute.py`; full V2 suite 871 passed.
+
+
+## Live alpha.156 review (24 November 2026, nemotron-3-super via cloud)
+
+Three owner-run read-only first answers, verified against the original receipts
+(raw captures stay private):
+
+| Question | Answer | Receipt truth | Compute tool used |
+| --- | --- | --- | --- |
+| Battery 80-94 inclusive / none | 14 / 158 | 8 / 151 of 181 (list complete: count=total=181) | No |
+| 80-min free-memory avg/min/max/latest delta | all correct (945,916 / 851,264 / 1,004,892 KB; 16,880 KB) | same | No (not needed) |
+| Three biggest gaps, last 10 events | third gap 76.0 s, skipping a row | 65.454 s | No |
+
+Findings: the tool was available (46 offered) but never chosen; the model
+counted nested `currentStates.battery` values wrongly and paired non-adjacent
+events. The memory answer also labelled a divide-by-1,024 figure as MB (16.48;
+decimal is 16.88). Running the tool on the real receipts gives 8, 151 and
+975.795 / 400.928 / 65.454 s, so the tool is correct and the gap is discovery.
+
+## Alpha.157 change
+
+Native results holding >=10 row objects gain `client_row_compute_hint`: true
+receipt index, list path, real (including one-level nested) field names, and an
+instruction to use the tool. It is derived from result SHAPE only, never from
+the user's wording. Prompt now requires decimal MB. Still unmeasured: re-run the
+same three questions on alpha.157 and check that the tool is called and exact.
