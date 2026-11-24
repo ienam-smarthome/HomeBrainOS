@@ -259,7 +259,7 @@ class ReviewLoopTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("read-only live-state", agent.round_messages[1][-1]["content"].lower())
         self.assertEqual(agent.round_tools[1],
                          ["hub_read_history", "homebrain_inspect_mcp_catalog",
-                          "homebrain_read_clock"])
+                          "homebrain_read_clock", "homebrain_compute_receipt"])
 
     async def test_model_declines_read_only_followup_without_fabricating_source(self):
         hub = FakeMCP()
@@ -356,7 +356,7 @@ class ReviewLoopTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("read-only", result["tool_calls"][0]["error"])
         self.assertEqual(agent.round_tools[1],
                          ["hub_read_history", "homebrain_inspect_mcp_catalog",
-                          "homebrain_read_clock"])
+                          "homebrain_read_clock", "homebrain_compute_receipt"])
 
 
 
