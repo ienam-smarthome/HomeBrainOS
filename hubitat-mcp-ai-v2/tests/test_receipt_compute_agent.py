@@ -105,6 +105,46 @@ class ComputeInsideAgentLoop(unittest.IsolatedAsyncioTestCase):
         self.assertIn("No successful native data read", rec["error"])
 
 
+class RepeatedReadGuard(unittest.IsolatedAsyncioTestCase):
+    async def test_identical_read_is_not_repeated(self):
+        hub = Hub()
+        agent = Scripted([
+            {"content": "", "tool_calls": [call("hub_list_devices", {})]},
+            {"content": "", "tool_calls": [call("hub_list_devices", {})]},
+            {"content": "Done.", "tool_calls": []},
+        ])
+        try:
+            reply = await agent.answer("list my devices", [], hub, 60, enable_compute_nudge=False)
+        finally:
+            await agent.close()
+        self.assertEqual(hub.calls, [("hub_list_devices", {})])
+        second = reply["tool_calls"][1]
+        self.assertFalse(second["success"])
+        self.assertIn("already succeeded as receipt 1", second["error"])
+
+
+class FieldMeaningNote(unittest.TestCase):
+    def logs_result(self):
+        rows = [{"id": i, "name": f"d{i}", "pct": 1.5, "pctTotal": 0.1, "total": 100 + i,
+                 "grandTotal": 5000, "stateSize": 900, "average": 3.0, "count": 5}
+                for i in range(12)]
+        payload = {"modes": {"devices": {"entries": rows, "count": 12}}}
+        return {"content": [{"type": "text", "text": json.dumps(payload)}]}
+
+    def test_runtime_table_fields_are_explained_as_not_memory(self):
+        from receipt_compute import field_meaning_note
+        note = field_meaning_note("hub_get_logs", self.logs_result())
+        self.assertIsNotNone(note)
+        self.assertIn("not memory", note["meanings"]["total"])
+        self.assertIn("share of that total device runtime", note["meanings"]["pct"])
+        self.assertIn("bytes", note["meanings"]["stateSize"])
+
+    def test_other_tools_and_shapes_get_no_note(self):
+        from receipt_compute import field_meaning_note
+        self.assertIsNone(field_meaning_note("hub_list_devices", self.logs_result()))
+        self.assertIsNone(field_meaning_note("hub_get_logs", {"content": []}))
+
+
 if __name__ == "__main__":
     unittest.main()
 

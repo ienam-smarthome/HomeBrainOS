@@ -130,10 +130,10 @@ def _find_rows(value: Any, depth: int = 0) -> tuple[str, list] | None:
             if node and all(isinstance(x, dict) for x in node):
                 if best is None or len(node) > len(best[1]):
                     best = (prefix, node)
-            if level < 4:
+            if level < 7:
                 for i, child in enumerate(node[:3]):
                     queue.append((f"{prefix}.{i}" if prefix else str(i), child, level + 1))
-        elif isinstance(node, dict) and level < 4:
+        elif isinstance(node, dict) and level < 7:
             for key, child in node.items():
                 queue.append((f"{prefix}.{key}" if prefix else key, child, level + 1))
     return best
@@ -479,4 +479,40 @@ def rows_hint(result: Any, receipt_index: int) -> dict | None:
                 "rather than calculating by inspection. If this is one page of several, "
                 "pass receipt_indexes=[all page receipts]. Missing/unreturned rows "
                 "stay unknown."),
+    }
+
+
+# Field meanings for the hub's per-device runtime table, keyed on the declared
+# tool name and the returned field names (never on the user's wording).
+_RUNTIME_TABLE_FIELDS = ("pct", "pctTotal", "total", "grandTotal", "stateSize")
+
+
+def field_meaning_note(tool_name: str, result: Any) -> dict | None:
+    """Explain what the runtime-table fields of hub_get_logs rows measure."""
+    if tool_name != "hub_get_logs":
+        return None
+    located = _find_rows(result)
+    if located is None:
+        return None
+    path, rows = located
+    names = set(_field_names(rows))
+    present = [field for field in _RUNTIME_TABLE_FIELDS if field in names]
+    if "pct" not in present or "total" not in present:
+        return None
+    return {
+        "source": "client note on field names seen in this result; not hub data",
+        "rows_path": path,
+        "meanings": {
+            "total": "runtime in milliseconds for the sampled window (not memory)",
+            "grandTotal": "runtime in milliseconds summed over all devices (not memory)",
+            "pct": "this row's share of that total device runtime (not a share of memory)",
+            "pctTotal": "this row's share of the whole hub uptime (not memory)",
+            "stateSize": "bytes of stored device state (the only size-like field here)",
+            "average": "average runtime per call in milliseconds",
+            "count": "number of runtime samples",
+        },
+        "use": ("None of these fields is RAM or memory use. Report them under their "
+                "own names. For hub-wide free memory use a memory source "
+                "(hub_get_memory_history or hub_get_metrics); a per-device memory "
+                "figure is not provided by this table."),
     }
