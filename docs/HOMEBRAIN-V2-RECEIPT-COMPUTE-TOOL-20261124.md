@@ -78,3 +78,21 @@ timeout after ~134 s with no answer and no compute call. Two real defects:
    is already retrieved. Not changed here.
 
 Still unmeasured: whether the model calls the tool at all when it does answer.
+
+## Live alpha.158 review and alpha.159 change
+
+On the user's hub, alpha.158 battery run 1 called the compute tool twice and gave
+7 in range, 151 without a battery value, 181 rows (matches the receipt). A rerun
+of the same question made one `hub_list_devices` read (all 181 rows), ignored the
+hint and answered 7 and 155; the receipt gives 7 and 151, so the second figure was
+wrong by mental arithmetic. A third capture (memory + front-door gaps) computed
+all nine gaps correctly by hand but again made no compute call, mislabelled the
+16:28:12 event as motion-active (it is inactive), and stated that no per-device
+memory attribute exists after reading only 20 of 181 devices.
+
+Change: when a result holds a large list of rows, the model answers, and no compute
+call has run, the loop sends ONE internal message asking it to recompute any figure
+over those rows with the tool or return the draft unchanged. The trigger is the
+shape of the source and the loop state, never the wording of the question.
+Switch: `enable_compute_nudge` (default on). Unmeasured: how often this changes
+answers and its round-time cost.
