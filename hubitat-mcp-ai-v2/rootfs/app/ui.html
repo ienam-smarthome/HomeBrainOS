@@ -81,7 +81,7 @@ code{background:#101b2c;padding:2px 5px;border-radius:4px}pre code{padding:0}
 .copy-feedback-fail{background:#663139;border-color:#ee8c95;color:#fff3f5}
 .copy-status{font-size:13px;font-weight:600;color:var(--green);line-height:1.4}
 .copy-status.copy-status-error{color:#ffb2bc}
-@media(max-width:530px){.timeline-chart{min-width:860px;min-height:540px}.timeline-event{flex-wrap:wrap}
+@media(max-width:530px){.timeline-chart{min-width:640px;height:402px;min-height:402px}.timeline-chart.timeline-two-tall{height:536px;min-height:536px}.timeline-event{flex-wrap:wrap}
 .timeline-event button{margin-left:auto}.diag-controls{gap:7px}.diag-controls label{display:flex;flex-direction:column}
 .diag-controls select{margin-left:0}}
 
@@ -363,7 +363,7 @@ main{max-width:1280px}
 @media(max-width:650px){main{padding:11px}.ask-grid{gap:9px}
 #ask .compose-card{padding:10px 11px}
 #ask .compose-heading{flex-wrap:nowrap;align-items:center;margin-bottom:8px}#ask .compose-heading>div{flex:1 1 auto;min-width:0}#ask .compose-heading #newConversation{flex:0 0 auto;margin-left:auto;padding:7px 12px;font-size:13px}#ask .compose-subtitle{display:none}
-#ask .feed-empty{padding:14px 15px;font-size:16px}#ask .feed-empty span{display:inline;margin:0 0 0 6px;font-size:13px}
+#ask .feed-empty{padding:14px 15px;font-size:16px}#ask .feed-empty span{display:block;margin:3px 0 0;font-size:13px;font-weight:400}
 #ask .command-form #question{height:44px;min-height:44px;padding:6px 0}
 .command-form{gap:7px;padding:7px;flex-wrap:wrap}.mic-round{flex-basis:45px;width:45px;height:45px}
 #ask .command-form #question{flex:1 1 calc(100% - 62px);min-width:0;width:auto;order:0}
@@ -475,7 +475,7 @@ button,textarea,select{color:var(--hb-text);border-color:var(--hb-edge);backgrou
 #systemHealth .health-privacy{margin:14px 0 0}
 #systemHealth button:focus-visible,#systemHealth summary:focus-visible{outline:3px solid var(--hb-accent);outline-offset:2px}
 @media(max-width:900px){#systemHealth .health-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:520px){#systemHealth .health-guide-grid{grid-template-columns:1fr}#systemHealth .health-grid{gap:7px}
+@media(max-width:520px){#systemHealth .health-guide-grid{grid-template-columns:1fr}#systemHealth .health-guide{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 10px;padding:9px 11px}#systemHealth .health-guide h4{margin:0;font-size:14px}#systemHealth .health-guide p{display:none}#systemHealth .health-guide button{padding:7px 11px;font-size:13px}#systemHealth .health-grid{gap:7px}
 #systemHealth .health-card{padding:10px}#systemHealth .health-heading{gap:8px}
 #systemHealth .health-heading h2{font-size:19px}#systemHealth .health-count{font-size:22px}}
 button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-visible,.overview-tile:focus-visible{outline:3px solid var(--hb-accent);outline-offset:2px}
@@ -624,7 +624,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.169";
+const UI_VERSION="2.0.0-alpha.170";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let activeAskController=null, askGeneration=0;
@@ -2108,6 +2108,7 @@ function drawIncidentTimeline(){
  const sameDay=new Date(start).toDateString()===new Date(end).toDateString();
  const gridCount=Math.max(2,Math.min(18,Math.floor(
   (plot.right-plot.left)/(sameDay?83:155))));
+ let lastTickRight=-1e9;
  for(let i=0;i<=gridCount;i++){
   const t=start+(end-start)*i/gridCount,xx=x(t);
   text('line',{x1:xx,x2:xx,y1:plot.top,y2:plot.cpuBottom,stroke:'#33475c',
@@ -2115,6 +2116,9 @@ function drawIncidentTimeline(){
   const label=new Date(t).toLocaleString('en-GB',sameDay?
    {hour:'2-digit',minute:'2-digit',hour12:false}:
    {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:false});
+  const half=label.length*3.4;
+  if(i>0&&i<gridCount&&(xx-half<lastTickRight+10||xx+half>plot.right-half))continue;
+  lastTickRight=i===gridCount?lastTickRight:xx+(i===0?half*2:half);
   text('text',{x:xx,y:chartHeight-13,fill:'#b1c0d4','font-size':11,
    'data-axis':'time','text-anchor':i===0?'start':i===gridCount?'end':'middle'},label);
  }
@@ -2135,7 +2139,9 @@ function drawIncidentTimeline(){
  if((split||tall)&&nativeMem.length&&visibleKinds.includes('nativeMemory'))
   yGrid(nativeScale,'nativeMemory');
  if(cpu.length&&visibleKinds.includes('cpu'))yGrid(cpuScale,'cpu',overlay);
- const cpuLabel='5m CPU load equivalent · % (native, '+
+ const narrowChart=window.innerWidth<=530;
+ const cpuLabel=narrowChart?'5m CPU load equivalent · % (native; not utilisation)':
+  '5m CPU load equivalent · % (native, '+
   String(timelineData.cpu_cores||4)+'-core configured; not utilisation)';
  const separateLabels={
   memory:'OS memory · MB (external probe; independent scale)',
@@ -2535,14 +2541,19 @@ function draw(){
  const ticks=Math.max(2,Math.min(18,Math.floor(W/(
   new Date(start).toDateString()===new Date(end).toDateString()?90:145))));
  const sameDay=new Date(start).toDateString()===new Date(end).toDateString();
+ let lastTickEnd=-1e9;
  for(let i=0;i<=ticks;i++){
   const t=start+(end-start)*i/ticks,xx=x(t);
   g.strokeStyle='#354b62';g.setLineDash([2,6]);
   g.beginPath();g.moveTo(xx,top);g.lineTo(xx,top+H);g.stroke();
   g.textAlign=i===0?'left':i===ticks?'right':'center';g.fillStyle='#b6c6da';
-  g.fillText(new Date(t).toLocaleString('en-GB',sameDay?
+  const tickText=new Date(t).toLocaleString('en-GB',sameDay?
    {hour:'2-digit',minute:'2-digit',hour12:false}:
-   {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:false}),xx,h-13);
+   {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:false});
+  const tickHalf=g.measureText(tickText).width/2;
+  if(i>0&&i<ticks&&(xx-tickHalf<lastTickEnd+10||xx+tickHalf>left+W-tickHalf*2))continue;
+  lastTickEnd=i===ticks?lastTickEnd:xx+(i===0?tickHalf*2:tickHalf);
+  g.fillText(tickText,xx,h-13);
  }
  g.save();g.beginPath();g.rect(left,top,W,H);g.clip();
  for(const inc of visual.incidents||[]){

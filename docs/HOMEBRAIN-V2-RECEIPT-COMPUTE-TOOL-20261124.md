@@ -161,3 +161,9 @@ answers and its round-time cost.
 - Phone Ask tab: New chat sits inline with the heading, the subtitle is hidden below 650 px, the empty state is one line and the composer row is shorter.
 - The per-alpha history moved from `hubitat-mcp-ai-v2/README.md` to `docs/HOMEBRAIN-V2-ALPHA-HISTORY.md`.
 - `tests/test_question_text_gating_ratchet.py` counts regex calls whose argument is user question text (81 at baseline across 13 modules). It fails if any module grows or a new one appears, and fails if a count drops without lowering the baseline. No agent behaviour change.
+
+## alpha.170: paging safeguards and phone chart fixes
+
+- `unissued_cursor_error`: a `cursor` argument must equal a `nextCursor` returned by an earlier successful call to the same tool in this request (structural, from receipts). Otherwise the call is not sent; the model gets a recoverable error and the receipt records `hub_called: false`.
+- Compute results list `same_source_receipts_not_included` (same tool and arguments apart from cursor/offset/page). The footnote reports it, sums rows across combined pages, and names the source table. No question or answer wording is read.
+- UI: timeline chart min-width 860 -> 640 px on phones, shorter CPU title, overlap-skipping time-axis labels on both charts, clean Ask empty state, one-row Troubleshooting cards.

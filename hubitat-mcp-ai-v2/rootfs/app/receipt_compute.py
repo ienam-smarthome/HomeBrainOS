@@ -378,6 +378,7 @@ def _compute(receipts: list[dict], args: dict) -> dict:  # noqa: C901
         "filters_applied": where,
         "operation": operation,
         "covers_only_rows_the_source_returned": True,
+        "same_source_receipts_not_included": _same_source_pages(receipts, indexes, eligible),
         "note": ("Computed from returned rows only. Unreturned, paginated, row-limited "
                  "or unqueried data is unknown; this does not establish source completeness."),
     }
@@ -531,6 +532,59 @@ def rows_hint(result: Any, receipt_index: int) -> dict | None:
     return hint
 
 
+_PAGING_KEYS = {"cursor", "offset", "page", "pageToken"}
+
+
+def _page_signature(receipt: dict) -> tuple:
+    """Tool name plus arguments with paging keys removed (structural)."""
+    args = receipt.get("arguments") if isinstance(receipt.get("arguments"), dict) else {}
+    kept = {k: v for k, v in args.items() if k not in _PAGING_KEYS}
+    return receipt.get("name"), json.dumps(kept, sort_keys=True, default=str)
+
+
+def _same_source_pages(receipts: list[dict], indexes: list[int],
+                       eligible: list[int]) -> list[int] | None:
+    """Other receipts that are further pages of the same read, left out of this computation."""
+    first = receipts[indexes[0] - 1]
+    wanted = _page_signature(first)
+    extra = [i for i in eligible if i not in indexes
+             and _page_signature(receipts[i - 1]) == wanted]
+    return extra or None
+
+
+def issued_cursors(result: Any, depth: int = 0) -> set[str]:
+    """Every nextCursor value a source result handed back (structural walk)."""
+    found: set[str] = set()
+    value = _decode(result)
+    if depth > 6:
+        return found
+    if isinstance(value, dict):
+        cursor = value.get("nextCursor")
+        if cursor not in (None, "", False):
+            found.add(str(cursor))
+        for item in value.values():
+            found |= issued_cursors(item, depth + 1)
+    elif isinstance(value, list):
+        for item in value[:50]:
+            found |= issued_cursors(item, depth + 1)
+    return found
+
+
+def unissued_cursor_error(name: str, args: dict, receipts: list[dict]) -> str | None:
+    """Reason to refuse a paging cursor this request never received from the same tool."""
+    cursor = args.get("cursor") if isinstance(args, dict) else None
+    if cursor in (None, ""):
+        return None
+    for item in receipts:
+        if (isinstance(item, dict) and item.get("name") == name and item.get("success")
+                and str(cursor) in (item.get("issued_cursors") or [])):
+            return None
+    return (f"cursor {cursor!r} was not returned by an earlier {name} read in this request, "
+            "so it was not sent to the hub. A cursor is only valid for the exact read "
+            "that issued it. Repeat the read without a cursor, then page with the "
+            "nextCursor it returns, keeping every other argument identical.")
+
+
 def _row_coverage(result: Any, path: str, returned: int) -> dict | None:
     """Report rows the source says exist but did not return (shape-based)."""
     try:
@@ -618,15 +672,37 @@ def partial_coverage_note(receipts: list[dict]) -> str | None:
                 sources.append(receipts[index - 1])
         if not wanted:
             sources = [r for r in receipts if isinstance(r, dict) and r.get("row_coverage")][-1:]
-        for source in sources:
-            cov = source.get("row_coverage") if isinstance(source, dict) else None
-            if isinstance(cov, dict) and cov.get("partial"):
-                total = cov.get("source_reported_total")
-                text = (f"Coverage: figures above come from {cov.get('rows_returned')}"
+        covs = [s.get("row_coverage") for s in sources
+                if isinstance(s, dict) and isinstance(s.get("row_coverage"), dict)]
+        if covs:
+            returned = sum(c.get("rows_returned") or 0 for c in covs)
+            totals = [c["source_reported_total"] for c in covs
+                      if c.get("source_reported_total") is not None]
+            total = max(totals) if totals else None
+            last_cursor = covs[-1].get("next_cursor")
+            partial = ((total is not None and returned < total) or bool(last_cursor)
+                       if len(covs) > 1 else bool(covs[0].get("partial")))
+            if partial:
+                text = (f"Coverage: figures above come from {returned}"
                         + (f" of {total}" if total is not None else "")
-                        + f" rows returned by {source.get('name')}; the remaining rows were not read.")
+                        + f" rows returned by {sources[0].get('name')}; the remaining rows were not read.")
                 if text not in notes:
                     notes.append(text)
+        skipped = item.get("same_source_receipts_not_included")
+        if skipped:
+            text = ("Coverage: this computation did not include "
+                    f"{len(skipped)} further page(s) of the same read that were returned "
+                    "in this request, so a ranking may miss rows from them.")
+            if text not in notes:
+                notes.append(text)
+        source = item.get("compute_source")
+        if isinstance(source, dict) and source.get("operation") in ("sort", "min", "max") \
+                and source.get("rows_path"):
+            table = str(source["rows_path"]).split(".")[-1]
+            text = (f"Source table: `{table}` of {source.get('tool')}"
+                    + (f" (mode {source['mode']})" if source.get("mode") else "") + ".")
+            if text not in notes:
+                notes.append(text)
     return " ".join(notes) if notes else None
 
 
