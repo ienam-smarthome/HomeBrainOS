@@ -279,3 +279,82 @@ def batch_light_authorization(candidates: list[dict], receipts: list[dict], *,
                                                safe_switch_ids=safe_switch_ids) is None:
             return False
     return True
+
+
+INTERNET_BLOCK_COMMANDS = frozenset({"blockInternet", "allowInternet"})
+
+
+def _attr_value(detail: dict, name: str):
+    for attr in detail.get("attributes") or []:
+        if isinstance(attr, dict) and attr.get("name") == name:
+            return attr.get("value")
+    return None
+
+
+def internet_block_candidate(args: dict, receipts: list[dict]) -> dict | None:
+    """Exact parameterless blockInternet/allowInternet on ONE per-device internet-control device.
+
+    Decided only from the declared tool call and this request's original successful
+    ``hub_get_device`` read: the device must itself declare that exact command, an
+    ``internetAccess`` attribute and its own non-empty deviceIP and deviceMAC (so an
+    all-devices switch never qualifies). Labels and user prose are never consulted.
+    """
+    if (not isinstance(args, dict) or set(args) != {"deviceId", "command"}
+            or args.get("command") not in INTERNET_BLOCK_COMMANDS
+            or type(args.get("deviceId")) not in (str, int)):
+        return None
+    identifier = str(args["deviceId"]).strip()
+    if not identifier.isdigit():
+        return None
+    rows = [r for r in receipts if isinstance(r, dict) and r.get("name") == "hub_get_device"
+            and r.get("success") is True and isinstance(r.get("arguments"), dict)
+            and str(r["arguments"].get("deviceId", "")).strip() == identifier]
+    if len(rows) != 1:
+        return None
+    detail = _original(rows[0])
+    if (detail is None or str(detail.get("id", "")).strip() != identifier
+            or detail.get("disabled") is True
+            or not isinstance(detail.get("label"), str) or not detail["label"].strip()):
+        return None
+    caps = detail.get("capabilities")
+    if not isinstance(caps, list) or "Switch" not in caps or set(caps) & _SENSITIVE_CAPABILITIES:
+        return None
+    if _attr_value(detail, "internetAccess") not in ("allowed", "blocked"):
+        return None
+    for needed in ("deviceIP", "deviceMAC"):
+        value = _attr_value(detail, needed)
+        if not isinstance(value, str) or not value.strip():
+            return None
+    declared = [c for c in detail.get("commands") or []
+                if isinstance(c, dict) and c.get("name") == args["command"]
+                and c.get("arguments") in (None, [])]
+    if len(declared) != 1:
+        return None
+    return {"device_id": identifier, "command": args["command"], "label": detail["label"].strip()}
+
+
+def internet_block_answer(candidate: dict, receipts: list[dict]) -> str | None:
+    """Receipt-backed completion for an accepted block/allow command (no extra model round)."""
+    writes = [r for r in receipts if isinstance(r, dict) and r.get("possible_native_action") is True]
+    if len(writes) != 1 or writes[0].get("name") != "hub_call_device_command":
+        return None
+    args = writes[0].get("arguments")
+    if (not isinstance(args, dict) or args.get("command") != candidate["command"]
+            or str(args.get("deviceId", "")).strip() != candidate["device_id"]):
+        return None
+    doc = _original(writes[0])
+    if (doc is None or doc.get("success") is not True or doc.get("command") != candidate["command"]
+            or doc.get("parameters") not in (None, [])):
+        return None
+    state = doc.get("state")
+    reported = None
+    if isinstance(state, dict) and isinstance(state.get("internetAccess"), dict):
+        reported = state["internetAccess"].get("value")
+    expected = "blocked" if candidate["command"] == "blockInternet" else "allowed"
+    label = re.sub(r"([\\\x60*_{}\[\]()#+!|>])", r"\\\1", candidate["label"])
+    verb = "block" if expected == "blocked" else "allow"
+    if reported == expected:
+        return (f"**{label}: {verb} command accepted.** Hubitat's reply reports internet access "
+                f"as {expected}. That is the hub's stored state, not a network test of the device.")
+    return (f"**{label}: {verb} command accepted by Hubitat.** Its reply did not report "
+            f"internet access as {expected}, so check the device before relying on it.")

@@ -25,7 +25,10 @@ from routine_action_bootstrap import prepare_routine_source
 from routine_post_write_readback import (
     inspect_routine_post_write_state, routine_readback_answer,
 )
-from routine_approval_policy import batch_light_candidates, read_batch_light_evidence
+from routine_approval_policy import (
+    batch_light_candidates, read_batch_light_evidence,
+    internet_block_answer, internet_block_candidate,
+)
 from routine_component_light import (
     component_parent_id, read_component_parent_evidence,
     verified_physical_bridge_parent,
@@ -1094,6 +1097,7 @@ class Agent:
         action_follow_through_invoked = False
         action_approval_handoff_invoked = False
         prewrite_model_review_invoked = False
+        block_for_round = None
         routine_prewrite_review_skipped = False
         routine_terminal_fastpath_used = False
         routine_detail_verification_status = "not_invoked"
@@ -1992,6 +1996,12 @@ class Agent:
                 question, calls, receipts,
                 approval_available=before_call is not None,
             ) if not source_review_invoked else None
+            block_for_round = None
+            if (calls and before_call is not None and not source_review_invoked
+                    and not prewrite_model_review_invoked and len(calls) == 1):
+                only = calls[0].get("function") if isinstance(calls[0], dict) else None
+                if isinstance(only, dict) and only.get("name") == "hub_call_device_command":
+                    block_for_round = internet_block_candidate(arguments_of(calls[0]), receipts)
             if (routine_for_round is not None and enable_action_proposal_review
                     and not prewrite_model_review_invoked):
                 routine_prewrite_review_skipped = True
@@ -2002,7 +2012,7 @@ class Agent:
             # source receipts. No tool is preselected or automatically called.
             # No orphaned assistant tool_calls are placed in model history.
             if (enable_action_proposal_review and calls and before_call is not None
-                    and routine_for_round is None
+                    and routine_for_round is None and block_for_round is None
                     and not source_review_invoked
                     and not prewrite_model_review_invoked
                     and deadline - time.monotonic() > 12):
@@ -2975,6 +2985,12 @@ class Agent:
                                     routine_for_round, receipts,
                                 )
                         if (isinstance(approval_owner, Interaction)
+                                and name == "hub_call_device_command"
+                                and block_for_round is not None
+                                and not source_review_invoked):
+                            approval_owner.offer_internet_block_authorization(
+                                args, internet_block_candidate(args, receipts))
+                        if (isinstance(approval_owner, Interaction)
                                 and approval_owner.auto_approve_lights
                                 and name == "hub_call_device_command"
                                 and not prepare_action
@@ -3465,6 +3481,14 @@ class Agent:
             # observe Hubitat's subsequent reported state. It never retries a
             # writer, consumes an additional model round, equates a write
             # snapshot with a read, or claims physical/causal verification.
+            if (block_for_round is not None and name == "hub_call_device_command"
+                    and getattr(before_call, "__self__", None) is not None
+                    and getattr(getattr(before_call, "__self__"), "routine_auto_approval_class", None)
+                    == "verified_internet_block"):
+                block_answer = internet_block_answer(block_for_round, receipts)
+                if block_answer is not None:
+                    routine_terminal_fastpath_used = True
+                    return completed_answer(block_answer, "not_applicable_to_routine_action")
             if routine_for_round is not None:
                 routine_answer = accepted_routine_answer(
                     routine_for_round, receipts

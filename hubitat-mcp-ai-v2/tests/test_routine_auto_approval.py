@@ -683,3 +683,111 @@ class BatchProofConsumptionTests(unittest.IsolatedAsyncioTestCase):
         gate.decide(gate.pending["id"], False)
         with self.assertRaises(MCPError):
             await task
+
+
+def block_detail(*, device_id="7001", label="Block Fictional-Gadget", internet="allowed",
+                 with_ip=True, command="blockInternet", extra_caps=()):
+    attrs = [{"name": "internetAccess", "value": internet}]
+    if with_ip:
+        attrs += [{"name": "deviceIP", "value": "192.0.2.9"}, {"name": "deviceMAC", "value": "aa:bb:cc:dd:ee:ff"}]
+    return {"id": device_id, "label": label, "name": "Cudy Device-192.0.2.9",
+            "capabilities": ["Actuator", "Refresh", "Sensor", "Switch", *extra_caps],
+            "attributes": attrs,
+            "commands": [{"name": command, "arguments": None}, {"name": "allowInternet", "arguments": None}]}
+
+
+class InternetBlockPolicyTests(unittest.TestCase):
+    def _receipts(self, **kw):
+        d = block_detail(**kw)
+        return [previous_receipt("hub_get_device", {"deviceId": d["id"]}, d)]
+
+    def test_exact_block_and_allow_on_a_per_device_switch_qualify(self):
+        from routine_approval_policy import internet_block_candidate
+        receipts = self._receipts()
+        for command in ("blockInternet", "allowInternet"):
+            self.assertIsNotNone(internet_block_candidate({"deviceId": 7001, "command": command}, receipts))
+
+    def test_everything_else_fails_closed(self):
+        from routine_approval_policy import internet_block_candidate
+        args = {"deviceId": "7001", "command": "blockInternet"}
+        self.assertIsNone(internet_block_candidate(dict(args, parameters=[]), self._receipts()))
+        self.assertIsNone(internet_block_candidate({"deviceId": "7001", "command": "off"}, self._receipts()))
+        self.assertIsNone(internet_block_candidate({"deviceId": "7001", "command": "blockInMinutes"}, self._receipts()))
+        # An all-devices style switch has no per-device IP/MAC.
+        self.assertIsNone(internet_block_candidate(args, self._receipts(with_ip=False)))
+        # Wrong/unread device, or a sensitive capability, never qualifies.
+        self.assertIsNone(internet_block_candidate({"deviceId": "7002", "command": "blockInternet"}, self._receipts()))
+        self.assertIsNone(internet_block_candidate(args, self._receipts(extra_caps=("Lock",))))
+        self.assertIsNone(internet_block_candidate(args, []))
+
+    def test_answer_reports_stored_state_without_overclaiming(self):
+        from routine_approval_policy import internet_block_answer, internet_block_candidate
+        receipts = self._receipts()
+        args = {"deviceId": 7001, "command": "blockInternet"}
+        cand = internet_block_candidate(args, receipts)
+        write = previous_receipt("hub_call_device_command", args, {
+            "success": True, "device": "Block Fictional-Gadget", "command": "blockInternet",
+            "parameters": None, "state": {"internetAccess": {"value": "blocked"}}})
+        write["possible_native_action"] = True
+        text = internet_block_answer(cand, receipts + [write])
+        self.assertIn("blocked", text)
+        self.assertIn("not a network test", text)
+
+
+class InternetBlockProofTests(unittest.IsolatedAsyncioTestCase):
+    async def test_proof_is_exact_single_use_and_option_gated(self):
+        args = {"deviceId": 7001, "command": "blockInternet"}
+        cand = {"device_id": "7001"}
+        off = Interaction(require_native_write_approval=True)
+        self.assertFalse(off.offer_internet_block_authorization(args, cand))
+        gate = Interaction(require_native_write_approval=True, auto_approve_internet_block=True)
+        self.assertTrue(gate.offer_internet_block_authorization(args, cand))
+        await gate.before_call("hub_call_device_command", dict(args), "")
+        self.assertEqual(gate.routine_auto_approval_class, "verified_internet_block")
+        changed = Interaction(require_native_write_approval=True, auto_approve_internet_block=True)
+        changed.offer_internet_block_authorization(args, cand)
+        task = asyncio.ensure_future(changed.before_call(
+            "hub_call_device_command", {"deviceId": 7001, "command": "allowInternet"}, ""))
+        await asyncio.sleep(0.05)
+        self.assertIsNotNone(changed.pending)
+        changed.decide(changed.pending["id"], False)
+        with self.assertRaises(MCPError):
+            await task
+
+
+class BlockHub:
+    def __init__(self):
+        self.calls = []
+        self.catalog = [{"name": n, "inputSchema": {"type": "object"}} for n in (
+            "hub_list_devices", "hub_get_device", "hub_call_device_command")]
+
+    async def list_tools(self, refresh=False):
+        return self.catalog
+
+    async def call(self, name, args):
+        from test_routine_action_fastpath import mcp_result
+        self.calls.append((name, deepcopy(args)))
+        if name == "hub_get_device":
+            return mcp_result(block_detail())
+        if name == "hub_call_device_command":
+            return mcp_result({"success": True, "device": "Block Fictional-Gadget",
+                               "command": args["command"], "parameters": None,
+                               "state": {"internetAccess": {"value": "blocked"}}})
+        raise AssertionError(name)
+
+
+class InternetBlockAgentTests(unittest.IsolatedAsyncioTestCase):
+    async def test_verified_block_skips_review_card_and_final_model_round(self):
+        from test_routine_action_fastpath import ScriptedAgent
+        hub = BlockHub()
+        model = ScriptedAgent([
+            tool("hub_get_device", deviceId="7001"),
+            tool("hub_call_device_command", deviceId=7001, command="blockInternet"),
+        ])
+        gate = Interaction(require_native_write_approval=True, auto_approve_internet_block=True)
+        result = await model.answer("block Fictional Gadget", [], hub, 60, before_call=gate.before_call)
+        self.assertEqual(model.rounds_seen, 2)
+        self.assertIsNone(gate.pending)
+        self.assertEqual(gate.routine_auto_approval_class, "verified_internet_block")
+        self.assertIn("block command accepted", result["answer"])
+        self.assertEqual([c[0] for c in hub.calls], ["hub_get_device", "hub_call_device_command"])
