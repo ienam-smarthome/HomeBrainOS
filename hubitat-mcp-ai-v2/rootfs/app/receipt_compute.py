@@ -1003,3 +1003,29 @@ def normalize_list_devices_args(name: str, args: dict, catalog: list) -> tuple[d
         return args, None
     return out, {"source": "client note from this call's arguments and the live tool schema; not hub data",
                  "changes": changes, "use": "Page with offset/cursor if more rows are needed."}
+
+
+_YEAR = re.compile(r"(?<![\d.:,])20[23]\d(?!\d)(?=[-/ ,.]|$)")
+
+
+def unsupported_year_note(answer: str, receipts: list) -> str:
+    """Footnote when the answer names a year that no tool result contains (a made-up date)."""
+    years = sorted(set(_YEAR.findall(answer or "")))
+    if not years:
+        return ""
+    stored = " ".join(str(r.get("response") or "") + " " + json.dumps(r.get("arguments") or {})
+                      for r in receipts if isinstance(r, dict))
+    missing = [y for y in years if y not in stored]
+    if not missing:
+        return ""
+    return ("Date note: the year " + ", ".join(missing) + " in the text above does not appear in any tool "
+            "result this request; treat that date as unverified.")
+
+
+def changed_since_refusal(name: str, args: dict) -> str | None:
+    """changedSince must be an ISO 8601 string; a bare number is a guess at an epoch."""
+    if name == "hub_list_devices" and isinstance(args, dict) and "changedSince" in args \
+            and not isinstance(args["changedSince"], str):
+        return ("changedSince must be an ISO 8601 timestamp string with an offset taken from "
+                "homebrain_read_clock, not a number. Nothing was read from the hub.")
+    return None

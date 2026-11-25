@@ -63,6 +63,23 @@ def _body(response):
     raise OverviewUnavailable("Inventory source did not return a usable device list")
 
 
+def _member(device, label, **extra):
+    """A named member plus identifiers an answer might use instead (id, other name field)."""
+    other = None
+    for key in ("name", "label"):
+        value = device.get(key)
+        if isinstance(value, str):
+            value = " ".join(value.split())[:100]
+            if value and value != label:
+                other = value
+    out = {"name": label, **extra}
+    if device.get("id") is not None:
+        out["id"] = str(device["id"])[:20]
+    if other:
+        out["alt"] = other
+    return out
+
+
 def _safe_label(item):
     text = item.get("label") or item.get("name")
     if not isinstance(text, str):
@@ -173,9 +190,7 @@ def summarize_device_inventory(response, *, observed_at=None):
             if last_age > 24:
                 last_activity_over_24h += 1
                 if len(members["last_activity_over_24h"]) < max_members_per_metric:
-                    members["last_activity_over_24h"].append({
-                        "name": label, "inactive_hours": last_age
-                    })
+                    members["last_activity_over_24h"].append(_member(device, label, inactive_hours=last_age))
         switch = states.get("switch")
         if isinstance(switch, str) and switch.strip().lower() in ("on", "off"):
             is_light = _is_recognised_light(device, label)
@@ -185,13 +200,13 @@ def summarize_device_inventory(response, *, observed_at=None):
                 if switch.strip().lower() == "on":
                     lights_on += 1
                     if len(members["lights_on"]) < max_members_per_metric:
-                        members["lights_on"].append({"name": label})
+                        members["lights_on"].append(_member(device, label))
             else:
                 other_switch_covered += 1
                 if switch.strip().lower() == "on":
                     unclassified_switch_on += 1
                     if len(members["other_switches_on"]) < max_members_per_metric:
-                        members["other_switches_on"].append({"name": label})
+                        members["other_switches_on"].append(_member(device, label))
         motion = states.get("motion")
         if isinstance(motion, str) and motion.strip().lower() in ("active", "inactive"):
             motion_covered += 1
@@ -199,7 +214,7 @@ def summarize_device_inventory(response, *, observed_at=None):
             if motion.strip().lower() == "active":
                 motion_active += 1
                 if len(members["motion_active"]) < max_members_per_metric:
-                    members["motion_active"].append({"name": label})
+                    members["motion_active"].append(_member(device, label))
         level = _numeric(states.get("battery"))
         if level is not None:
             battery_covered += 1
@@ -207,7 +222,7 @@ def summarize_device_inventory(response, *, observed_at=None):
             if level < 20:
                 battery_low += 1
                 if len(members["battery_low"]) < max_members_per_metric:
-                    members["battery_low"].append({"name": label, "battery_pct": level})
+                    members["battery_low"].append(_member(device, label, battery_pct=level))
         # Additional summaries use the SAME inventory and state dictionary.
         # No event history, extra MCP call, inferred alerts or stale-state
         # "recovery" is permitted. Unknown attributes are not clean states.
@@ -218,7 +233,7 @@ def summarize_device_inventory(response, *, observed_at=None):
             if contact.strip().lower() == "open":
                 contact_open += 1
                 if len(members["contact_open"]) < max_members_per_metric:
-                    members["contact_open"].append({"name": label})
+                    members["contact_open"].append(_member(device, label))
         water = states.get("water")
         if isinstance(water, str) and water.strip().lower() in ("wet", "dry"):
             water_covered += 1
@@ -226,7 +241,7 @@ def summarize_device_inventory(response, *, observed_at=None):
             if water.strip().lower() == "wet":
                 water_wet += 1
                 if len(members["water_wet"]) < max_members_per_metric:
-                    members["water_wet"].append({"name": label})
+                    members["water_wet"].append(_member(device, label))
         heat = states.get("thermostatOperatingState")
         if heat is None:
             heat = states.get("operatingState")
@@ -238,14 +253,14 @@ def summarize_device_inventory(response, *, observed_at=None):
             if heat.strip().lower() == "heating":
                 heating_active += 1
                 if len(members["heating_active"]) < max_members_per_metric:
-                    members["heating_active"].append({"name": label})
+                    members["heating_active"].append(_member(device, label))
         health = states.get("healthStatus")
         if isinstance(health, str) and health.strip().lower() in ("online", "offline"):
             health_covered += 1
             if health.strip().lower() == "offline":
                 reported_offline += 1
                 if len(members["reported_offline"]) < max_members_per_metric:
-                    members["reported_offline"].append({"name": label})
+                    members["reported_offline"].append(_member(device, label))
     for key in ("lights_on", "motion_active", "contact_open",
                 "water_wet", "heating_active", "reported_offline",
                 "other_switches_on"):
