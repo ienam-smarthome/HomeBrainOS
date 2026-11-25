@@ -7,6 +7,7 @@ router address). It does not test the hub's own internet access.
 from __future__ import annotations
 
 import asyncio
+import logging
 import shutil
 import socket
 import time
@@ -146,3 +147,111 @@ async def network_status(hub_url: str = "", router_host: str = "",
             "checked_at": time.time(), "router_configured": bool(router_host),
             "scope": ("Checked from the add-on host while this tab is open. This does not test the "
                       "hub's own internet access; a Hubitat Hub Ping device can do that.")}
+
+
+log = logging.getLogger("network_watch")
+
+# A hub reboot takes a few minutes, so the hub gets a longer allowance than the internet.
+DEFAULT_GRACE_SECONDS = {"internet": 300, "hub": 480}
+
+
+def active_problems(result: dict) -> dict[str, str]:
+    """Hard failures only. A router that merely ignores ping/ports (level 'warn') is not alerted."""
+    by = {c["name"]: c for c in result.get("checks", [])}
+    problems: dict[str, str] = {}
+    net = [c for n, c in by.items() if n.startswith("Internet")]
+    if net and not any(c["ok"] for c in net):
+        problems["internet"] = result.get("summary") or "Internet not reachable"
+    if "Hubitat hub" in by and not by["Hubitat hub"]["ok"]:
+        problems["hub"] = "Hubitat hub not reachable from the add-on"
+    return problems
+
+
+def _duration(seconds: float) -> str:
+    minutes = max(1, round(seconds / 60))
+    return f"{minutes} min" if minutes < 120 else f"{minutes / 60:.1f} h"
+
+
+class NetworkWatch:
+    """Background watcher: alerts only when a hard failure persists past its grace period.
+
+    check() returns a network_status result; notify(title, message) delivers it. A failed
+    delivery is kept and retried every cycle, so an alert raised during an internet outage
+    is still sent once delivery works again. Alerts fire once per outage and are followed by
+    one recovery message.
+    """
+
+    def __init__(self, check, notify, *, interval: int = 60, grace: dict | None = None,
+                 clock=time.monotonic, enabled: bool = True):
+        self.check, self.notify = check, notify
+        self.interval = max(15, int(interval))
+        self.grace = {**DEFAULT_GRACE_SECONDS, **(grace or {})}
+        self.clock, self.enabled = clock, enabled
+        self._since: dict[str, float] = {}
+        self._alerted: set[str] = set()
+        self._pending: list[tuple[str, str]] = []
+        self.last_alert: dict | None = None
+        self.last_error: str | None = None
+        self._task = None
+
+    async def tick(self) -> None:
+        try:
+            result = await self.check()
+        except Exception as exc:  # a failed probe set must not stop the watcher
+            self.last_error = f"check failed: {exc}"
+            return
+        now = self.clock()
+        active = active_problems(result)
+        for key, detail in active.items():
+            since = self._since.setdefault(key, now)
+            if key not in self._alerted and now - since >= self.grace[key]:
+                self._alerted.add(key)
+                label = "Internet" if key == "internet" else "Hubitat hub"
+                self._pending.append((f"HomeBrainOS: {label} problem",
+                                      f"{detail}. Ongoing for {_duration(now - since)}."))
+        for key in [k for k in self._since if k not in active]:
+            since = self._since.pop(key)
+            if key in self._alerted:
+                self._alerted.discard(key)
+                label = "Internet" if key == "internet" else "Hubitat hub"
+                self._pending.append((f"HomeBrainOS: {label} recovered",
+                                      f"Reachable again after about {_duration(now - since)}."))
+        await self._flush()
+
+    async def _flush(self) -> None:
+        while self._pending:
+            title, message = self._pending[0]
+            try:
+                await self.notify(title, message)
+            except Exception as exc:
+                self.last_error = f"alert not delivered yet: {exc}"
+                del self._pending[:-20]
+                return
+            self._pending.pop(0)
+            self.last_error = None
+            self.last_alert = {"title": title, "message": message, "sent_at": time.time()}
+
+    def status(self) -> dict:
+        now = self.clock()
+        return {"enabled": self.enabled, "interval_seconds": self.interval,
+                "grace_seconds": dict(self.grace), "last_alert": self.last_alert,
+                "last_error": self.last_error, "undelivered": len(self._pending),
+                "failing": {k: round(now - s) for k, s in self._since.items()}}
+
+    def start(self) -> None:
+        if self.enabled and self._task is None:
+            self._task = asyncio.create_task(self._run())
+
+    async def _run(self) -> None:
+        while True:
+            await self.tick()
+            await asyncio.sleep(self.interval)
+
+    async def close(self) -> None:
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+            self._task = None

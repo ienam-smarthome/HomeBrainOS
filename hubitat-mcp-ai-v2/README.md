@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Current code candidate: `2.0.0-alpha.181`. Hub Diagnostics charts now draw the selected reading on the plot itself as a small label (value and date/time only) next to each marker; the long hover tooltip is removed and the full wording stays in the readout below the chart.
+Current code candidate: `2.0.0-alpha.182`. Optional network alerts: a background watcher sends a Home Assistant mobile push when the internet (5 min) or the hub (8 min, allowing for a reboot) stays unreachable, with one recovery message and retry of undelivered alerts; light-theme logo mark is lighter and higher contrast.
 
 Per-alpha history (alpha.8 to alpha.171) is in [docs/HOMEBRAIN-V2-ALPHA-HISTORY.md](../docs/HOMEBRAIN-V2-ALPHA-HISTORY.md).
 
@@ -32,6 +32,7 @@ Configure:
 - `hubitat_mcp_url`: exact Streamable HTTP endpoint, including its path.
 - `hubitat_mcp_token`: token if not already in the endpoint URL.
 - Optional `network_router_host`: your router's LAN address, so the System Health **Network status** check can tell a router fault from an internet fault.
+- Optional network alerts: set `network_alerts_enabled` to push a Home Assistant mobile-app notification when the internet (default 5 min, `network_alert_grace_minutes`) or the Hubitat hub (default 8 min, `network_alert_hub_grace_minutes`, long enough for a reboot) stays unreachable, plus one message when it recovers. Uses `network_alert_notify_service` (a `notify.mobile_app_*` service), else `ha_tts_notify_service`, else the only mobile app found. Needs `network_router_host` for best diagnosis. During a full internet outage the phone push may only arrive once the connection returns; the message then states how long it lasted.
 - `model_base_url`: Ollama-compatible endpoint, e.g. `https://ollama.com` or your local Ollama address.
 - `model_name`: a tool-calling model supported by that endpoint.
 - `model_api_key`: required for Ollama Cloud; blank for local Ollama.
