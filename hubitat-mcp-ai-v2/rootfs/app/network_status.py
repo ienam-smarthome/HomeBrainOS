@@ -1,6 +1,6 @@
 """On-demand network reachability checks from the add-on host.
 
-Read-only and never polled: one bounded probe set per explicit request. It tests
+Read-only: one bounded probe set per request (the UI asks when System Health opens and about once a minute while it stays open). It tests
 what the add-on host can reach (internet, DNS, the Hubitat hub, an optional
 router address). It does not test the hub's own internet access.
 """
@@ -144,5 +144,5 @@ async def network_status(hub_url: str = "", router_host: str = "",
         level = "bad"
     return {"read_only": True, "level": level, "summary": summary, "checks": checks,
             "checked_at": time.time(), "router_configured": bool(router_host),
-            "scope": ("Checked from the add-on host, once, on request. This does not test the "
+            "scope": ("Checked from the add-on host while this tab is open. This does not test the "
                       "hub's own internet access; a Hubitat Hub Ping device can do that.")}

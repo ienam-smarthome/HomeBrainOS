@@ -1,8 +1,8 @@
 # Hubitat MCP AI v2 — native MCP client
 
-**Current code candidate: alpha.170 (25 November 2026).** Alpha.170 adds three paging safeguards to the read-only compute path and fixes phone chart issues. (1) A paging `cursor` the hub did not issue earlier in the same request is refused locally and never sent to the hub, with a recoverable message (a likely cause of the unexplained `cursor 50 is out of range` error). (2) The compute result and the answer footnote now say when further pages of the same read were returned but not included, count combined pages correctly, and name the source table (for example `devices` of hub_get_logs, mode devices). (3) Phone UI: timeline chart fitted to 640 px with a shorter CPU title, axis labels that skip when they would overlap, a clean empty state and compact Troubleshooting rows. No question-text gating added; the ratchet baseline is unchanged.
+**Current code candidate: alpha.171 (25 November 2026).** The alpha.170 live capture explained the `cursor 50 is out of range (size=20)` error: the hub only accepts a paging cursor when the read repeats the call that issued it (single-value `mode`, same `limit`). The model sent a one-item mode list, then a default page size of 20. Alpha.171 sends every cursor read with the issuing call's arguments (and says so to the model), drops an empty cursor, and the answer footnote now reports failed paging attempts and prints the source mode as text. Network status now checks automatically when System Health opens and about once a minute while it stays open and visible. Hypothesis not yet confirmed on a live hub: that `mode:"devices", limit:0, cursor:"50"` is accepted.
 
-Per-alpha history (alpha.8 to alpha.170) is in [docs/HOMEBRAIN-V2-ALPHA-HISTORY.md](../docs/HOMEBRAIN-V2-ALPHA-HISTORY.md).
+Per-alpha history (alpha.8 to alpha.171) is in [docs/HOMEBRAIN-V2-ALPHA-HISTORY.md](../docs/HOMEBRAIN-V2-ALPHA-HISTORY.md).
 
 ## Everyday use and live review
 

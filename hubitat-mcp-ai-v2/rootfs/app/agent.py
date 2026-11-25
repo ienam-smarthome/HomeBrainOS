@@ -109,7 +109,7 @@ from monitor_evidence import monitor_evidence_scope
 from retrieval_coverage import FileReadCoverage, file_chunk_scope, event_attribute_scope
 from receipt_compute import (
     partial_coverage_note, unrun_tool_note, unit_conversion_note,
-    issued_cursors, unissued_cursor_error,
+    issued_cursors, cursor_continuation,
     TOOL_NAME as COMPUTE_TOOL, TOOL_DEFINITION as COMPUTE_TOOL_DEFINITION,
     ComputeError, compute as compute_receipt, field_meaning_note, rows_hint,
 )
@@ -2746,6 +2746,7 @@ class Agent:
                     is_clock = name == CLOCK_TOOL
                     is_compute = name == COMPUTE_TOOL
                     cursor_refusal = None
+                    cursor_note = None
                     if not (is_prior or is_monitor or is_catalog or is_clock or is_compute) and name not in native_catalog_names:
                         raise CatalogToolUnavailable(
                             "Requested tool is not present in this request's connected "
@@ -2956,9 +2957,10 @@ class Agent:
                             interaction_status.set_phase(
                                 "native_call", detail="MCP tool in progress"
                             )
-                        cursor_refusal = (None if name in (_PRIOR_TOOL, MONITOR_TOOL, _CATALOG_TOOL,
-                                                           CLOCK_TOOL, COMPUTE_TOOL)
-                                          else unissued_cursor_error(name, args, receipts))
+                        if name not in (_PRIOR_TOOL, MONITOR_TOOL, _CATALOG_TOOL,
+                                        CLOCK_TOOL, COMPUTE_TOOL):
+                            args, cursor_refusal, cursor_note = cursor_continuation(
+                                name, args, receipts)
                         if cursor_refusal is not None:
                             result = {"isError": True, "content": [{"type": "text", "text": json.dumps(
                                 {"client_cursor_check": cursor_refusal, "hub_called": False})}]}
@@ -3059,6 +3061,9 @@ class Agent:
                     else:
                         record["result_kind"] = "tool_result"
                         model_result = self.present_native_result(result, args)
+                        if cursor_note and not tool_error:
+                            model_result["client_cursor_note"] = cursor_note
+                            record["client_cursor_note"] = cursor_note
                         if source_size_refusal is not None:
                             model_result["client_source_limit"] = source_size_refusal
                         elif not tool_error:
