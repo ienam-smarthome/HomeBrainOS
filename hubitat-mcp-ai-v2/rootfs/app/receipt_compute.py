@@ -589,7 +589,9 @@ def field_meaning_note(tool_name: str, result: Any) -> dict | None:
             "count": "number of runtime samples",
         },
         "use": ("None of these fields is RAM or memory use. Report them under their "
-                "own names. For hub-wide free memory use a memory source "
+                "own names; do not title a column Memory or RAM. For KB use the "
+                "client_*_KB_decimal value (bytes divided by 1,000), never bytes divided "
+                "by 1,024. For hub-wide free memory use a memory source "
                 "(hub_get_memory_history or hub_get_metrics); a per-device memory "
                 "figure is not provided by this table."),
     }

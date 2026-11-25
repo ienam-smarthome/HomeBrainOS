@@ -185,3 +185,12 @@ class FieldMeaningRule(unittest.TestCase):
         from agent import _SKILL as SYSTEM_PROMPT  # noqa: WPS433
         for phrase in ("never relabel it", "requested quantity is unavailable", "state the mix"):
             self.assertIn(phrase, SYSTEM_PROMPT)
+
+
+class FieldNoteForbidsMemoryColumn(unittest.TestCase):
+    def test_note_names_decimal_kb_and_forbids_memory_title(self):
+        rows = [{"name": str(i), "pct": 1, "total": 2, "stateSize": 3} for i in range(12)]
+        from receipt_compute import field_meaning_note
+        use = field_meaning_note("hub_get_logs", {"entries": rows})["use"]
+        self.assertIn("do not title a column Memory or RAM", use)
+        self.assertIn("client_*_KB_decimal", use)
