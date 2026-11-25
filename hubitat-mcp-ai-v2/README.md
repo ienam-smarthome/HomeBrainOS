@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Current code candidate: `2.0.0-alpha.196`. Fix for alpha.195 live reports where light on/off still showed an approval card: the bridge parent of Matter component lights was read once per target, and the authorization demanded exactly one parent read, so it failed closed. Identical client-issued parent reads now count as one piece of evidence, and a parent already read in the request is not read again. Light on/off for bridge-backed lights now skips the card and review rounds.
+Current code candidate: `2.0.0-alpha.197`. Block/unblock speed: on a per-device internet-control switch (internetAccess attribute plus its own IP and MAC, and the command declared by the device) plain `off` now counts as block and `on` as allow, with the same no-card fast path as blockInternet/allowInternet. Prompt now tells the model to call the block command instead of replying with prose only.
 
 Per-alpha history (alpha.8 to alpha.171) is in [docs/HOMEBRAIN-V2-ALPHA-HISTORY.md](../docs/HOMEBRAIN-V2-ALPHA-HISTORY.md).
 

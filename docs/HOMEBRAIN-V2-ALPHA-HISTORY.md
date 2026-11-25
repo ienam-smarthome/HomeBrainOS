@@ -712,3 +712,6 @@ Current code candidate: `2.0.0-alpha.194`. Live alpha.193 reports: (1) "unblock"
 
 
 Current code candidate: `2.0.0-alpha.195`. Light on/off speed: a model-drafted write to ordinary lights (one `{deviceId, command}` or a `commands` list of up to 8) whose every target passes the existing single-light checks now skips the pre-write review rounds, the approval card and the post-write source-review rounds, and ends with one receipt-backed line (counts accepted/failed from the hub's reply, not a physical check). Targets may come from an inventory, room or detail read, and missing inventory rows are fetched once by id. Also: internet-control switches carry a note that ON means internet allowed and OFF blocked; battery answers must state their threshold (default low below 20 percent, critical below 10 percent).
+
+
+Current code candidate: `2.0.0-alpha.196`. Fix for alpha.195 live reports where light on/off still showed an approval card: the bridge parent of Matter component lights was read once per target, and the authorization demanded exactly one parent read, so it failed closed. Identical client-issued parent reads now count as one piece of evidence, and a parent already read in the request is not read again. Light on/off for bridge-backed lights now skips the card and review rounds.

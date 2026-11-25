@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import json
 import unittest
 from copy import deepcopy
 from pathlib import Path
@@ -1036,3 +1037,48 @@ class BridgeBatchSingleParentReadTests(unittest.IsolatedAsyncioTestCase):
         cands = batch_light_candidates(args, receipts)
         self.assertTrue(cands)
         self.assertTrue(batch_light_authorization(cands, receipts))
+
+
+class InternetSwitchOnOffTests(unittest.IsolatedAsyncioTestCase):
+    def _receipts(self, declare):
+        d = block_detail()
+        d["commands"] += [{"name": n, "arguments": None} for n in declare]
+        return [previous_receipt("hub_get_device", {"deviceId": "7001"}, d)]
+
+    def test_off_and_on_qualify_only_when_the_device_declares_them(self):
+        from routine_approval_policy import internet_block_candidate
+        self.assertIsNone(internet_block_candidate({"deviceId": "7001", "command": "off"}, self._receipts([])))
+        both = self._receipts(["on", "off"])
+        for command in ("on", "off"):
+            self.assertIsNotNone(internet_block_candidate({"deviceId": "7001", "command": command}, both))
+
+    def test_a_switch_without_its_own_ip_and_mac_never_qualifies(self):
+        from routine_approval_policy import internet_block_candidate
+        d = block_detail(with_ip=False)
+        d["commands"] += [{"name": "off", "arguments": None}]
+        receipts = [previous_receipt("hub_get_device", {"deviceId": "7001"}, d)]
+        self.assertIsNone(internet_block_candidate({"deviceId": "7001", "command": "off"}, receipts))
+
+    async def test_off_on_a_declared_block_switch_runs_without_a_card(self):
+        from test_routine_action_fastpath import ScriptedAgent
+
+        class OffHub(BlockHub):
+            async def call(self, name, args):
+                if name == "hub_get_device":
+                    from test_routine_action_fastpath import mcp_result
+                    self.calls.append((name, deepcopy(args)))
+                    d = block_detail()
+                    d["commands"] += [{"name": "off", "arguments": None}]
+                    return mcp_result(d)
+                return await super().call(name, args)
+
+        hub = OffHub()
+        model = ScriptedAgent([
+            tool("hub_get_device", deviceId="7001"),
+            tool("hub_call_device_command", deviceId="7001", command="off"),
+        ])
+        gate = Interaction(require_native_write_approval=True, auto_approve_internet_block=True)
+        result = await model.answer("block Fictional Gadget", [], hub, 60, before_call=gate.before_call)
+        self.assertIsNone(gate.pending)
+        self.assertEqual(gate.routine_auto_approval_class, "verified_internet_block")
+        self.assertIn("block command accepted", result["answer"])
