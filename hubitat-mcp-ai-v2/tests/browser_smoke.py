@@ -467,6 +467,12 @@ with sync_playwright() as p:
   assert "Selected" in page.locator("#timelineReadoutShort").inner_text()
   page.keyboard.press("ArrowRight")
   assert "Selected" in page.locator("#timelineReadout").text_content()
+  import os, re
+  shown=page.evaluate("""() => [...document.querySelectorAll('[id^=timelineLabelTx]')]
+    .filter(n=>n.getAttribute('visibility')==='visible').map(n=>n.textContent)""")
+  assert shown and all(re.fullmatch(r"[0-9.]+ ?(?:MB|%)? · \d\d \w{3} \d\d:\d\d:\d\d", s) for s in shown), shown
+  if os.environ.get("BROWSER_SMOKE_SHOT"):
+      page.locator("#incidentTimeline").screenshot(path=os.environ["BROWSER_SMOKE_SHOT"])
   page.locator("#timelineLayout").select_option("combined")
   assert "5m CPU load equivalent" in page.locator("#incidentTimeline").text_content()
   page.locator("#timelineLayout").select_option("split")
