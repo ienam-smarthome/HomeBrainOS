@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-**Current code candidate: alpha.179 (25 November 2026).** The hub's MCP Rule Server log showed repeated `MCP response too large: 108683 bytes (limit 99500)` errors. The System Health snapshot read the whole device list in one call; with ~181 devices that reply sits over the hub's cap. When the live `hub_list_devices` schema advertises `limit` and `offset`, the snapshot now reads bounded pages of 60 (format summary when offered), merges them, and treats any failed page as an unavailable snapshot rather than a partial one (up to 12 pages, 20 s overall). Without paging parameters in the schema it keeps the old single read. Not yet confirmed on a live hub. Local validation: pytest, unittest, UI node test, browser smoke, golden suite, screenshots, add-on validation.
+**Current code candidate: alpha.180 (25 November 2026).** First live Question set run (alpha.179): 7 of 10 passed the measurable checks; CHECK on low batteries (1 tool error, 5 rounds), heating (5 rounds) and last-hour changes (7 rounds, 38 s). Copy report failed because `navigator.clipboard` is undefined on the add-on page. The report now uses the same copy helper as the answer buttons (with its textarea fallback) and, if the browser still blocks copying, downloads the private report as a text file. Local validation: pytest, unittest, UI node test, browser smoke, golden suite, screenshots, add-on validation.
 
 Per-alpha history (alpha.8 to alpha.171) is in [docs/HOMEBRAIN-V2-ALPHA-HISTORY.md](../docs/HOMEBRAIN-V2-ALPHA-HISTORY.md).
 

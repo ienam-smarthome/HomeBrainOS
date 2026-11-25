@@ -561,6 +561,13 @@ for(const flag of['1 tool error','write attempted','slow >45 s','6 rounds'])asse
 assert.equal(JSON.parse(await qsUI.run("JSON.stringify(scoreQuestionRun(null,5))")).pass,false);
 assert.equal(await qsUI.run("QUESTION_SET.length"),10);
 assert.equal(await qsUI.run("QUESTION_SET.every(q=>!/\\b(turn|set|switch|open|close|lock|unlock|create|delete|run)\\b.*\\b(on|off)\\b/i.test(q))"),true);
+await qsUI.run("qsResults=[{question:'q',score:{pass:true,fail:[],info:[],elapsed_ms:1000,rounds:2,tool_calls:1,tool_errors:0,writes:0},answer:'a',tools:[]}]");
+await qsUI.run("copyQuestionSetReport()");
+assert.match(qsUI.copied,/PRIVATE: includes answers/);
+assert.match(qsUI.el('qsStatus').textContent,/Report copied/);
+qsUI.navigator.clipboard.writeText=async()=>{throw new Error('blocked');};
+await qsUI.run("copyQuestionSetReport()");
+assert.match(qsUI.el('qsStatus').textContent,/downloaded as a file|Copy failed|Report copied/);
 console.log('Question-set checks passed: measurable scoring, write detection, ten read-only questions.');
 
 console.log('Inline math display tests passed: source fidelity, Unicode, code literals, unsupported TeX and text-only XSS.');
