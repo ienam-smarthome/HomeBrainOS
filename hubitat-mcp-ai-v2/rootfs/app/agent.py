@@ -25,6 +25,7 @@ from routine_action_bootstrap import prepare_routine_source
 from routine_post_write_readback import (
     inspect_routine_post_write_state, routine_readback_answer,
 )
+from routine_approval_policy import batch_light_candidates, read_batch_light_evidence
 from routine_component_light import (
     component_parent_id, read_component_parent_evidence,
     verified_physical_bridge_parent,
@@ -2973,6 +2974,19 @@ class Agent:
                                 approval_owner.offer_current_ask_routine_authorization(
                                     routine_for_round, receipts,
                                 )
+                        if (isinstance(approval_owner, Interaction)
+                                and approval_owner.auto_approve_lights
+                                and name == "hub_call_device_command"
+                                and not prepare_action
+                                and {"hub_get_device", "hub_list_devices"} <= native_catalog_names
+                                and deadline - time.monotonic() > 10):
+                            batch_targets = batch_light_candidates(args, receipts)
+                            if batch_targets:
+                                batch_reads = await read_batch_light_evidence(
+                                    mcp, batch_targets, receipts, budget_seconds=6.0)
+                                receipts.extend(batch_reads)
+                                approval_owner.offer_batch_routine_authorization(
+                                    args, batch_targets, receipts)
                         approval_started = time.monotonic()
                         try:
                             await asyncio.wait_for(
