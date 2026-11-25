@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Current code candidate: `2.0.0-alpha.198`. Fix for alpha.197 live capture where `on` on a Block switch still showed an approval card: the light-batch offer ran after the internet-block offer and cleared its single-use proof. The light-batch offer is now skipped for a call that already qualified as an internet block/allow. Verified by replaying the live capture through the agent: no card, verified_internet_block.
+Current code candidate: `2.0.0-alpha.199`. Live capture for "Block Nest Mini": the model added an undeclared `confirm: true` to hub_call_device_command, which forced an approval card and was then rejected by the hub (unknown argument), costing a second attempt and a second card. Prompt now says device commands take only deviceId, command, commands, parameters, includeState and waitFor and that confirm belongs only to tools whose schema declares it.
 
 Per-alpha history (alpha.8 to alpha.171) is in [docs/HOMEBRAIN-V2-ALPHA-HISTORY.md](../docs/HOMEBRAIN-V2-ALPHA-HISTORY.md).
 

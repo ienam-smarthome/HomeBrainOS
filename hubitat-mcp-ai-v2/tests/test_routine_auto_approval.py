@@ -1083,3 +1083,10 @@ class InternetSwitchOnOffTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(gate.pending)
         self.assertEqual(gate.routine_auto_approval_class, "verified_internet_block")
         self.assertIn("block command accepted", result["answer"])
+
+
+class PromptGuidanceTests(unittest.TestCase):
+    def test_prompt_forbids_extra_arguments_on_device_commands(self):
+        import agent
+        text = agent.SYSTEM_PROMPT if hasattr(agent, "SYSTEM_PROMPT") else Path(agent.__file__).read_text()
+        self.assertIn("never add confirm or any other argument to it", text)
