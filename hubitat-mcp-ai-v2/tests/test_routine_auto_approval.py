@@ -1244,3 +1244,10 @@ class PromptGuidanceTests(unittest.TestCase):
         text = agent.SYSTEM_PROMPT if hasattr(agent, "SYSTEM_PROMPT") else Path(agent.__file__).read_text()
         self.assertIn("never add confirm or any other argument to it", text)
         self.assertIn("Do not read the device detail", text)
+
+    def test_prompt_covers_room_wide_lights_and_hyphenated_switch_labels(self):
+        import agent
+        text = agent.SYSTEM_PROMPT if hasattr(agent, "SYSTEM_PROMPT") else Path(agent.__file__).read_text()
+        self.assertIn("roomFilter set to the room and capabilityFilter \"Light\"", text)
+        self.assertIn("a \"Shower Light\" in the Bathroom", text)
+        self.assertIn("retry once with the hyphenated form", text)
