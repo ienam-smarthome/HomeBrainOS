@@ -348,7 +348,7 @@ main{max-width:1280px}
 #systemHealth .health-card.needs-review{order:-1}
 #systemHealth .health-card.needs-review .health-count{color:#ffc857;font-size:30px;font-weight:800}
 #systemHealth .health-card:not(.needs-review) .health-count{color:var(--hb-sub);font-weight:500}
-#systemHealth .health-card.has-reported:not(.needs-review) .health-count{color:var(--hb-accent);font-weight:700}
+#systemHealth .health-card.has-reported:not(.needs-review) .health-count{color:#4ade80;font-weight:700}
 #systemHealth .health-card.needs-review.is-offline{border-left-color:#ff6b6b}
 #systemHealth .health-card.needs-review.is-offline .health-count{color:#ff6b6b}
 #systemHealth .health-card-scope,#systemHealth .health-runtime-card p{font-size:11px}
@@ -504,6 +504,27 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 .diag-controls{flex-direction:row;align-items:flex-end}
 .swipe-hint{display:block;font-size:11px;color:var(--hb-sub,#9aaec6);margin:0 0 4px}
 }
+/* alpha.174: light-theme colour fixes for System Health. Banners and the
+   network card kept hard-coded dark surfaces while their text followed the
+   light tokens (dark text on dark panels); status colours were pale on white. */
+@media(prefers-color-scheme:light){
+  #systemHealth .health-heading{background:transparent;border-color:transparent;box-shadow:none}
+  .health-banner[data-level="ok"]{background:#e6f6ee;border-color:#2f9e68;color:#0d4a31}
+  .health-banner[data-level="attention"]{background:#fff4dc;border-color:#d19a2e;color:#5a3b00}
+  .health-banner small{color:#4a3a1a}
+  #systemHealth .network-card,.network-card{background:#fff;color:var(--hb-text);border-color:var(--hb-edge);box-shadow:none}
+  .network-card .network-head strong{color:var(--hb-text)}
+  .network-card[data-level="warn"]{border-left-color:#c98a0b}
+  .network-card[data-level="bad"]{border-left-color:#c62828}
+  .network-card[data-level="ok"]{border-left-color:#1f9d5c}
+  .network-checks li{background:#f5f8fc;color:var(--hb-text)}
+  .network-checks li.ok::before{color:#1f9d5c}.network-checks li.down::before{color:#c62828}
+  #systemHealth .health-card.needs-review{border-left-color:#c98a0b}
+  #systemHealth .health-card.needs-review .health-count{color:#9a6200}
+  #systemHealth .health-card.needs-review.is-offline{border-left-color:#c62828}
+  #systemHealth .health-card.needs-review.is-offline .health-count{color:#c62828}
+  #systemHealth .health-card.has-reported:not(.needs-review) .health-count{color:#17794a}
+}
 </style></head>
 <body>
 <header><div class="header-inner"><div class="brand"><div class="brand-mark" aria-hidden="true">⌘</div><div class="brand-copy"><h1>Hubitat MCP AI <span class="brand-v">v2</span></h1><small>HomeBrainOS · Smart home assistant</small></div></div><div class="header-status"><button type="button" id="statusPill" aria-controls="statusPanel" aria-expanded="false" onclick="toggleStatusPill()"><span id="state">Checking configuration…</span></button><div id="statusPanel" class="status-popover" hidden><strong>V2 connection details</strong><p id="statusMeta">Model and MCP status not yet loaded.</p><div id="statusMonitor"></div><button id="checkConnection" type="button" onclick="checkMonitorSource()">Check Hub & Device Monitor</button></div><button id="reloadUI" hidden onclick="reloadInterface()">Reload interface</button></div></div></header>
@@ -627,7 +648,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.173";
+const UI_VERSION="2.0.0-alpha.174";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let activeAskController=null, askGeneration=0;
