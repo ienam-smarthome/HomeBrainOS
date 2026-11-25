@@ -329,6 +329,32 @@ main{max-width:1280px}
 .overview-footer{margin:5px 0 0;gap:6px}
 .overview-footer small,.overview-limits summary{font-size:10.5px;color:var(--hb-sub)}
 @media(min-width:1000px){#systemHealth .overview-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}}
+
+/* alpha.167 declutter: secondary text behind (i), important numbers stand out */
+.hint{display:inline-block;vertical-align:middle;margin:0 0 0 6px}
+.hint[open]{display:block;margin:6px 0 10px}
+.hint>summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;border:1px solid var(--hb-edge);color:var(--hb-sub);font-size:14px}
+.hint>summary::-webkit-details-marker{display:none}
+.hint>p{margin:8px 0 0}
+#systemHealth .health-section-title{display:inline-block;margin:22px 0 8px}
+#systemHealth .hint{margin:22px 0 8px 8px}#systemHealth .hint[open]{margin:0 0 10px}#systemHealth .health-heading h2,#diagnostics .row>h2{display:inline-block}
+.hint-block{margin:8px 0 0}.hint-block>summary{cursor:pointer;font-size:12px;color:var(--hb-sub);padding:4px 0}
+.chart-options{margin:6px 0}.chart-options>summary{cursor:pointer;font-size:13px;color:var(--hb-sub);padding:6px 0}
+.chart-options label{display:block;margin:8px 0}
+.health-banner{border-radius:14px;padding:15px 17px;margin:0 0 14px;font-size:17px;font-weight:700;line-height:1.35;border:1px solid var(--hb-edge);background:var(--hb-panel);color:var(--hb-text)}
+.health-banner[data-level="ok"]{border-color:#2f9e68;background:#10281f}
+.health-banner[data-level="attention"]{border-color:#d19a2e;background:#2a2312}
+.health-banner small{display:block;font-size:13px;font-weight:500;color:var(--hb-sub);margin-top:4px}
+#systemHealth .health-card.needs-review{order:-1}
+#systemHealth .health-card.needs-review .health-count{color:#ffc857;font-size:30px;font-weight:800}
+#systemHealth .health-card:not(.needs-review) .health-count{color:var(--hb-sub);font-weight:500}
+#systemHealth .health-card-scope,#systemHealth .health-runtime-card p{font-size:11px}
+.network-card[data-level="ok"]{border-left:4px solid #3ddc84}
+.network-card[data-level="warn"]{border-left:4px solid #ffc857}
+.network-card[data-level="bad"]{border-left:4px solid #ff6b6b}
+.network-card .network-head strong{font-size:18px}
+.command-footer{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.session-note .voice-privacy{margin:0 0 8px}
 .network-head{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
 .network-checks{list-style:none;margin:10px 0 6px;padding:0;display:grid;gap:6px}
 .network-checks li{display:flex;gap:8px;justify-content:space-between;font-size:13px;border:1px solid var(--hb-edge);border-radius:9px;padding:8px 10px}
@@ -468,10 +494,9 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
  <button id="cancelAsk" type="button" hidden onclick="void cancelCurrentAsk()" title="Stop the active request and invalidate pending approval">Cancel</button>
 </form>
 <div class="command-footer"><span id="voiceStatus" class="voice-status" role="status" aria-live="polite">Enter to send · Shift+Enter for new line · / to focus</span>
- <span class="voice-privacy">Voice input may use a browser speech service.</span>
- <label class="voice-toggle" for="readAnswers"><input id="readAnswers" type="checkbox" onchange="toggleAutoRead(this.checked)">Read replies aloud</label>
+  <label class="voice-toggle" for="readAnswers"><input id="readAnswers" type="checkbox" onchange="toggleAutoRead(this.checked)">Read replies aloud</label>
 </div>
-<details class="session-note evidence-disclosure"><summary>Conversation and privacy</summary><p>Every new Ask or Speak starts a fresh conversation with no earlier chat or source receipts. Starting another question ends the previous request and revokes any pending approval; an in-flight native write may still have an uncertain downstream outcome. The assistant cannot authorise a change from old text. Evidence is memory-only and never uploaded automatically.</p></details>
+<details class="session-note evidence-disclosure"><summary>Conversation and privacy</summary><p class="voice-privacy">Voice input may use a browser speech service.</p><p>Every new Ask or Speak starts a fresh conversation with no earlier chat or source receipts. Starting another question ends the previous request and revokes any pending approval; an in-flight native write may still have an uncertain downstream outcome. The assistant cannot authorise a change from old text. Evidence is memory-only and never uploaded automatically.</p></details>
 </div>
 </div><div class="answer-feed" id="answerFeed" aria-label="Newest answers first" aria-live="polite"><p class="feed-empty" id="feedEmpty">Your conversation starts here <span>Ask a question, request an action, or use the microphone. Answers and source evidence appear here.</span></p>
 <div class="card live-activity" id="activityCard" hidden><h2>Active operation <small>actual native MCP activity</small></h2><pre id="activity" class="activity-raw"></pre><ol id="activityTrace" class="work-steps"></ol>
@@ -497,9 +522,10 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 </div></section>
 <section id="systemHealth" aria-label="System Health">
  <header class="health-heading">
-  <div><h2>System Health</h2><p>Read-only device observations from one existing inventory snapshot. No additional device queries or Ollama calls.</p></div>
+  <div><h2>System Health</h2><details class="hint"><summary aria-label="About this view">ⓘ</summary><p>Read-only device observations from one existing inventory snapshot. No additional device queries or Ollama calls.</p></details></div>
   <button id="refreshOverview" class="health-refresh" type="button" onclick="refreshOverview()" title="Make one explicit read-only device inventory request. No model calls or device writes.">↻ Refresh devices</button>
  </header>
+ <div id="healthBanner" class="health-banner" role="status" aria-live="polite" data-level="wait">Checking devices…</div>
  <div class="card health-snapshot" role="status">
   <strong id="healthSnapshotTitle">Waiting for the device inventory snapshot</strong>
   <p id="healthSnapshotNotes">The initial page load makes one read-only inventory request. This tab presents that snapshot without a further read.</p>
@@ -507,32 +533,32 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
   <small id="healthRefreshStatus" role="status" aria-live="polite">Waiting for first read-only inventory snapshot</small>
  </div>
  <h3 class="health-section-title">HomeBrainOS runtime</h3>
- <p class="health-helper">Existing page-start status, not a live connection test. Saved diagnostics use their observation timestamps.</p>
+ <details class="hint"><summary aria-label="About this section">ⓘ</summary><p class="health-helper">Existing page-start status, not a live connection test. Saved diagnostics use their observation timestamps.</p></details>
  <div id="healthRuntime" class="health-grid" aria-label="HomeBrainOS setup, diagnostics and optional monitor"></div>
  <h3 class="health-section-title">Network status</h3>
- <p class="health-helper">One read-only check from the add-on host when you press the button: internet, DNS, the Hubitat hub and an optional router. Not polled. It does not test the hub's own internet access.</p>
+ <details class="hint"><summary aria-label="About this section">ⓘ</summary><p class="health-helper">One read-only check from the add-on host when you press the button: internet, DNS, the Hubitat hub and an optional router. Not polled. It does not test the hub's own internet access.</p></details>
  <div class="card network-card" id="networkCard"><div class="network-head"><strong id="networkSummary" role="status" aria-live="polite">Not checked yet</strong><button id="checkNetwork" type="button" class="health-refresh" onclick="checkNetworkStatus()">Check network</button></div><ul id="networkChecks" class="network-checks"></ul><small id="networkScope" class="muted"></small></div>
  <h3 class="health-section-title">Needs attention</h3>
- <p class="health-helper">Observed states, not independently verified faults. Missing state reports are unknown, not healthy.</p>
+ <details class="hint"><summary aria-label="About this section">ⓘ</summary><p class="health-helper">Observed states, not independently verified faults. Missing state reports are unknown, not healthy.</p></details>
  <div id="healthAttention" class="health-grid" aria-label="Potential issues reported by returned attributes"></div>
  <h3 class="health-section-title">Currently reported</h3>
- <p class="health-helper">Lights, motion, heating and other switches are snapshots, not continuous activity or inferred heating demand.</p>
+ <details class="hint"><summary aria-label="About this section">ⓘ</summary><p class="health-helper">Lights, motion, heating and other switches are snapshots, not continuous activity or inferred heating demand.</p></details>
  <div id="healthActive" class="health-grid" aria-label="Observed active device states"></div>
  <div class="health-actions card">
   <h3>Troubleshooting</h3>
-  <p>Choose a read-only investigation topic. Preparing a question has no model cost; submitting it uses your configured primary model. If free-cloud fallback is explicitly enabled and local Ollama cannot connect, private home evidence is sent to OpenRouter. Free usage has limits.</p>
+  <details class="hint-block"><summary>Cost and privacy</summary><p>Choose a read-only investigation topic. Preparing a question has no model cost; submitting it uses your configured primary model. If free-cloud fallback is explicitly enabled and local Ollama cannot connect, private home evidence is sent to OpenRouter. Free usage has limits.</p>
+  <p class="health-privacy">System Health opening and expanding reports: zero additional Hubitat inventory calls, zero model calls, no schedules, no writes. Runtime cards reuse the initial /api/status response; the initial inventory request is unchanged.</p></details>
   <div class="health-guide-grid">
    <article class="health-guide"><h4>Lights or motion</h4><p>Check which sensors reported a state and investigate automation commands versus bridge reports.</p><button type="button" onclick="prepareHealthQuestion('Investigate the most recent light or motion anomaly using original Hubitat MCP receipts. Check reporter versus initiator. Read-only; do not change anything.')">Prepare investigation</button></article>
    <article class="health-guide"><h4>Heating behaviour</h4><p>Compare actual thermostat and TRV operating states with demand, without treating heating state as cause.</p><button type="button" onclick="prepareHealthQuestion('Investigate current heating state and TRV demand using fresh native evidence. Distinguish commands, setpoints and operating states. Read-only; do not change anything.')">Prepare investigation</button></article>
    <article class="health-guide"><h4>Device not reporting</h4><p>Look for fresh device telemetry and driver status; missing readings alone do not establish disconnection.</p><button type="button" onclick="prepareHealthQuestion('Investigate devices with missing or reported-offline telemetry; check last reports and source coverage before drawing conclusions. Read-only; do not change anything.')">Prepare investigation</button></article>
    <article class="health-guide"><h4>Hub performance</h4><p>Use existing saved memory, CPU, reboot and connectivity history in Hub Diagnostics.</p><button type="button" onclick="tab('diagnostics')">Open Hub Diagnostics</button></article>
   </div>
-  <p class="health-privacy">System Health opening and expanding reports: zero additional Hubitat inventory calls, zero model calls, no schedules, no writes. Runtime cards reuse the initial /api/status response; the initial inventory request is unchanged.</p>
  </div>
 </section>
 <section id="diagnostics">
 <div class="row"><h2>Hub Diagnostics — external recorder</h2><button class="right" onclick="refreshDiagnostics()">Refresh</button></div>
-<p class="muted">Independent SQLite observations outside Hubitat. Probe losses are not necessarily reboots. CPU shows five-minute load equivalent, not measured utilisation.</p>
+<details class="hint"><summary aria-label="About this view">ⓘ</summary><p class="muted">Independent SQLite observations outside Hubitat. Probe losses are not necessarily reboots. CPU shows five-minute load equivalent, not measured utilisation.</p></details>
 <p id="recorderNotice" role="status" hidden></p><div class="metrics" id="cards"></div>
 <div class="card" id="timelineCard">
 <div class="row"><h2>Unified incident timeline</h2><a class="graph-popout-return" id="timelineReturn" href="./" hidden>← Dashboard</a><a class="graph-popout-link right" id="timelinePopout" href="?graph_view=timeline" target="_blank" rel="noopener noreferrer" onclick="prepareGraphPopout('timeline')">↗ Pop out full page</a><button id="timelineRefresh" onclick="refreshDiagnostics()">Refresh timeline</button></div>
@@ -540,9 +566,9 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 <div class="legend"><span><i class="dot"></i>OS memory (external probe)</span><span><i class="dot" style="background:#c4a1ff"></i>OS memory (native 5m)</span><span><i class="dot" style="background:var(--green)"></i>CPU load equivalent (native 5m)</span><span><i class="dot" style="background:var(--amber)"></i>Hub systemStart</span><span><i class="dot" style="background:#e65f72"></i>Connectivity loss</span></div>
 <div class="diag-controls">
 <label for="range">Range <select id="range" onchange="resetDiagnosticZoom();refreshDiagnostics()"><option value="1">1 hour</option><option value="6" selected>6 hours</option><option value="24">24 hours</option><option value="72">3 days</option><option value="168">7 days</option><option value="720">30 days</option></select></label>
-<label for="timelineLayout">Memory + CPU layout <select id="timelineLayout" onchange="drawIncidentTimeline()"><option value="split" selected>Separate · 3 aligned panels</option><option value="tall">2 aligned panels · taller</option><option value="combined">Memory overlaid · CPU separate</option><option value="overlay">Overlay all · dual axes</option></select></label>
+<details class="chart-options"><summary>Chart options</summary><label for="timelineLayout">Memory + CPU layout <select id="timelineLayout" onchange="drawIncidentTimeline()"><option value="split" selected>Separate · 3 aligned panels</option><option value="tall">2 aligned panels · taller</option><option value="combined">Memory overlaid · CPU separate</option><option value="overlay">Overlay all · dual axes</option></select></label>
 <label for="timelinePair" id="timelinePairRow" hidden>Show two <select id="timelinePair" onchange="drawIncidentTimeline()"><option value="external-cpu" selected>External memory + CPU</option><option value="native-cpu">Native memory + CPU</option><option value="external-native">External + native memory</option></select></label>
-<label for="plotExtent">Time axis <select id="plotExtent" onchange="resetDiagnosticZoom()"><option value="fit" selected>Fit observed data</option><option value="full">Full requested range</option></select></label>
+<label for="plotExtent">Time axis <select id="plotExtent" onchange="resetDiagnosticZoom()"><option value="fit" selected>Fit observed data</option><option value="full">Full requested range</option></select></label></details>
 </div>
 <div class="graph-zoom-row"><button id="resetTimelineZoom" onclick="resetDiagnosticZoom()" disabled>Reset zoom</button><span id="timelineZoomInfo" class="graph-zoom-hint" role="status">Drag across a panel to zoom into a time interval. Click to inspect a point.</span></div>
 <div class="timeline-scroll" role="region" aria-label="Scrollable synchronized memory and CPU chart"><svg id="incidentTimeline" class="timeline-chart" viewBox="0 0 860 540" role="img" tabindex="0" aria-label="Memory and CPU observations with independent scales, outage intervals, confirmed startups, and a keyboard-operable source inspection cursor"></svg></div>
@@ -553,7 +579,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 <button id="timelineAsk" disabled onclick="prepareTimelineQuestion()">Prepare AI investigation</button>
 <a id="timelineSource" href="api/diagnostics/timeline?hours=6" target="_blank" rel="noopener noreferrer">View source records (JSON)</a>
 </div>
-<p class="session-note">These are locally saved observations, not cause attribution. Inspect uses no Hubitat request. Preparing an AI question does not send it or authorise a device action.</p>
+<details class="hint"><summary aria-label="About these observations">ⓘ</summary><p class="session-note">These are locally saved observations, not cause attribution. Inspect uses no Hubitat request. Preparing an AI question does not send it or authorise a device action.</p></details>
 <details id="timelineObservations" open><summary>Observed points and incidents</summary><div class="timeline-events" id="timelineEvents"></div></details>
 <details id="timelineEvidenceDetails" hidden><summary>Selected local source evidence (read-only)</summary><pre id="timelineEvidence"></pre></details>
 </div>
@@ -574,7 +600,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.166";
+const UI_VERSION="2.0.0-alpha.167";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let activeAskController=null, askGeneration=0;
@@ -783,6 +809,18 @@ function renderSystemHealth(snapshot){
  for(const [key,label,kind] of HEALTH_ACTIVE)
   active.appendChild(healthSnapshotCard(metrics[key],key,label,kind));
 }
+
+function updateHealthBanner(){
+ const b=byId('healthBanner');if(!b)return;
+ const cards=[...document.querySelectorAll('#healthAttention .health-card.needs-review')];
+ if(!document.querySelector('#healthAttention .health-card')){b.dataset.level='wait';b.textContent='Checking devices…';return;}
+ if(!cards.length){b.dataset.level='ok';b.textContent='All clear · nothing reported needs attention';return;}
+ const parts=cards.map(c=>{const n=c.querySelector('.health-card-heading span'),k=c.querySelector('.health-count');return (n?n.textContent.trim():'Item')+' '+(k?k.textContent.trim():'')});
+ b.dataset.level='attention';b.replaceChildren();
+ b.append(cards.length+(cards.length===1?' area needs attention':' areas need attention'));
+ const s=document.createElement('small');s.textContent=parts.join(' · ');b.append(s);
+}
+(function(){const r=document.getElementById('healthAttention');if(r&&window.MutationObserver)new MutationObserver(updateHealthBanner).observe(r,{childList:true,subtree:true});})();
 let networkPending=false;
 async function checkNetworkStatus(){
  if(networkPending)return;networkPending=true;
@@ -790,7 +828,7 @@ async function checkNetworkStatus(){
  byId('networkSummary').textContent='Checking…';
  try{
   const d=await readJson('api/network/status',{headers:{'X-Homebrain-Request':'1'}});
-  byId('networkSummary').textContent=d.summary||'No result';
+  byId('networkSummary').textContent=d.summary||'No result';byId('networkCard').dataset.level=d.level||'';
   const list=byId('networkChecks');list.replaceChildren();
   for(const c of d.checks||[]){
    const li=document.createElement('li');li.className=c.ok?'ok':'down';

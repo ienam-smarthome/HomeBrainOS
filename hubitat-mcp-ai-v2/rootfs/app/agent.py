@@ -108,7 +108,7 @@ from device_monitor import TOOL_NAME as MONITOR_TOOL, TOOL_DEFINITION as MONITOR
 from monitor_evidence import monitor_evidence_scope
 from retrieval_coverage import FileReadCoverage, file_chunk_scope, event_attribute_scope
 from receipt_compute import (
-    partial_coverage_note, unrun_tool_note,
+    partial_coverage_note, unrun_tool_note, unit_conversion_note,
     TOOL_NAME as COMPUTE_TOOL, TOOL_DEFINITION as COMPUTE_TOOL_DEFINITION,
     ComputeError, compute as compute_receipt, field_meaning_note, rows_hint,
 )
@@ -3039,6 +3039,9 @@ class Agent:
                             meaning = field_meaning_note(name, result)
                             if meaning is not None:
                                 model_result["client_field_meaning"] = meaning
+                            unit_note = unit_conversion_note(result)
+                            if unit_note is not None:
+                                model_result["client_unit_conversions"] = unit_note
                         if tool_error and name == "hub_list_devices":
                             note = inventory_failure_recovery_note(args)
                             if note is not None:
