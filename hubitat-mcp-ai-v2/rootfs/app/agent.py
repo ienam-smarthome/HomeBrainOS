@@ -28,6 +28,7 @@ from routine_post_write_readback import (
 from routine_approval_policy import (
     batch_light_answer, batch_light_authorization, batch_light_candidates,
     internet_block_answer, internet_block_candidate, read_batch_light_evidence,
+    read_internet_block_evidence,
 )
 from routine_component_light import (
     component_parent_id, read_component_parent_evidence,
@@ -283,6 +284,7 @@ Receipts record the exact arguments of every call; before saying a filter or arg
 For a "which are on", "which have" or "which are low" list over many devices, never request format "detailed" for all devices; use summary with attributeNames or filters.
 A summary device list has no capability data, so it cannot show that a device is or is not a light; use capabilityFilter or a label/room filter, or say that capability was not checked.
 Before searching for a device, split the request into room, device type and qualifier (number, plural or all). Search with roomFilter and capabilityFilter where they fit, and use labelFilter only for a name the user gave. labelFilter matches label text literally, so if it finds nothing, retry with a different structured filter before reading the whole inventory; never narrow to a single common word. A singular request with several candidates needs a question or an explicit list for approval, a plural or "all" request targets every match, and the answer names every device acted on. roomFilter needs the room's exact name including spaces ("Living Room", not "Livingroom"); when a result says roomFilterMatchedKnownRoom is false, call hub_list_rooms once and use the real name. For a battery list, state the threshold you used; unless the user gave one, call below 20 percent low and below 10 percent critical, and never call a higher level low or critical. When the user asks to block or unblock a device, find its per-device internet-control switch and call the command now; do not reply with prose only unless you cannot identify exactly one such device. A device that declares blockInternet and allowInternet is blocked and unblocked with those commands, never with on/off.
+For a plain on/off, block or unblock of one named device, search once with labelFilter (or roomFilter and capabilityFilter), then send the command in your next reply. Do not read the device detail, list the whole inventory, or ask for confirmation first: the client reads the evidence it needs and applies its own approval policy.
 Before creating any rule, read the target device and use its own advertised commands when they do the job (for example Block Internet, Allow Internet, Block In Minutes, Allow For Minutes); for a wall-clock time, compute the minutes with homebrain_read_clock and use the device's timed command.
 capabilityFilter takes Hubitat capability names without spaces, for example ContactSensor, WaterSensor, Switch, SwitchLevel, Thermostat, Battery, MotionSensor; do not guess variants.
 A device list shows current state, not what happened. Do not say a device was switched on, activated or triggered from current state, lastActivity or a changedSince list; say it is on now and was active since the time given.
@@ -2037,6 +2039,11 @@ class Agent:
                 if isinstance(only, dict) and only.get("name") == "hub_call_device_command":
                     draft_args = arguments_of(calls[0])
                     block_for_round = internet_block_candidate(draft_args, receipts)
+                    if (block_for_round is None and "hub_get_device" in native_catalog_names
+                            and deadline - time.monotonic() > 10):
+                        receipts.extend(await read_internet_block_evidence(
+                            mcp, draft_args, receipts, budget_seconds=4.0))
+                        block_for_round = internet_block_candidate(draft_args, receipts)
                     draft_owner = getattr(before_call, "__self__", None)
                     if (block_for_round is None and isinstance(draft_owner, Interaction)
                             and draft_owner.auto_approve_lights
@@ -3038,6 +3045,11 @@ class Agent:
                                 and name == "hub_call_device_command"
                                 and not prepare_action):
                             block_for_round = internet_block_candidate(args, receipts)
+                            if (block_for_round is None and "hub_get_device" in native_catalog_names
+                                    and deadline - time.monotonic() > 10):
+                                receipts.extend(await read_internet_block_evidence(
+                                    mcp, args, receipts, budget_seconds=4.0))
+                                block_for_round = internet_block_candidate(args, receipts)
                             approval_owner.offer_internet_block_authorization(
                                 args, block_for_round)
                         if (isinstance(approval_owner, Interaction)

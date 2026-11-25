@@ -390,6 +390,39 @@ def internet_block_candidate(args: dict, receipts: list[dict]) -> dict | None:
     return {"device_id": identifier, "command": args["command"], "label": detail["label"].strip()}
 
 
+async def read_internet_block_evidence(mcp, args: dict, receipts: list[dict], *,
+                                       budget_seconds: float = 4.0) -> list[dict]:
+    """One bounded native READ of the target's detail so the model need not spend a round on it.
+
+    Only for the exact ``{deviceId, command}`` shape of an internet on/off/block/allow call whose
+    device has no successful default/summary detail read yet. Reads never authorize anything;
+    ``internet_block_candidate`` still decides from the receipt.
+    """
+    import asyncio
+    import time
+    from routine_component_light import _original_read_receipt
+    from mcp import MCPError
+    if (not isinstance(args, dict) or set(args) != {"deviceId", "command"}
+            or args.get("command") not in INTERNET_SWITCH_COMMANDS
+            or type(args.get("deviceId")) not in (str, int)):
+        return []
+    identifier = str(args["deviceId"]).strip()
+    if not identifier.isdigit() or any(
+            isinstance(r, dict) and r.get("name") == "hub_get_device" and r.get("success") is True
+            and str((r.get("arguments") or {}).get("deviceId", "")).strip() == identifier
+            and (r.get("arguments") or {}).get("mode") in (None, "summary") for r in receipts):
+        return []
+    read_args = {"deviceId": identifier, "mode": "summary"}
+    begin = time.monotonic()
+    try:
+        raw = await asyncio.wait_for(mcp.call("hub_get_device", read_args), timeout=budget_seconds)
+        return [_original_read_receipt("hub_get_device", read_args, raw,
+                                       round((time.monotonic() - begin) * 1000))]
+    except (MCPError, asyncio.TimeoutError, ValueError) as exc:
+        return [_original_read_receipt("hub_get_device", read_args, None,
+                                       round((time.monotonic() - begin) * 1000), error=str(exc))]
+
+
 def internet_block_answer(candidate: dict, receipts: list[dict]) -> str | None:
     """Receipt-backed completion for an accepted block/allow command (no extra model round)."""
     writes = [r for r in receipts if isinstance(r, dict) and r.get("possible_native_action") is True]
