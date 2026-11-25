@@ -679,7 +679,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.188";
+const UI_VERSION="2.0.0-alpha.189";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let activeAskController=null, askGeneration=0;
@@ -2853,7 +2853,7 @@ function scoreQuestionRun(data,ms){
  if(errors)fail.push(errors+' tool error'+(errors>1?'s':''));
  if(writes)fail.push('write attempted');
  if(elapsed>45000)fail.push('slow >45 s');
- if(rounds!==null&&rounds>4)fail.push(rounds+' rounds');
+ if(rounds!==null&&rounds>5)fail.push(rounds+' rounds');
  const info=[];
  if(/Coverage:/.test(answer))info.push('partial coverage');
  if(/Field note:/.test(answer))info.push('field note');
@@ -2866,9 +2866,10 @@ const QUESTION_TRUTH={3:{key:['battery_low'],none:/\b(no|none|not|neither|nothin
  5:{key:['lights_on'],none:/\b(no|none|not|neither|nothing)\b/i},
  6:{key:['contact_open','water_wet'],none:/\b(no|none|not|neither|nothing|closed|dry)\b/i},
  7:{key:['heating_active'],none:/\b(idle|not heating|no heating|none|off|not calling)\b/i}};
+function qsNorm(s){return ' '+String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim()+' ';}
 function overviewNames(snap,keys){
- const out=new Set();
- for(const k of keys){const m=snap&&snap.metrics&&snap.metrics[k];if(m&&Array.isArray(m.members))m.members.forEach(x=>out.add(String(x.name)));}
+ const out=new Map();
+ for(const k of keys){const m=snap&&snap.metrics&&snap.metrics[k];if(m&&Array.isArray(m.members))m.members.forEach(x=>out.set(String(x.name),[x.name,x.alt,x.id].filter(Boolean)));}
  return out;
 }
 // Compares an answer with the hub's own inventory read taken just before and after the question.
@@ -2876,7 +2877,7 @@ function overviewNames(snap,keys){
 function truthCheck(index,answer,before,after){
  const rule=QUESTION_TRUTH[index];
  if(!rule||!before||!after||before.available===false||after.available===false)return null;
- const text=String(answer||'').toLowerCase();
+ const text=qsNorm(answer);
  if(rule.count){
   const a=before.metrics[rule.count].count,b=after.metrics[rule.count].count;
   const lo=Math.min(a,b)-3,hi=Math.max(a,b)+3;
@@ -2885,10 +2886,10 @@ function truthCheck(index,answer,before,after){
   return{ok,detail:ok?'count within the hub\'s '+Math.min(a,b)+'–'+Math.max(a,b)+' (±3)':'hub reports '+Math.min(a,b)+'–'+Math.max(a,b)+' devices; answer has no matching number'};
  }
  const nb=overviewNames(before,rule.key),na=overviewNames(after,rule.key);
- const stable=[...nb].filter(n=>na.has(n));
+ const stable=[...nb.keys()].filter(n=>na.has(n));
  if(!nb.size&&!na.size){const ok=rule.none.test(answer||'');return{ok,detail:ok?'hub reports none; answer says none':'hub reports none but the answer does not say so'};}
  if(!stable.length)return null;
- const missing=stable.filter(n=>!text.includes(n.toLowerCase()));
+ const missing=stable.filter(n=>!nb.get(n).some(f=>text.includes(qsNorm(f))));
  return{ok:missing.length===0,detail:missing.length?'missing from answer: '+missing.slice(0,5).join(', '):'all '+stable.length+' expected named'};
 }
 async function qsSnapshot(){try{return await readJson('api/overview',{headers:{'X-Homebrain-Request':'1'}});}catch(e){return null;}}

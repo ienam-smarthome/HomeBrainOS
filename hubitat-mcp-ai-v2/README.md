@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Current code candidate: `2.0.0-alpha.188`. The Question set self-test now checks correctness, not just speed: five questions (batteries, stale devices, lights, contacts/water, heating) are compared with the hub's own inventory read taken before and after the answer (devices that changed mid-run are not required), and each question can be repeated 3× to separate luck from real faults. Report shows `hub check` per answer and a matched-count summary.
+Current code candidate: `2.0.0-alpha.189`. Fixes from the alpha.188 3× report: the self-test matches device names, alternate names and ids (fewer false "missing" results) and allows 5 rounds; answers naming a year no tool result contains get a date note; numeric `changedSince` is refused before reaching the hub; prompt rules for ranking with `sortBy` first. New proactive home alerts (`home_alerts_enabled`): water wet at once, contacts left open past `home_alert_open_minutes`, batteries under 10 %, with recovery messages and retry; status at `/api/home/alerts`. Daily briefing and network alerts are unchanged.
 
 Per-alpha history (alpha.8 to alpha.171) is in [docs/HOMEBRAIN-V2-ALPHA-HISTORY.md](../docs/HOMEBRAIN-V2-ALPHA-HISTORY.md).
 

@@ -66,16 +66,12 @@ class OverviewCountingTests(unittest.TestCase):
         self.assertEqual(metrics["battery_low"]["devices_with_state"], 3)
         self.assertEqual(metrics["battery_low"]["threshold_exclusive_pct"], 20)
         self.assertEqual(result["unclassified_on_switches"], 1)
-        self.assertEqual(metrics["lights_on"]["members"], [{"name": "Sample ceiling lamp"}])
-        self.assertEqual(
-            metrics["motion_active"]["members"],
-            [{"name": "Sample mains socket"}, {"name": "Sample motion sensor"}],
-        )
-        self.assertEqual(
-            metrics["battery_low"]["members"],
-            [{"name": "Sample motion sensor", "battery_pct": 5.0},
-             {"name": "Sample ceiling lamp", "battery_pct": 17.0}],
-        )
+        self.assertEqual(metrics["lights_on"]["members"], [{"name": "Sample ceiling lamp", "id": "101"}])
+        names = lambda key: [(m["name"], m.get("battery_pct")) for m in metrics[key]["members"]]
+        self.assertEqual([n for n, _ in names("motion_active")],
+                         ["Sample mains socket", "Sample motion sensor"])
+        self.assertEqual(names("battery_low"),
+                         [("Sample motion sensor", 5.0), ("Sample ceiling lamp", 17.0)])
         self.assertEqual(metrics["battery_low"]["members_omitted"], 0)
         self.assertIn("unidentified ON switches", result["notes"][0])
         self.assertNotIn("switch_on", metrics)

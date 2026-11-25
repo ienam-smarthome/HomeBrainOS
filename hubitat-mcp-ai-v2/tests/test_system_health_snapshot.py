@@ -93,7 +93,7 @@ class SystemHealthSnapshotTests(unittest.TestCase):
         self.assertEqual(result["metrics"]["other_switches_on"]["count"], 1)
         self.assertEqual(result["unclassified_on_switches"], 1)
         self.assertEqual(result["metrics"]["other_switches_on"]["members"],
-                         [{"name": "Demo Socket"}])
+                         [{"name": "Demo Socket", "id": "LAB-5"}])
 
     def test_names_are_bounded_and_excess_reported(self):
         huge = [

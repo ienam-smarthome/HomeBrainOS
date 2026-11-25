@@ -108,7 +108,7 @@ from device_monitor import TOOL_NAME as MONITOR_TOOL, TOOL_DEFINITION as MONITOR
 from monitor_evidence import monitor_evidence_scope
 from retrieval_coverage import FileReadCoverage, file_chunk_scope, event_attribute_scope
 from receipt_compute import (
-    draft_states_aggregate, field_meaning_prose_note, normalize_list_devices_args, filter_scope_note, partial_coverage_note, temperature_unit_note, partial_ranking_warning, unrun_tool_note, unit_conversion_note,
+    draft_states_aggregate, field_meaning_prose_note, normalize_list_devices_args, filter_scope_note, partial_coverage_note, temperature_unit_note, unsupported_year_note, changed_since_refusal, partial_ranking_warning, unrun_tool_note, unit_conversion_note,
     issued_cursors, cursor_continuation,
     TOOL_NAME as COMPUTE_TOOL, TOOL_DEFINITION as COMPUTE_TOOL_DEFINITION,
     ComputeError, compute as compute_receipt, field_meaning_note, rows_hint,
@@ -276,6 +276,8 @@ For a ranking ("most", "largest", "top N"), first use the source tool's own sort
 Receipts record the exact arguments of every call; before saying a filter or argument was not applied, check the call's arguments.
 For a "which are on", "which have" or "which are low" list over many devices, never request format "detailed" for all devices; use summary with attributeNames or filters.
 A summary device list has no capability data, so it cannot show that a device is or is not a light; use capabilityFilter or a label/room filter, or say that capability was not checked.
+To rank devices or apps (most, largest, top) with hub_get_logs, make the first read with sortBy (stateSize for stored state) and a small limit; do not read unsorted pages to rank them.
+changedSince and since take an ISO 8601 string with offset from homebrain_read_clock, never a number. hub_list_devices with changedSince lists devices with recent activity; hub_list_device_events lists events. Say which you used and do not present all devices as changed.
 State a date or year only if a tool result (clock, event or device timestamp) gives it; for "in the last hour" style questions read the clock first.
 Use only argument names and filter forms that appear in the tool's schema; never suggest filter syntax the schema does not show.
 Owner home notes, when present, say how this home is organised (what counts as a light, which switches are blockers); follow them, and treat the observed device profile as a starting map, not live state.
@@ -1433,6 +1435,9 @@ class Agent:
                 field_note = field_meaning_prose_note(verified_answer, receipts)
                 if field_note:
                     verified_answer = f"{verified_answer}\n\n{field_note}"
+                year_note = unsupported_year_note(verified_answer, receipts)
+                if year_note:
+                    verified_answer = f"{verified_answer}\n\n{year_note}"
                 unit_prose_note = temperature_unit_note(verified_answer, receipts)
                 if unit_prose_note:
                     verified_answer = f"{verified_answer}\n\n{unit_prose_note}"
@@ -3007,6 +3012,7 @@ class Agent:
                             args, cursor_refusal, cursor_note = cursor_continuation(
                                 name, args, receipts)
                             args, arg_adjustment = normalize_list_devices_args(name, args, catalog)
+                            cursor_refusal = cursor_refusal or changed_since_refusal(name, args)
                         if cursor_refusal is not None:
                             result = {"isError": True, "content": [{"type": "text", "text": json.dumps(
                                 {"client_cursor_check": cursor_refusal, "hub_called": False})}]}

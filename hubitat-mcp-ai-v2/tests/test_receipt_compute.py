@@ -545,3 +545,16 @@ class ListDevicesArgNormalisation(unittest.TestCase):
         self.assertIsNone(none)
         self.assertEqual(same, {"format": "summary"})
         self.assertEqual(normalize_list_devices_args("hub_get_logs", {"format": "detailed"}, self.CAT)[1], None)
+
+
+class YearAndChangedSinceTests(unittest.TestCase):
+    def test_year_not_in_results_is_flagged(self):
+        from receipt_compute import unsupported_year_note
+        receipts = [{"response": '{"ts":"2026-11-25T15:00:00"}', "arguments": {}}]
+        self.assertEqual(unsupported_year_note("At 2026-11-25 free memory fell", receipts), "")
+        self.assertIn("2025", unsupported_year_note("On 2025-11-25 it fell", receipts))
+
+    def test_numeric_changed_since_refused(self):
+        from receipt_compute import changed_since_refusal
+        self.assertIsNotNone(changed_since_refusal("hub_list_devices", {"changedSince": 1732559355601}))
+        self.assertIsNone(changed_since_refusal("hub_list_devices", {"changedSince": "2026-11-25T14:00:00+00:00"}))

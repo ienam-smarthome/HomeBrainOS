@@ -202,3 +202,128 @@ class BriefingSchedule:
             except asyncio.CancelledError:
                 pass
             self._task = None
+
+
+DEFAULT_HOME_GRACE = {"water": 0, "contact": 1800, "battery": 0}
+CRITICAL_BATTERY_PCT = 10
+BATTERY_REARM_PCT = 25
+
+
+class HomeWatch:
+    """Proactive device alerts from the same read-only inventory snapshot the briefing uses.
+
+    Water wet: alert at once. Contact open: alert after a grace period (default 30 min), then
+    one 'closed again' message. Battery below 10 %: alert once per device, re-armed above 25 %.
+    Failed deliveries are kept and retried. No model, no writes.
+    """
+
+    def __init__(self, read_snapshot, notify, *, interval: int = 300, grace: dict | None = None,
+                 clock=None, enabled: bool = True):
+        import time as _time
+        self.read_snapshot, self.notify = read_snapshot, notify
+        self.interval = max(60, int(interval))
+        self.grace = {**DEFAULT_HOME_GRACE, **(grace or {})}
+        self.clock, self.enabled = clock or _time.monotonic, enabled
+        self._since: dict[str, float] = {}
+        self._alerted: set[str] = set()
+        self._pending: list[tuple[str, str]] = []
+        self.last_alert = None
+        self.last_error = None
+        self._task = None
+
+    @staticmethod
+    def _active(snapshot) -> dict:
+        metrics = (snapshot or {}).get("metrics") or {}
+        found: dict[str, tuple[str, str]] = {}
+        for kind, key in (("water", "water_wet"), ("contact", "contact_open")):
+            for m in (metrics.get(key) or {}).get("members") or []:
+                found[f"{kind}:{m.get('id') or m.get('name')}"] = (kind, str(m.get("name")))
+        for m in (metrics.get("battery_low") or {}).get("members") or []:
+            level = m.get("battery_pct")
+            if isinstance(level, (int, float)) and level < CRITICAL_BATTERY_PCT:
+                found[f"battery:{m.get('id') or m.get('name')}"] = (
+                    "battery", f"{m.get('name')} ({round(level)}%)")
+        return found
+
+    async def tick(self) -> None:
+        try:
+            snapshot = await self.read_snapshot()
+        except Exception as exc:
+            self.last_error = f"snapshot failed: {exc}"
+            return
+        if snapshot is None:
+            return
+        now = self.clock()
+        active = self._active(snapshot)
+        for key, (kind, name) in active.items():
+            since = self._since.setdefault(key, now)
+            if key in self._alerted or now - since < self.grace[kind]:
+                continue
+            self._alerted.add(key)
+            if kind == "water":
+                self._pending.append(("HomeBrainOS: water detected", f"{name} is reporting wet."))
+            elif kind == "contact":
+                mins = max(1, round((now - since) / 60))
+                self._pending.append(("HomeBrainOS: left open",
+                                      f"{name} has been open for about {mins} min."))
+            else:
+                self._pending.append(("HomeBrainOS: battery very low", f"{name} needs a new battery."))
+        levels = {m.get("id") or m.get("name"): m.get("battery_pct")
+                  for m in ((snapshot.get("metrics") or {}).get("battery_low") or {}).get("members") or []}
+        for key in [k for k in self._since if k not in active]:
+            since = self._since[key]
+            kind = key.split(":", 1)[0]
+            ident = key.split(":", 1)[1]
+            if kind == "battery":
+                level = levels.get(ident)
+                if isinstance(level, (int, float)) and level < BATTERY_REARM_PCT:
+                    continue  # still low-ish: keep it armed so it does not re-alert on a wobble
+            del self._since[key]
+            if key in self._alerted:
+                self._alerted.discard(key)
+                if kind == "water":
+                    self._pending.append(("HomeBrainOS: water cleared", f"{ident} is dry again."))
+                elif kind == "contact":
+                    self._pending.append(("HomeBrainOS: closed again", f"{ident} is closed again."))
+        await self._flush()
+
+    async def _flush(self) -> None:
+        while self._pending:
+            title, message = self._pending[0]
+            try:
+                await self.notify(title, message)
+            except Exception as exc:
+                self.last_error = f"alert not delivered yet: {exc}"
+                del self._pending[:-20]
+                return
+            self._pending.pop(0)
+            self.last_error = None
+            import time as _time
+            self.last_alert = {"title": title, "message": message, "sent_at": _time.time()}
+
+    def status(self) -> dict:
+        return {"enabled": self.enabled, "interval_seconds": self.interval,
+                "grace_seconds": dict(self.grace), "last_alert": self.last_alert,
+                "last_error": self.last_error, "undelivered": len(self._pending),
+                "watching": sorted(self._since)}
+
+    def start(self) -> None:
+        if self.enabled and self._task is None:
+            import asyncio
+            self._task = asyncio.create_task(self._run())
+
+    async def _run(self) -> None:
+        import asyncio
+        while True:
+            await self.tick()
+            await asyncio.sleep(self.interval)
+
+    async def close(self) -> None:
+        if self._task:
+            import asyncio
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+            self._task = None

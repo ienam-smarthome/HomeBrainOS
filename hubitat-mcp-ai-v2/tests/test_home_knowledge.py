@@ -129,3 +129,46 @@ class BriefingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HomeWatchTests(unittest.IsolatedAsyncioTestCase):
+    async def test_water_alerts_at_once_contact_after_grace_battery_once(self):
+        from home_knowledge import HomeWatch
+        sent, now = [], [0.0]
+        snap = {"metrics": {
+            "water_wet": {"members": [{"name": "Kitchen leak", "id": "9"}]},
+            "contact_open": {"members": [{"name": "Back door", "id": "4"}]},
+            "battery_low": {"members": [{"name": "Hall sensor", "id": "7", "battery_pct": 6.0},
+                                        {"name": "Other", "id": "8", "battery_pct": 15.0}]}}}
+
+        async def read(): return snap
+        async def notify(t, m): sent.append((t, m))
+        w = HomeWatch(read, notify, clock=lambda: now[0])
+        await w.tick()
+        self.assertEqual([t for t, _ in sent], ["HomeBrainOS: water detected", "HomeBrainOS: battery very low"])
+        now[0] = 1900
+        await w.tick()
+        await w.tick()
+        self.assertEqual([t for t, _ in sent].count("HomeBrainOS: left open"), 1)
+        self.assertEqual(len(sent), 3)
+        snap = {"metrics": {}}
+        await w.tick()
+        titles = [t for t, _ in sent]
+        self.assertIn("HomeBrainOS: water cleared", titles)
+        self.assertIn("HomeBrainOS: closed again", titles)
+
+    async def test_failed_delivery_is_retried(self):
+        from home_knowledge import HomeWatch
+        calls = []
+
+        async def read(): return {"metrics": {"water_wet": {"members": [{"name": "A", "id": "1"}]}}}
+        async def notify(t, m):
+            calls.append(t)
+            if len(calls) == 1:
+                raise RuntimeError("offline")
+        w = HomeWatch(read, notify)
+        await w.tick()
+        self.assertEqual(w.status()["undelivered"], 1)
+        await w.tick()
+        self.assertEqual(w.status()["undelivered"], 0)
+        self.assertEqual(len(calls), 2)

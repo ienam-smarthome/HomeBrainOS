@@ -37,7 +37,7 @@ from interaction import Interaction
 from routine_approval_policy import trusted_switch_ids
 from one_off_cleanup import OneOffCleanup
 from network_status import NetworkWatch, network_status
-from home_knowledge import (STARTER_NOTES, BriefingSchedule, HomeKnowledge, HomeNotes,
+from home_knowledge import (STARTER_NOTES, BriefingSchedule, HomeWatch, HomeKnowledge, HomeNotes,
                             briefing_text)
 from conversation import ConversationEvidence
 from frozen_evaluation import FrozenEvaluationError, freeze_capture, replay_frozen_capture
@@ -83,6 +83,8 @@ DEFAULTS: dict[str, Any] = {
     "ha_tts_media_stream": "",
     "briefing_enabled": False,
     "briefing_time": "07:30",
+    "home_alerts_enabled": False,
+    "home_alert_open_minutes": 30,
     "network_alerts_enabled": False,
     "network_alert_notify_service": "",
     "network_alert_grace_minutes": 5,
@@ -213,6 +215,15 @@ async def lifecycle(app: FastAPI):
     except (ValueError, KeyError) as exc:
         app.state.configuration_error = f"briefing: {exc}"
     app.state._build_briefing = _build_briefing
+
+    async def _read_home_snapshot():
+        return await app.state.home_knowledge.refresh(force=True)
+
+    app.state.home_watch = HomeWatch(
+        _read_home_snapshot, app.state.alert_push.push,
+        grace={"contact": max(1, int(options["home_alert_open_minutes"])) * 60},
+        enabled=bool(options["home_alerts_enabled"]))
+    app.state.home_watch.start()
     app.state.home_profile_task = asyncio.create_task(app.state.home_knowledge.refresh())
     app.state.one_off_cleanup = OneOffCleanup(
         app.state.mcp,
@@ -269,6 +280,7 @@ async def lifecycle(app: FastAPI):
         await app.state.network_watch.close()
         if app.state.briefing:
             await app.state.briefing.close()
+        await app.state.home_watch.close()
         app.state.home_profile_task.cancel()
         await app.state.alert_push.close()
         if app.state.mcp:
@@ -277,7 +289,7 @@ async def lifecycle(app: FastAPI):
             await app.state.model.close()
 
 
-app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.188", lifespan=lifecycle)
+app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.189", lifespan=lifecycle)
 app.include_router(benchmark_router)
 app.include_router(autonomous_router)
 app.include_router(reasoning_router)
@@ -421,6 +433,11 @@ async def home_notes_put(request: Request):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return {"notes": saved, "saved": True}
+
+
+@app.get("/api/home/alerts")
+async def home_alerts(request: Request):
+    return app.state.home_watch.status()
 
 
 @app.get("/api/briefing")
