@@ -445,6 +445,8 @@ with sync_playwright() as p:
   page.locator("#diagnosticsTab").click()
   page.wait_for_function("document.querySelector('#source').textContent.startsWith('online')")
   page.locator("#incidentTimeline path").first.wait_for()
+  assert page.evaluate("document.querySelector('details.chart-options').open") is False  # collapsed by default
+  page.locator("details.chart-options > summary").click()
   assert page.locator("#incidentTimeline path").count()>=2
   assert page.locator("#incidentTimeline circle").count()>=2
   assert "4 external OS-memory observations" in page.locator("#timelineMeta").inner_text()
