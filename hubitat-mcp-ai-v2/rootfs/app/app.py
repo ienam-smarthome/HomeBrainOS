@@ -213,7 +213,7 @@ async def lifecycle(app: FastAPI):
             await app.state.model.close()
 
 
-app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.178", lifespan=lifecycle)
+app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.179", lifespan=lifecycle)
 app.include_router(benchmark_router)
 app.include_router(autonomous_router)
 app.include_router(reasoning_router)
@@ -322,7 +322,7 @@ async def overview(request: Request):
         return {"available": False, "read_only": True,
                 "reason": "Native Hubitat MCP is not configured"}
     try:
-        snapshot = await asyncio.wait_for(read_overview(mcp), timeout=12)
+        snapshot = await asyncio.wait_for(read_overview(mcp), timeout=20)
     except (MCPError, OverviewUnavailable, ValueError, asyncio.TimeoutError):
         # Do not leak upstream error details, tool response text, secrets,
         # private device lists, or private connection URLs to browser errors.
