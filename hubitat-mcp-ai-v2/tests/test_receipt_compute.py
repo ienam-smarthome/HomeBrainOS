@@ -234,7 +234,7 @@ class UnrunToolNote(unittest.TestCase):
     def test_failed_receipt_does_not_count_as_run(self):
         from receipt_compute import unrun_tool_note
         receipts = [{"name": "hub_get_metrics", "success": False}]
-        self.assertIn("hub_get_metrics", unrun_tool_note("see hub_get_metrics", receipts, self.NAMES))
+        self.assertIn("hub_get_metrics", unrun_tool_note("hub_get_metrics shows 5 values", receipts, self.NAMES))
 
     def test_no_note_when_all_mentioned_tools_ran_or_none_mentioned(self):
         from receipt_compute import unrun_tool_note
@@ -558,3 +558,20 @@ class YearAndChangedSinceTests(unittest.TestCase):
         from receipt_compute import changed_since_refusal
         self.assertIsNotNone(changed_since_refusal("hub_list_devices", {"changedSince": 1732559355601}))
         self.assertIsNone(changed_since_refusal("hub_list_devices", {"changedSince": "2026-11-25T14:00:00+00:00"}))
+
+
+class UnrunMentionTests(unittest.TestCase):
+    def test_advice_mention_is_not_footnoted_but_figure_claim_is(self):
+        from receipt_compute import unrun_tool_note
+        names = ["hub_get_device"]
+        self.assertIsNone(unrun_tool_note("For details run hub_get_device with the id.", [], names))
+        self.assertIsNotNone(unrun_tool_note("hub_get_device shows battery 12%.", [], names))
+
+
+class ActionOutcomeNoteTests(unittest.TestCase):
+    def test_note_added_only_for_accepted_writes_without_the_hedge(self):
+        from receipt_compute import action_outcome_note
+        done = [{"success": True, "possible_native_action": True}]
+        self.assertIn("not independently verified", action_outcome_note("Both lights are on.", done))
+        self.assertEqual(action_outcome_note("Command accepted; not independently verified.", done), "")
+        self.assertEqual(action_outcome_note("Both lights are on.", [{"success": True}]), "")
