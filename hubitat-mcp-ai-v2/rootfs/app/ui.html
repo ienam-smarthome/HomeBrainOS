@@ -661,7 +661,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.180";
+const UI_VERSION="2.0.0-alpha.181";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let activeAskController=null, askGeneration=0;
@@ -1824,6 +1824,8 @@ function svgNode(tag,attrs={},label){
  if(label!==undefined)node.textContent=String(label);
  return node;
 }
+function chartStamp(ms){return diagTime(ms).replace(',','');}
+function chartLabelText(value,key,ms){return diagValue(value,key)+' · '+chartStamp(ms);}
 function diagTime(t){
  const date=new Date(t);
  return Number.isFinite(date.getTime())?date.toLocaleString('en-GB',{
@@ -2317,6 +2319,12 @@ function drawIncidentTimeline(){
    stroke:'#fff','stroke-width':1.4,r:5,cx:0,cy:0,visibility:'hidden',
    'pointer-events':'none'}));
  }
+ for(const kind of ['memory','nativeMemory','cpu']){
+  svg.append(svgNode('rect',{id:'timelineLabelBg'+kind,x:0,y:0,width:10,height:16,rx:3,
+   fill:'#08101c','fill-opacity':.86,visibility:'hidden','pointer-events':'none'}));
+  svg.append(svgNode('text',{id:'timelineLabelTx'+kind,x:0,y:0,fill:'#eef4ff',
+   'font-size':10.5,visibility:'hidden','pointer-events':'none'}));
+ }
  svg.append(svgNode('rect',{id:'timelineBrush',x:plot.left,y:plot.top,width:0,
   height:plot.cpuBottom-plot.top,fill:'#4e9ff7','fill-opacity':.2,
   stroke:'#65b7ff','stroke-width':1.2,visibility:'hidden',
@@ -2381,10 +2389,21 @@ function selectTimelineTime(when){
   const dot=byId('timelineDot'+kind);
   const onPanel=timelineShown.visibleKinds.includes(kind);
   if(dot)dot.setAttribute('visibility',near&&onPanel?'visible':'hidden');
+  for(const part of ['timelineLabelBg','timelineLabelTx']){const n=byId(part+kind);if(n)n.setAttribute('visibility','hidden');}
   if(near){
    if(dot&&onPanel){
     dot.setAttribute('cx',x(Date.parse(row.recorded_at)));
     dot.setAttribute('cy',yFor(kind,row[key]));
+    const label=chartLabelText(row[key],key,Date.parse(row.recorded_at));
+    const bg=byId('timelineLabelBg'+kind),tx=byId('timelineLabelTx'+kind);
+    if(bg&&tx){
+     const cx=x(Date.parse(row.recorded_at)),cy=yFor(kind,row[key]),w=label.length*6.1+10;
+     let lx=cx+9;if(lx+w>timelineShown.chartWidth-4)lx=cx-9-w;
+     let ly=cy-25;if(ly<timelineShown.plot.top+2)ly=cy+9;
+     bg.setAttribute('x',lx);bg.setAttribute('y',ly);bg.setAttribute('width',w);
+     tx.setAttribute('x',lx+5);tx.setAttribute('y',ly+11.5);tx.textContent=label;
+     bg.setAttribute('visibility','visible');tx.setAttribute('visibility','visible');
+    }
    }
    timelineNearest[kind]=row;
    shortParts.push((kind==='memory'?'OS memory':kind==='nativeMemory'?'Native 5m':'CPU 5m')+' '+diagValue(row[key],key));
@@ -2652,7 +2671,7 @@ function draw(){
  const focus=hoverX===null?(a.length?x(Date.parse(a[a.length-1].recorded_at)):
   b.length?x(Date.parse(b[b.length-1].recorded_at)):null):Math.max(left,Math.min(left+W,hoverX));
  const selectedTime=focus===null?null:start+(focus-left)/W*(end-start);
- let details=[];
+ let details=[];const labelYs=[];
  if(selectedTime!==null){
   g.strokeStyle='#e2edff';g.setLineDash([3,4]);g.lineWidth=1.2;
   g.beginPath();g.moveTo(focus,top);g.lineTo(focus,top+H);g.stroke();
@@ -2669,6 +2688,17 @@ function draw(){
    const xx=x(Date.parse(row.recorded_at)),yy=y(row[key],scale);
    g.fillStyle=color;g.strokeStyle='#fff';g.setLineDash([]);
    g.lineWidth=1.5;g.beginPath();g.arc(xx,yy,5,0,Math.PI*2);g.fill();g.stroke();
+   {
+    const label=chartLabelText(row[key],key,Date.parse(row.recorded_at));
+    g.font='11px system-ui,sans-serif';g.textAlign='left';
+    const w=g.measureText(label).width+10;
+    let lx=xx+9;if(lx+w>left+W-2)lx=xx-9-w;
+    let ly=yy-9-16;if(ly<top+2)ly=yy+9;
+    if(labelYs.some(v=>Math.abs(v-ly)<17))ly=ly<top+H/2?ly+18:ly-18;
+    labelYs.push(ly);
+    g.fillStyle='rgba(8,16,28,.86)';g.fillRect(lx,ly,w,16);
+    g.fillStyle='#eef4ff';g.fillText(label,lx+5,ly+12);
+   }
    details.push((key==='free_os_mb'?'OS memory':key==='native_load_pct'?
     'Native 5m load equivalent':key==='native_load5'?'Native 5m load (raw)':key)+
     ': '+diagValue(row[key],key)+
@@ -2699,7 +2729,7 @@ function draw(){
   details.join(' | ')+' · No interpolation or inferred cause.';
  const hint=byId('hint');
  hint.textContent=details.join(' | ');
- hint.style.display=hoverX!==null&&details.length?'block':'none';
+ hint.style.display='none'; // value and time are drawn on the plot; full wording stays in the readout below
 }
 byId('graph').addEventListener('pointerdown',e=>startChartBrush('detail',e));
 byId('graph').addEventListener('pointermove',e=>{
