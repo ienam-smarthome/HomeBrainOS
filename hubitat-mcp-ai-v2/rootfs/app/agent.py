@@ -35,7 +35,7 @@ from one_off_rule_policy import (
     is_native_rule_read,
 )
 from action_proposal_review import (
-    PREWRITE_PROPOSAL_PROMPT, is_native_action_proposal,
+    PREWRITE_PROPOSAL_PROMPT, is_native_action_proposal, reinstate_reviewed_proposal,
     is_persistent_construct, has_current_native_evidence,
 )
 from control_surface_recovery import (
@@ -276,6 +276,8 @@ For a ranking ("most", "largest", "top N"), first use the source tool's own sort
 Receipts record the exact arguments of every call; before saying a filter or argument was not applied, check the call's arguments.
 For a "which are on", "which have" or "which are low" list over many devices, never request format "detailed" for all devices; use summary with attributeNames or filters.
 A summary device list has no capability data, so it cannot show that a device is or is not a light; use capabilityFilter or a label/room filter, or say that capability was not checked.
+labelFilter matches the label text literally: when it finds nothing, retry with the single most distinctive word (for example bathroom) before reading the whole inventory.
+Before creating any rule, read the target device and use its own advertised commands when they do the job (for example Block Internet, Allow Internet, Block In Minutes, Allow For Minutes); for a wall-clock time, compute the minutes with homebrain_read_clock and use the device's timed command.
 To rank devices or apps (most, largest, top) with hub_get_logs, make the first read with sortBy (stateSize for stored state) and a small limit; do not read unsorted pages to rank them.
 changedSince and since take an ISO 8601 string with offset from homebrain_read_clock, never a number. hub_list_devices with changedSince lists devices with recent activity; hub_list_device_events lists events. Say which you used and do not present all devices as changed.
 State a date or year only if a tool result (clock, event or device timestamp) gives it; for "in the last hour" style questions read the clock first.
@@ -1093,6 +1095,8 @@ class Agent:
         routine_component_parent_read_count = 0
         routine_bootstrap_verified_at: float | None = None
         prewrite_unsent_proposals: list[dict[str, Any]] = []
+        prewrite_original_calls: list = []
+        prewrite_reinstated = False
         prewrite_no_fresh_evidence_rejections = 0
         one_off_rule_preflight_rejections = 0
         prewrite_dispatch_changed = False
@@ -1623,6 +1627,7 @@ class Agent:
                 },
                 "prewrite_unsent_proposals": prewrite_unsent_proposals,
                 "prewrite_dispatch_changed": prewrite_dispatch_changed,
+                "prewrite_proposal_reinstated": prewrite_reinstated,
                 "prewrite_dispatch_comparison": prewrite_dispatch_comparison,
                 "prewrite_no_fresh_evidence_rejections": prewrite_no_fresh_evidence_rejections,
                 "one_off_rule_preflight_rejections": one_off_rule_preflight_rejections,
@@ -1853,6 +1858,7 @@ class Agent:
                     "prewrite_model_review_invoked": prewrite_model_review_invoked,
                     "prewrite_unsent_proposals": prewrite_unsent_proposals,
                     "prewrite_dispatch_changed": prewrite_dispatch_changed,
+                "prewrite_proposal_reinstated": prewrite_reinstated,
                     "prewrite_dispatch_comparison": prewrite_dispatch_comparison,
                     "leaf_schema_discoveries": leaf_schema_discoveries,
                     "elapsed_ms": round((time.monotonic() - started) * 1000),
@@ -1878,6 +1884,12 @@ class Agent:
             text = str(message.get("content") or "").strip()
             if not isinstance(calls, list):
                 calls = []
+            if (prewrite_model_review_invoked and not calls and not prewrite_reinstated
+                    and prewrite_original_calls and before_call is not None):
+                reinstated = reinstate_reviewed_proposal(prewrite_original_calls, receipts)
+                if reinstated:
+                    calls = reinstated
+                    prewrite_reinstated = True
             if routine_source_bootstrap_active:
                 if not calls:
                     return completed_answer(
@@ -1997,6 +2009,7 @@ class Agent:
                     # Store only sanitised UNEXECUTED proposals in private
                     # Technical JSON; they never become native tool receipts.
                     prewrite_unsent_proposals = proposed_writes[:6]
+                    prewrite_original_calls = list(calls)
                     # Never save an unsent draft as a completed assistant action.
                     # Only the explicitly unexecuted proposal is shown.
                     messages.append({

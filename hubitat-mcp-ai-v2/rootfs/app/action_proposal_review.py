@@ -7,6 +7,8 @@ write. Its checkpoint invites the model to use live MCP sources.
 """
 from __future__ import annotations
 
+import json
+import re
 from typing import Any
 
 from action_intent_guard import native_automation_writer
@@ -128,3 +130,48 @@ def has_current_native_evidence(receipts: list[dict]) -> bool:
                 )):
             return True
     return False
+
+
+def _proposed_device_ids(calls) -> set[str]:
+    """Device ids named in the structured arguments of proposed native calls."""
+    found: set[str] = set()
+
+    def walk(value):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if key in ("deviceId", "device_id") and isinstance(item, (str, int)):
+                    found.add(str(item))
+                else:
+                    walk(item)
+        elif isinstance(value, list):
+            for item in value:
+                walk(item)
+
+    for call in calls or []:
+        if isinstance(call, dict):
+            function = call.get("function") or {}
+            args = function.get("arguments")
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except ValueError:
+                    args = None
+            walk(args)
+    return found
+
+
+def reinstate_reviewed_proposal(original_calls, receipts):
+    """Return the original proposal when every targeted device id appears in a successful read.
+
+    Used when the pre-write review round ends without a call: the draft was never sent, and
+    reinstating it only reaches the user's approval card (nothing is written without it).
+    Structural: reads call arguments and receipt text for ids, never the user's wording.
+    """
+    ids = _proposed_device_ids(original_calls)
+    if not ids:
+        return None
+    seen = " ".join(str(r.get("response") or "") for r in receipts
+                    if isinstance(r, dict) and r.get("success") is True and r.get("read_only"))
+    if all(re.search(r'(?<![0-9])' + re.escape(i) + r'(?![0-9])', seen) for i in ids):
+        return list(original_calls)
+    return None
