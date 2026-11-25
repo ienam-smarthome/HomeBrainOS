@@ -796,6 +796,7 @@ def partial_coverage_note(receipts: list[dict]) -> str | None:
 _MEMORY_WORDS = re.compile(r"\b(memory|ram)\b", re.IGNORECASE)
 _NEGATION = re.compile(r"\b(not|no|nor|never|cannot|can't|doesn't|does not|isn't|aren't|without)\b",
                        re.IGNORECASE)
+_PROXY_WORDS = re.compile(r"\b(proxy|correlat\w*|indication|indicator|approximat\w*|closest)\b", re.IGNORECASE)
 _MEMORY_SOURCES = ("hub_get_memory_history", "hub_get_metrics")
 
 
@@ -809,9 +810,9 @@ def field_meaning_prose_note(answer: str, receipts: list[dict]) -> str | None:
     """
     if not answer or not any(r.get("field_meaning_fields") for r in receipts):
         return None
-    flagged = [s for s in re.split(r"(?<=[.!?;])\s+|\n+", answer)
-               if _MEMORY_WORDS.search(s) and not _NEGATION.search(s)
-               and "stateSize" in s]
+    clauses = re.split(r"(?<=[.!?;])\s+|\n+", answer.replace("\u2019", "'"))
+    flagged = [s for s in clauses if _MEMORY_WORDS.search(s) and (
+        (not _NEGATION.search(s) and "stateSize" in s) or _PROXY_WORDS.search(s))]
     if not flagged:
         return None
     fields = sorted({f for r in receipts for f in (r.get("field_meaning_fields") or [])})
