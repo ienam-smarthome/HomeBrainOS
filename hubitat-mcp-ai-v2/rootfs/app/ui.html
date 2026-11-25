@@ -617,8 +617,8 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
  </div>
  <div class="health-actions card" id="questionSetCard">
   <h3>Question set (self-test)</h3>
-  <details class="hint-block"><summary>What this does</summary><p>Runs 10 fixed read-only questions one after another through the normal Ask path (about 4 minutes, one model request per round, so it uses your configured model). It never prepares or sends a write. Each answer is checked only for measurable things: success, tool errors, any write attempt, time, rounds. Whether an answer is correct still needs a human review: use Copy report and paste it into your review chat. The report includes answer text, so treat it as private.</p></details>
-  <div class="qs-actions"><button type="button" id="qsRun" onclick="runQuestionSet()">Run question set</button><button type="button" id="qsStop" onclick="stopQuestionSet()" disabled>Stop</button><button type="button" id="qsCopy" onclick="copyQuestionSetReport()" disabled>Copy report</button></div>
+  <details class="hint-block"><summary>What this does</summary><p>Runs 10 fixed read-only questions (optionally 3× each; five are also compared with the hub's own inventory read to check the answer is right) one after another through the normal Ask path (about 4 minutes, one model request per round, so it uses your configured model). It never prepares or sends a write. Each answer is checked only for measurable things: success, tool errors, any write attempt, time, rounds. Whether an answer is correct still needs a human review: use Copy report and paste it into your review chat. The report includes answer text, so treat it as private.</p></details>
+  <div class="qs-actions"><label class="muted" for="qsReps">Repeat each</label><select id="qsReps"><option value="1">1×</option><option value="3">3×</option></select><button type="button" id="qsRun" onclick="runQuestionSet()">Run question set</button><button type="button" id="qsStop" onclick="stopQuestionSet()" disabled>Stop</button><button type="button" id="qsCopy" onclick="copyQuestionSetReport()" disabled>Copy report</button></div>
   <p id="qsStatus" role="status" aria-live="polite">Not run.</p>
   <div id="qsResults" class="qs-results"></div>
  </div>
@@ -679,7 +679,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.187";
+const UI_VERSION="2.0.0-alpha.188";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let activeAskController=null, askGeneration=0;
@@ -2840,7 +2840,7 @@ const QUESTION_SET=[
  'What is the heating doing right now?',
  'Has the hub restarted recently?',
  'What changed in the last hour?'];
-let qsResults=[],qsStopFlag=false,qsRunning=false;
+let qsResults=[],qsStopFlag=false,qsRunning=false,qsRepsUsed=1;
 function scoreQuestionRun(data,ms){
  const calls=Array.isArray(data&&data.tool_calls)?data.tool_calls:[];
  const answer=String((data&&data.answer)||'');
@@ -2861,14 +2861,47 @@ function scoreQuestionRun(data,ms){
  if(calls.some(c=>c&&c.partial_ranking_warning))info.push('ranking warning');
  return{pass:fail.length===0,fail,info,elapsed_ms:Math.round(elapsed),rounds,tool_calls:calls.length,tool_errors:errors,writes};
 }
+const QUESTION_TRUTH={3:{key:['battery_low'],none:/\b(no|none|not|neither|nothing|all)\b/i},
+ 4:{count:'last_activity_over_24h'},
+ 5:{key:['lights_on'],none:/\b(no|none|not|neither|nothing)\b/i},
+ 6:{key:['contact_open','water_wet'],none:/\b(no|none|not|neither|nothing|closed|dry)\b/i},
+ 7:{key:['heating_active'],none:/\b(idle|not heating|no heating|none|off|not calling)\b/i}};
+function overviewNames(snap,keys){
+ const out=new Set();
+ for(const k of keys){const m=snap&&snap.metrics&&snap.metrics[k];if(m&&Array.isArray(m.members))m.members.forEach(x=>out.add(String(x.name)));}
+ return out;
+}
+// Compares an answer with the hub's own inventory read taken just before and after the question.
+// Devices that changed during the run are not required; null means "not checked".
+function truthCheck(index,answer,before,after){
+ const rule=QUESTION_TRUTH[index];
+ if(!rule||!before||!after||before.available===false||after.available===false)return null;
+ const text=String(answer||'').toLowerCase();
+ if(rule.count){
+  const a=before.metrics[rule.count].count,b=after.metrics[rule.count].count;
+  const lo=Math.min(a,b)-3,hi=Math.max(a,b)+3;
+  const nums=(text.match(/\b\d{1,3}\b/g)||[]).map(Number);
+  const ok=nums.some(n=>n>=lo&&n<=hi);
+  return{ok,detail:ok?'count within the hub\'s '+Math.min(a,b)+'–'+Math.max(a,b)+' (±3)':'hub reports '+Math.min(a,b)+'–'+Math.max(a,b)+' devices; answer has no matching number'};
+ }
+ const nb=overviewNames(before,rule.key),na=overviewNames(after,rule.key);
+ const stable=[...nb].filter(n=>na.has(n));
+ if(!nb.size&&!na.size){const ok=rule.none.test(answer||'');return{ok,detail:ok?'hub reports none; answer says none':'hub reports none but the answer does not say so'};}
+ if(!stable.length)return null;
+ const missing=stable.filter(n=>!text.includes(n.toLowerCase()));
+ return{ok:missing.length===0,detail:missing.length?'missing from answer: '+missing.slice(0,5).join(', '):'all '+stable.length+' expected named'};
+}
+async function qsSnapshot(){try{return await readJson('api/overview',{headers:{'X-Homebrain-Request':'1'}});}catch(e){return null;}}
 function qsRender(){
  const box=byId('qsResults');box.replaceChildren();
  qsResults.forEach((r,i)=>{
   const row=document.createElement('div');row.className='qs-row';
-  const mark=document.createElement('span');mark.className=r.score.pass?'qs-ok':'qs-bad';mark.textContent=r.score.pass?'OK':'CHECK';
-  const body=document.createElement('div');body.textContent=(i+1)+'. '+r.question;
+  const good=r.score.pass&&!(r.truth&&!r.truth.ok);
+  const mark=document.createElement('span');mark.className=good?'qs-ok':'qs-bad';mark.textContent=good?'OK':(r.truth&&!r.truth.ok?'WRONG?':'CHECK');
+  const body=document.createElement('div');body.textContent=(Math.floor(i/qsRepsUsed)+1)+'. '+r.question+(qsRepsUsed>1?' (run '+(r.rep||1)+'/'+qsRepsUsed+')':'');
   const sm=document.createElement('small');
   sm.textContent=(r.score.elapsed_ms/1000).toFixed(1)+' s · '+(r.score.rounds===null?'?':r.score.rounds)+' rounds · '+r.score.tool_calls+' tool call(s)'+(r.score.fail.length?' · '+r.score.fail.join(', '):'')+(r.score.info.length?' · '+r.score.info.join(', '):'');
+  if(r.truth)sm.textContent+=' · hub check: '+r.truth.detail;
   body.appendChild(sm);
   row.append(mark,body);box.appendChild(row);
  });
@@ -2879,9 +2912,11 @@ async function runQuestionSet(){
  if(activeRequest){byId('qsStatus').textContent='An Ask is in progress. Wait for it to finish first.';return;}
  qsRunning=true;qsStopFlag=false;qsResults=[];qsRender();
  byId('qsRun').disabled=true;byId('qsStop').disabled=false;byId('qsCopy').disabled=true;
- for(let i=0;i<QUESTION_SET.length&&!qsStopFlag;i++){
+ qsRepsUsed=Math.max(1,Math.min(3,Number(byId('qsReps')&&byId('qsReps').value)||1));
+ for(let i=0;i<QUESTION_SET.length&&!qsStopFlag;i++)for(let rep=1;rep<=qsRepsUsed&&!qsStopFlag;rep++){
   const q=QUESTION_SET[i];
-  byId('qsStatus').textContent='Question '+(i+1)+' of '+QUESTION_SET.length+': '+q;
+  byId('qsStatus').textContent='Question '+(i+1)+' of '+QUESTION_SET.length+(qsRepsUsed>1?' (run '+rep+'/'+qsRepsUsed+')':'')+': '+q;
+  const snapBefore=QUESTION_TRUTH[i]?await qsSnapshot():null;
   const started=performance.now();let data=null,err=null;
   try{
    data=await readJson('api/ask',{method:'POST',
@@ -2889,13 +2924,16 @@ async function runQuestionSet(){
     body:JSON.stringify({request_id:newRequestId(),conversation_id:newRequestId(),question:q,history:[],prepare_action:false})});
   }catch(e){err=e.message;}
   const ms=performance.now()-started;
+  const snapAfter=QUESTION_TRUTH[i]?await qsSnapshot():null;
   const score=scoreQuestionRun(data,ms);if(err){score.fail.push('request failed: '+err);score.pass=false;}
-  qsResults.push({question:q,score,answer:data?String(data.answer||''):'',
+  const truth=truthCheck(i,data&&data.answer,snapBefore,snapAfter);
+  qsResults.push({question:q,rep,score,truth,answer:data?String(data.answer||''):'',
    tools:((data&&data.tool_calls)||[]).map(c=>({name:c.name,arguments:c.arguments,success:c.success,elapsed_ms:c.elapsed_ms}))});
   qsRender();
  }
  const ok=qsResults.filter(r=>r.score.pass).length;
- byId('qsStatus').textContent=(qsStopFlag?'Stopped. ':'Finished. ')+ok+' of '+qsResults.length+' passed the measurable checks.';
+ const checked=qsResults.filter(r=>r.truth),matched=checked.filter(r=>r.truth.ok).length;
+ byId('qsStatus').textContent=(qsStopFlag?'Stopped. ':'Finished. ')+ok+' of '+qsResults.length+' passed the measurable checks; '+matched+' of '+checked.length+' checked answers matched the hub.';
  qsRunning=false;byId('qsRun').disabled=false;byId('qsStop').disabled=true;byId('qsCopy').disabled=qsResults.length===0;
 }
 async function copyQuestionSetReport(){
@@ -2903,6 +2941,7 @@ async function copyQuestionSetReport(){
  const total=qsResults.reduce((s,r)=>s+r.score.elapsed_ms,0);
  const head='HomeBrainOS v2 question-set report ('+UI_VERSION+'). PRIVATE: includes answers and tool arguments.\n'+
   qsResults.filter(r=>r.score.pass).length+' of '+qsResults.length+' passed measurable checks; total '+(total/1000).toFixed(0)+' s.\n'+
+  (()=>{const c=qsResults.filter(r=>r.truth);return c.length?c.filter(r=>r.truth.ok).length+' of '+c.length+' ground-truth checks matched the hub (answer compared with the hub inventory read before and after each question).\n':'';})()+
   'Score each answer for grounding, completeness, calibration and usefulness (0/1/2); list unsupported claims and one general improvement.\n\n';
  const text=head+JSON.stringify({ui_version:UI_VERSION,results:qsResults},null,2);
  if(await copyText(text)){byId('qsStatus').textContent='Report copied (private).';return;}

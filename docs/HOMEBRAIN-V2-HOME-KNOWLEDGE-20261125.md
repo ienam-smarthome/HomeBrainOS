@@ -7,3 +7,7 @@ Why: five question-set runs kept re-deriving what the home contains (what is a l
 - Briefing: `GET /api/briefing` on demand; `briefing_enabled` + `briefing_time` (hub timezone) send it once a day through the network-alert notify path; retried for 3 hours if delivery fails.
 - `receipt_compute.normalize_list_devices_args`: from the call and live schema only; reported to the model as `client_arg_adjustment`.
 - Not yet measured live: round/accuracy effect of the context block; briefing delivery to a phone.
+
+## Alpha.188: ground-truth self-test
+
+The 10-question run measured speed and errors only. It now also compares five answers with `/api/overview` (the deterministic inventory snapshot) read before and after each question: named devices present in both snapshots must appear in the answer; an empty expected set requires the answer to say none; the stale-device count must fall within the hub's before/after range ±3. Answers about memory, CPU, restarts and "what changed" are not checked (no inventory ground truth) and show no hub check. The text matching lives in the self-test harness, not in the agent. Repeat 3× to see run-to-run variance. Limits: names are matched by substring; the check proves recall of what the hub reports, not that nothing extra is claimed.

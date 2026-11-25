@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Current code candidate: `2.0.0-alpha.187`. Home knowledge and briefing: an owner-editable Home notes card and an observed device profile (lights vs sockets, heating devices, contact/water sensors) are given to the model before every answer; an on-demand and optional daily phone Home briefing is built from one read-only inventory snapshot (no model). `hub_list_devices` calls are kept inside what the hub accepts (attributeNames with detailed becomes summary; unbounded detailed reads get a limit) after the hub log showed validation errors and 108 KB response-cap errors. Prompt: dates only from tool results, no invented filter syntax.
+Current code candidate: `2.0.0-alpha.188`. The Question set self-test now checks correctness, not just speed: five questions (batteries, stale devices, lights, contacts/water, heating) are compared with the hub's own inventory read taken before and after the answer (devices that changed mid-run are not required), and each question can be repeated 3× to separate luck from real faults. Report shows `hub check` per answer and a matched-count summary.
 
 Per-alpha history (alpha.8 to alpha.171) is in [docs/HOMEBRAIN-V2-ALPHA-HISTORY.md](../docs/HOMEBRAIN-V2-ALPHA-HISTORY.md).
 
