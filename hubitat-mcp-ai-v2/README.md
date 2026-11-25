@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Current code candidate: `2.0.0-alpha.191`. Device lookup now interprets first: the model splits a request into room, device type and qualifier, searches with roomFilter/capabilityFilter, and uses labelFilter only for a name the user gave; it no longer narrows to a single common word. Singular requests with several candidates ask or list them for approval; plural/all requests target every match.
+Current code candidate: `2.0.0-alpha.192`. From the alpha.191 3× report: an empty model reply after successful reads now gets one tool-free retry (when no stored-snapshot fallback exists); the "Not run in this request" footnote only appears when the tool name sits next to a figure, not for advice such as "run hub_get_device"; prompt rules for exact Hubitat capability names, no "switched on"/"activated" claims from current state or changedSince lists, and no meaning inferred from device names (for example Block switches).
 
 Per-alpha history (alpha.8 to alpha.171) is in [docs/HOMEBRAIN-V2-ALPHA-HISTORY.md](../docs/HOMEBRAIN-V2-ALPHA-HISTORY.md).
 

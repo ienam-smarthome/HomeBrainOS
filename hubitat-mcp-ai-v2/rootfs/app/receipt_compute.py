@@ -866,6 +866,22 @@ def partial_ranking_warning(source: dict, compute_args: dict, catalog: list) -> 
     }
 
 
+def _mentioned_with_figure(name: str, answer: str) -> bool:
+    """True when the sentence naming the tool, or the one right after it, carries a number.
+
+    A bare mention such as 'run hub_get_device for details' is advice, not a claim that the
+    tool produced a figure, so only mentions that sit next to a number are footnoted.
+    """
+    pattern = re.compile(rf"(?<![A-Za-z0-9_]){re.escape(name)}(?![A-Za-z0-9_])")
+    chunks = re.split(r"\n|(?<=[.!?])\s", answer)
+    for index, chunk in enumerate(chunks):
+        if pattern.search(chunk):
+            nearby = pattern.sub("", chunk) + " " + (chunks[index + 1] if index + 1 < len(chunks) else "")
+            if re.search(r"\d", nearby):
+                return True
+    return False
+
+
 def unrun_tool_note(answer: str, receipts: list[dict], tool_names) -> str | None:
     """Footnote naming catalog tools the answer mentions but never successfully ran.
 
@@ -880,7 +896,7 @@ def unrun_tool_note(answer: str, receipts: list[dict], tool_names) -> str | None
     mentioned = sorted(
         name for name in tool_names
         if isinstance(name, str) and name not in ran and name != TOOL_NAME
-        and re.search(rf"(?<![A-Za-z0-9_]){re.escape(name)}(?![A-Za-z0-9_])", answer))
+        and _mentioned_with_figure(name, answer))
     if not mentioned:
         return None
     return ("Not run in this request: " + ", ".join(mentioned)

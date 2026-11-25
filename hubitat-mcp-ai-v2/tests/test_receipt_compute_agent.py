@@ -283,6 +283,22 @@ class FootnotesThroughAgentLoop(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("hub_list_devices.", answer.split("Not run in this request:")[-1])
 
 
+class EmptyReplyRetry(unittest.IsolatedAsyncioTestCase):
+    async def test_empty_reply_after_reads_gets_one_retry(self):
+        hub = Hub()
+        agent = Scripted([
+            {"content": "", "tool_calls": [call("hub_list_devices", {})]},
+            {"content": "", "tool_calls": []},
+            {"content": "The hub has been up for 27 hours.", "tool_calls": []},
+            {"content": "The hub has been up for 27 hours.", "tool_calls": []},
+        ])
+        try:
+            reply = await agent.answer("summarise the hub devices", [], hub, 60)
+        finally:
+            await agent.close()
+        self.assertIn("27 hours", reply["answer"])
+
+
 class PagingGuardsThroughAgentLoop(unittest.IsolatedAsyncioTestCase):
     def _hub(self, pages):
         class PagedHub(Hub):
