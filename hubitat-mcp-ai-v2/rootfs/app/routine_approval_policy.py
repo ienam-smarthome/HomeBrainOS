@@ -182,32 +182,41 @@ MAX_BATCH_TARGETS = 8
 
 
 def batch_light_candidates(args: dict, receipts: list[dict]) -> list[dict] | None:
-    """Structured on/off batch (commands list) -> per-device candidates, else None.
+    """Structured on/off write (one device or a ``commands`` list) -> per-device candidates, else None.
 
-    Reads only the call arguments and original inventory receipts. Any extra key, parameter,
-    duplicate id, non-on/off command or id missing from a successful inventory read fails closed.
+    Reads only the call arguments and original read receipts. Any extra key, parameter, duplicate
+    id, non-on/off command, or id this request never saw in a successful read fails closed.
+    Labels are display/matching hints only: the per-device policy re-checks them against detail
+    and inventory rows read for that exact id.
     """
-    if (not isinstance(args, dict) or set(args) != {"commands"}
-            or not isinstance(args["commands"], list)
-            or not 2 <= len(args["commands"]) <= MAX_BATCH_TARGETS):
+    if not isinstance(args, dict):
+        return None
+    if set(args) == {"deviceId", "command"}:
+        items = [args]
+    elif (set(args) == {"commands"} and isinstance(args["commands"], list)
+          and 1 <= len(args["commands"]) <= MAX_BATCH_TARGETS):
+        items = args["commands"]
+    else:
         return None
     labels: dict[str, str] = {}
+
+    def remember(item) -> None:
+        if (isinstance(item, dict) and item.get("accessible") is not False
+                and str(item.get("id", "")).strip() and isinstance(item.get("label"), str)
+                and item["label"].strip()):
+            labels.setdefault(str(item["id"]).strip(), item["label"])
+
     for row in receipts:
-        if isinstance(row, dict) and row.get("name") == "hub_list_devices" and row.get("success") is True:
-            doc = _original(row)
+        if not isinstance(row, dict) or row.get("success") is not True:
+            continue
+        doc = _original(row)
+        if row.get("name") in ("hub_list_devices", "hub_get_room"):
             for item in (doc or {}).get("devices") or []:
-                if isinstance(item, dict) and str(item.get("id", "")).strip() \
-                        and isinstance(item.get("label"), str) and item["label"].strip():
-                    labels[str(item["id"]).strip()] = item["label"]
-    for row in receipts:
-        if isinstance(row, dict) and row.get("name") == "hub_get_room" and row.get("success") is True:
-            for item in (_original(row) or {}).get("devices") or []:
-                if (isinstance(item, dict) and item.get("accessible") is not False
-                        and str(item.get("id", "")).strip() and isinstance(item.get("label"), str)
-                        and item["label"].strip()):
-                    labels.setdefault(str(item["id"]).strip(), item["label"])
+                remember(item)
+        elif row.get("name") == "hub_get_device" and doc:
+            remember(doc)
     out, seen = [], set()
-    for item in args["commands"]:
+    for item in items:
         if (not isinstance(item, dict) or set(item) != {"command", "deviceId"}
                 or item["command"] not in ("on", "off")
                 or type(item["deviceId"]) not in (str, int)):
@@ -382,3 +391,40 @@ def internet_block_answer(candidate: dict, receipts: list[dict]) -> str | None:
                 f"as {expected}. That is the hub's stored state, not a network test of the device.")
     return (f"**{label}: {verb} command accepted by Hubitat.** Its reply did not report "
             f"internet access as {expected}, so check the device before relying on it.")
+
+
+def batch_light_answer(args: dict, candidates: list[dict], receipts: list[dict]) -> str | None:
+    """Receipt-backed one-line completion for an accepted light on/off write (no review rounds)."""
+    writes = [r for r in receipts if isinstance(r, dict) and r.get("possible_native_action") is True]
+    if len(writes) != 1 or writes[0].get("name") != "hub_call_device_command" \
+            or writes[0].get("arguments") != args:
+        return None
+    doc = _original(writes[0])
+    if not isinstance(doc, dict) or doc.get("success") is not True:
+        return None
+    if "commands" in args:
+        results = doc.get("results")
+        if (not isinstance(results, list) or len(results) != len(candidates)
+                or doc.get("failedCount") not in (0, None)
+                or doc.get("sentCount") not in (len(candidates), None)):
+            return None
+        names = []
+        for cand in candidates:
+            hit = [r for r in results if isinstance(r, dict)
+                   and str(r.get("deviceId", "")).strip() == cand["device_id"]]
+            if (len(hit) != 1 or hit[0].get("success") is not True
+                    or hit[0].get("command") != cand["command"]):
+                return None
+            names.append(str(hit[0].get("device") or cand["label"]))
+    else:
+        cand = candidates[0]
+        if doc.get("command") != cand["command"]:
+            return None
+        names = [str(doc.get("device") or cand["label"])]
+    direction = candidates[0]["command"].upper()
+    if any(c["command"] != candidates[0]["command"] for c in candidates):
+        direction = "ON/OFF"
+    safe = ", ".join(re.sub(r"([\\\x60*_{}\[\]()#+!|>])", r"\\\1", n) for n in names)
+    count = f"{len(names)} of {len(names)} devices" if len(names) > 1 else "the device"
+    return (f"**{safe}: {direction} command accepted.** Hubitat reported {count} accepted with no "
+            "failures. That is the hub's reply, not a check of the physical lights.")
