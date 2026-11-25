@@ -288,3 +288,74 @@ class PagingGuardsThroughAgentLoop(unittest.IsolatedAsyncioTestCase):
         answer = reply["answer"]
         self.assertIn("did not include 1 further page(s) of the same read", answer)
         self.assertIn("Source table: `devices` of hub_get_logs (mode devices).", answer)
+
+
+class CursorContinuationThroughAgentLoop(unittest.IsolatedAsyncioTestCase):
+    """Reproduces the alpha.170 live capture: the hub rejects a cursor unless the
+    read repeats the issuing call (single-value mode, same page size)."""
+
+    def _hub(self):
+        first = [{"id": str(i), "stateSize": 10 + i} for i in range(12)]
+        second = [{"id": str(100 + i), "stateSize": 500 + i} for i in range(12)]
+
+        class StrictHub(Hub):
+            def __init__(self):
+                super().__init__()
+                self.catalog = [{"name": "hub_get_logs",
+                                 "inputSchema": {"type": "object", "properties": {}}}]
+
+            async def call(self, name, args):
+                self.calls.append((name, dict(args)))
+                if "cursor" in args and isinstance(args.get("mode"), list):
+                    body = {"success": False, "isError": True,
+                            "error": "cursor pages one mode"}
+                    return {"isError": True, "content": [{"type": "text", "text": json.dumps(body)}]}
+                if args.get("cursor") == "50" and args.get("limit") != 0:
+                    body = {"success": False, "isError": True,
+                            "error": "cursor 50 is out of range (size=20)"}
+                    return {"isError": True, "content": [{"type": "text", "text": json.dumps(body)}]}
+                if args.get("cursor") == "50":
+                    body = {"entries": second, "total": 24, "count": 12}
+                else:
+                    body = {"entries": first, "total": 24, "count": 12, "nextCursor": "50"}
+                return {"content": [{"type": "text", "text": json.dumps(body)}]}
+        return StrictHub()
+
+    async def test_cursor_read_reuses_issuing_arguments(self):
+        hub = self._hub()
+        agent = Scripted([
+            {"content": "", "tool_calls": [call("hub_get_logs", {"mode": ["devices"], "limit": 0})]},
+            {"content": "", "tool_calls": [call("hub_get_logs", {"mode": "devices", "cursor": "50"})]},
+            {"content": "", "tool_calls": [call("homebrain_compute_receipt", {
+                "receipt_indexes": [1, 2], "operation": "max", "field": "stateSize"})]},
+            {"content": "Largest is 511.", "tool_calls": []},
+        ])
+        try:
+            reply = await agent.answer("largest?", [], hub, 60)
+        finally:
+            await agent.close()
+        self.assertEqual(hub.calls[1][1], {"mode": "devices", "limit": 0, "cursor": "50"})
+        second = reply["tool_calls"][1]
+        self.assertTrue(second["success"])
+        self.assertIn("receipt 1", second["client_cursor_note"])
+        self.assertNotIn("Coverage: figures above come from 12 of 24", reply["answer"])
+        self.assertNotIn("Paging:", reply["answer"])
+
+    async def test_empty_cursor_is_dropped_and_failed_paging_is_footnoted(self):
+        hub = self._hub()
+        agent = Scripted([
+            {"content": "", "tool_calls": [call("hub_get_logs", {"mode": ["devices"], "limit": 0})]},
+            {"content": "", "tool_calls": [call("hub_get_logs", {"mode": ["devices"], "cursor": ""})]},
+            {"content": "", "tool_calls": [call("hub_get_logs", {"mode": "devices", "cursor": "7"})]},
+            {"content": "", "tool_calls": [call("homebrain_compute_receipt", {
+                "receipt_index": 1, "operation": "max", "field": "stateSize"})]},
+            {"content": "Largest is 21.", "tool_calls": []},
+        ])
+        try:
+            reply = await agent.answer("largest?", [], hub, 60)
+        finally:
+            await agent.close()
+        self.assertNotIn("cursor", hub.calls[1][1])
+        self.assertEqual(len(hub.calls), 2)  # cursor '7' was never issued: refused locally
+        self.assertIn("Paging: 1 attempt(s) to read further pages of hub_get_logs", reply["answer"])
+        self.assertIn("(mode devices)", reply["answer"])

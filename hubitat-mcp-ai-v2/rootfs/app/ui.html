@@ -559,7 +559,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
  <details class="hint"><summary aria-label="About this section">ⓘ</summary><p class="health-helper">Existing page-start status, not a live connection test. Saved diagnostics use their observation timestamps.</p></details>
  <div id="healthRuntime" class="health-grid" aria-label="HomeBrainOS setup, diagnostics and optional monitor"></div>
  <h3 class="health-section-title">Network status</h3>
- <details class="hint"><summary aria-label="About this section">ⓘ</summary><p class="health-helper">One read-only check from the add-on host when you press the button: internet, DNS, the Hubitat hub and an optional router. Not polled. It does not test the hub's own internet access.</p></details>
+ <details class="hint"><summary aria-label="About this section">ⓘ</summary><p class="health-helper">One read-only check from the add-on host: internet, DNS, the Hubitat hub and an optional router. It runs when this tab opens and about once a minute while it stays open; Check network runs it now. It does not test the hub's own internet access.</p></details>
  <div class="card network-card" id="networkCard"><div class="network-head"><strong id="networkSummary" role="status" aria-live="polite">Not checked yet</strong><button id="checkNetwork" type="button" class="health-refresh" onclick="checkNetworkStatus()">Check network</button></div><ul id="networkChecks" class="network-checks"></ul><small id="networkScope" class="muted"></small></div>
  <h3 class="health-section-title">Needs attention</h3>
  <details class="hint"><summary aria-label="About this section">ⓘ</summary><p class="health-helper">Observed states, not independently verified faults. Missing state reports are unknown, not healthy.</p></details>
@@ -624,7 +624,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.170";
+const UI_VERSION="2.0.0-alpha.171";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let activeAskController=null, askGeneration=0;
@@ -634,7 +634,7 @@ let lastUnpreparedQuestion=null;
 let copyFeedbackTimer=null,copyAttempt=0;
 let ttsInfo={enabled:false};
 let cachedHealthOverview=null,cachedRuntimeStatus=null;
-function tab(which){if(!['ask','systemHealth','diagnostics'].includes(which))return;for(const id of ['ask','systemHealth','diagnostics']){byId(id).classList.toggle('active',id===which);byId(id+'Tab').classList.toggle('active',id===which)}if(which==='systemHealth'){renderSystemHealth(cachedHealthOverview);renderRuntimeHealth(cachedRuntimeStatus);}if(which==='diagnostics')refreshDiagnostics();}
+function tab(which){if(!['ask','systemHealth','diagnostics'].includes(which))return;for(const id of ['ask','systemHealth','diagnostics']){byId(id).classList.toggle('active',id===which);byId(id+'Tab').classList.toggle('active',id===which)}networkAuto(which==='systemHealth');if(which==='systemHealth'){renderSystemHealth(cachedHealthOverview);renderRuntimeHealth(cachedRuntimeStatus);}if(which==='diagnostics')refreshDiagnostics();}
 async function readJson(url, init){const r=await fetch(url,{...init,cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.detail||('HTTP '+r.status));return d;}
 
 async function testCloudToolCalling(){
@@ -845,8 +845,18 @@ function updateHealthBanner(){
 }
 (function(){const r=document.getElementById('healthAttention');if(r&&window.MutationObserver)new MutationObserver(updateHealthBanner).observe(r,{childList:true,subtree:true});})();
 let networkPending=false;
+let networkTimer=null,networkLastAt=0;
+function networkAuto(on){
+ if(networkTimer){clearInterval(networkTimer);networkTimer=null}
+ if(!on)return;
+ if(Date.now()-networkLastAt>30000)checkNetworkStatus();
+ networkTimer=setInterval(()=>{if(document.visibilityState==='visible')checkNetworkStatus()},60000);
+}
+document.addEventListener('visibilitychange',()=>{
+ if(networkTimer&&document.visibilityState==='visible'&&Date.now()-networkLastAt>30000)checkNetworkStatus();
+});
 async function checkNetworkStatus(){
- if(networkPending)return;networkPending=true;
+ if(networkPending)return;networkPending=true;networkLastAt=Date.now();
  const button=byId('checkNetwork');button.disabled=true;
  byId('networkSummary').textContent='Checking…';
  try{
@@ -859,7 +869,7 @@ async function checkNetworkStatus(){
    const r=document.createElement('span');r.textContent=c.ok?(c.ms!=null?c.ms+' ms':'ok'):(c.method&&c.method.startsWith('no answer')?c.method:'no response');
    li.append(n,r);list.append(li);
   }
-  byId('networkScope').textContent=(d.router_configured?'':'Set network_router_host in the add-on options to include your router. ')+(d.scope||'');
+  byId('networkScope').textContent=(d.router_configured?'':'Set network_router_host in the add-on options to include your router. ')+(d.scope||'')+' Last checked '+new Date().toLocaleTimeString('en-GB',{timeZone:'Europe/London',hour:'2-digit',minute:'2-digit',second:'2-digit'})+'.';
  }catch(e){byId('networkSummary').textContent='Network check unavailable';}
  finally{networkPending=false;button.disabled=false;}
 }

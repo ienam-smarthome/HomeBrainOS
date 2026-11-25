@@ -570,19 +570,42 @@ def issued_cursors(result: Any, depth: int = 0) -> set[str]:
     return found
 
 
-def unissued_cursor_error(name: str, args: dict, receipts: list[dict]) -> str | None:
-    """Reason to refuse a paging cursor this request never received from the same tool."""
-    cursor = args.get("cursor") if isinstance(args, dict) else None
+def cursor_continuation(name: str, args: dict, receipts: list[dict]):
+    """Arguments to send for a paging read, or a reason to refuse it.
+
+    A cursor only continues the exact read that issued it: the hub rejected
+    the same cursor when the page size, mode form or other arguments differed
+    (for example a default page size of 20 against a cursor from an unlimited
+    read, or a one-item mode list next to a cursor). Structural only, from
+    receipts. Returns (args_to_send, refusal_text, note).
+    """
+    if not isinstance(args, dict) or "cursor" not in args:
+        return args, None, None
+    cursor = args["cursor"]
     if cursor in (None, ""):
-        return None
-    for item in receipts:
+        sent = {k: v for k, v in args.items() if k != "cursor"}
+        return sent, None, "An empty cursor was removed; this is a first-page read."
+    for number, item in enumerate(receipts, 1):
         if (isinstance(item, dict) and item.get("name") == name and item.get("success")
-                and str(cursor) in (item.get("issued_cursors") or [])):
-            return None
-    return (f"cursor {cursor!r} was not returned by an earlier {name} read in this request, "
-            "so it was not sent to the hub. A cursor is only valid for the exact read "
-            "that issued it. Repeat the read without a cursor, then page with the "
-            "nextCursor it returns, keeping every other argument identical.")
+                and str(cursor) in (item.get("issued_cursors") or [])
+                and isinstance(item.get("arguments"), dict)):
+            canonical = {k: v for k, v in item["arguments"].items() if k != "cursor"}
+            mode = canonical.get("mode")
+            if isinstance(mode, list) and len(mode) == 1:
+                canonical["mode"] = mode[0]
+            canonical["cursor"] = cursor
+            if canonical == args:
+                return args, None, None
+            changed = sorted(k for k in set(canonical) | set(args)
+                             if canonical.get(k) != args.get(k))
+            return canonical, None, (
+                f"This cursor continues the read in receipt {number}, so it was sent with "
+                f"that read's arguments (single-value mode, same page size). Arguments "
+                f"changed from yours: {', '.join(changed)}.")
+    return args, (f"cursor {cursor!r} was not returned by an earlier {name} read in this "
+                  "request, so it was not sent to the hub. A cursor is only valid for the "
+                  "read that issued it. Repeat the read without a cursor, then page with "
+                  "the nextCursor it returns."), None
 
 
 def _row_coverage(result: Any, path: str, returned: int) -> dict | None:
@@ -688,6 +711,16 @@ def partial_coverage_note(receipts: list[dict]) -> str | None:
                         + f" rows returned by {sources[0].get('name')}; the remaining rows were not read.")
                 if text not in notes:
                     notes.append(text)
+        if sources:
+            src_name = sources[0].get("name")
+            failed = sum(1 for r in receipts if isinstance(r, dict) and r.get("name") == src_name
+                         and not r.get("success") and isinstance(r.get("arguments"), dict)
+                         and r["arguments"].get("cursor") not in (None, ""))
+            if failed:
+                text = (f"Paging: {failed} attempt(s) to read further pages of {src_name} "
+                        "were refused or failed, so rows beyond those returned were not read.")
+                if text not in notes:
+                    notes.append(text)
         skipped = item.get("same_source_receipts_not_included")
         if skipped:
             text = ("Coverage: this computation did not include "
@@ -699,8 +732,10 @@ def partial_coverage_note(receipts: list[dict]) -> str | None:
         if isinstance(source, dict) and source.get("operation") in ("sort", "min", "max") \
                 and source.get("rows_path"):
             table = str(source["rows_path"]).split(".")[-1]
+            mode = source.get("mode")
+            mode_text = ", ".join(map(str, mode)) if isinstance(mode, list) else (str(mode) if mode else "")
             text = (f"Source table: `{table}` of {source.get('tool')}"
-                    + (f" (mode {source['mode']})" if source.get("mode") else "") + ".")
+                    + (f" (mode {mode_text})" if mode_text else "") + ".")
             if text not in notes:
                 notes.append(text)
     return " ".join(notes) if notes else None

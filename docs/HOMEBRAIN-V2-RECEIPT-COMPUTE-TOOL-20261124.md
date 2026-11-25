@@ -167,3 +167,11 @@ answers and its round-time cost.
 - `unissued_cursor_error`: a `cursor` argument must equal a `nextCursor` returned by an earlier successful call to the same tool in this request (structural, from receipts). Otherwise the call is not sent; the model gets a recoverable error and the receipt records `hub_called: false`.
 - Compute results list `same_source_receipts_not_included` (same tool and arguments apart from cursor/offset/page). The footnote reports it, sums rows across combined pages, and names the source table. No question or answer wording is read.
 - UI: timeline chart min-width 860 -> 640 px on phones, shorter CPU title, overlap-skipping time-axis labels on both charts, clean Ask empty state, one-row Troubleshooting cards.
+
+## alpha.171: cursor continuation and automatic network status
+
+- Evidence (alpha.170 capture, private): the first `hub_get_logs` read (`mode:["devices"]`, `limit:0`) returned 50 of 293 rows and `nextCursor:"50"`. Cursor reads then failed three ways: list mode with a cursor ("cursor pages one mode"), and single mode without `limit` ("cursor 50 is out of range (size=20)", the default page size of 20). No call used single mode with `limit:0` and the cursor.
+- `cursor_continuation` (receipt_compute.py): a cursor read is sent with the issuing receipt's arguments (single-item mode list becomes a string), an empty cursor is removed, and a cursor the request never received is refused locally. The model gets `client_cursor_note` naming the receipt and the changed arguments. Structural, from receipts only.
+- Footnote: failed paging attempts are reported ("Paging: N attempt(s)...") and the source mode prints as text, not a Python list.
+- UI: network status runs when System Health opens and every 60 s while that tab and the page are visible. Check network still runs it now.
+- Not verified on a live hub: that the hub accepts `mode:"devices", limit:0, cursor:"50"`.
