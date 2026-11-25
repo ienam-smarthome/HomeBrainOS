@@ -360,9 +360,12 @@ def internet_block_candidate(args: dict, receipts: list[dict]) -> dict | None:
     identifier = str(args["deviceId"]).strip()
     if not identifier.isdigit():
         return None
+    # Only the default/summary device read qualifies; a separate configuration or other
+    # mode read of the same device is extra evidence, not a second competing detail.
     rows = [r for r in receipts if isinstance(r, dict) and r.get("name") == "hub_get_device"
             and r.get("success") is True and isinstance(r.get("arguments"), dict)
-            and str(r["arguments"].get("deviceId", "")).strip() == identifier]
+            and str(r["arguments"].get("deviceId", "")).strip() == identifier
+            and r["arguments"].get("mode") in (None, "summary")]
     if len(rows) != 1:
         return None
     detail = _original(rows[0])
