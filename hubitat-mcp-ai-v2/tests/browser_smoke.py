@@ -463,9 +463,10 @@ with sync_playwright() as p:
   assert "causality" in page.locator("#timelineEvidence").inner_text()
   page.locator("#incidentTimeline").focus()
   page.keyboard.press("Home")
-  assert "Selected" in page.locator("#timelineReadout").inner_text()
+  assert "Selected" in page.locator("#timelineReadout").text_content()
+  assert "Selected" in page.locator("#timelineReadoutShort").inner_text()
   page.keyboard.press("ArrowRight")
-  assert "Selected" in page.locator("#timelineReadout").inner_text()
+  assert "Selected" in page.locator("#timelineReadout").text_content()
   page.locator("#timelineLayout").select_option("combined")
   assert "5m CPU load equivalent" in page.locator("#incidentTimeline").text_content()
   page.locator("#timelineLayout").select_option("split")
@@ -546,7 +547,7 @@ with sync_playwright() as p:
   popup.locator("#incidentTimeline").focus()
   popup.keyboard.press("Home")
   popup.keyboard.press("ArrowRight")
-  assert "Selected" in popup.locator("#timelineReadout").inner_text()
+  assert "Selected" in popup.locator("#timelineReadout").text_content()
   # Drag a translucent selection through both synchronized time panels.
   base_span=popup.evaluate("timelineShown.end-timelineShown.start")
   geom=popup.evaluate("""() => {
@@ -578,7 +579,7 @@ with sync_playwright() as p:
   assert popup.evaluate("timelineShown.end-timelineShown.start")==base_span
   popup.mouse.click(geom["x1"],geom["y"])
   assert popup.evaluate("diagnosticZoom===null")
-  assert "Selected" in popup.locator("#timelineReadout").inner_text()
+  assert "Selected" in popup.locator("#timelineReadout").text_content()
   popup.close()
   page.locator("#timelineLayout").select_option("split")
   page.locator("#plotExtent").select_option("fit")

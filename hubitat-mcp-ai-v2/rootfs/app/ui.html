@@ -448,7 +448,7 @@ button,textarea,select{color:var(--hb-text);border-color:var(--hb-edge);backgrou
 #systemHealth .health-helper,#systemHealth .health-empty{color:var(--hb-sub);font-size:12px;line-height:1.5;margin:0 0 12px}
 #systemHealth .health-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0 0 10px}
 #systemHealth .health-card{min-width:0;border:1px solid var(--hb-edge);background:var(--hb-panel);border-radius:12px;padding:12px;overflow-wrap:anywhere}
-#systemHealth .health-card.needs-review{border-left:3px solid var(--hb-accent)}
+#systemHealth .health-card.needs-review{border-left:3px solid #ffc857}
 #systemHealth .health-runtime-value{display:block;margin-top:8px;font-size:15px;font-weight:700;color:var(--hb-text)}
 #systemHealth .health-runtime-card p{font-size:11px;color:var(--hb-sub);line-height:1.5;margin:8px 0 0}
 #systemHealth .health-card-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}
@@ -478,6 +478,26 @@ button,textarea,select{color:var(--hb-text);border-color:var(--hb-edge);backgrou
 button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-visible,.overview-tile:focus-visible{outline:3px solid var(--hb-accent);outline-offset:2px}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
 
+
+/* alpha.168 mobile tightening */
+.ro-short{margin:8px 0 4px;font-weight:600;font-size:14px;color:var(--hb-text,#e8f0fa);line-height:1.4}
+.ro-short:empty{display:none}
+.ro-more{margin:0 0 10px}.ro-more>summary{cursor:pointer;font-size:12px;color:var(--hb-sub,#9aaec6);padding:4px 0}
+.network-checks li::before{flex:0 0 auto}.network-checks li span:first-of-type{flex:1;text-align:left}
+#systemHealth .health-grid{align-items:start}
+.swipe-hint{display:none}
+@media(max-width:720px){
+.header-inner{flex-wrap:nowrap;gap:10px;padding:10px 12px}
+.header-status{width:auto;flex:0 0 auto}
+.brand-copy small{display:none}
+.brand h1{font-size:16px;margin:0}
+.brand-mark{width:32px;height:32px;font-size:18px}
+#statusPill{min-height:34px}#statusPill #state{padding:6px 10px;font-size:11px}
+.app-tabs{position:sticky;top:0;z-index:30;margin-bottom:14px;box-shadow:0 8px 10px -8px #000c}
+.legend{gap:4px 12px;margin:6px 0;font-size:11px}
+.diag-controls{flex-direction:row;align-items:flex-end}
+.swipe-hint{display:block;font-size:11px;color:var(--hb-sub,#9aaec6);margin:0 0 4px}
+}
 </style></head>
 <body>
 <header><div class="header-inner"><div class="brand"><div class="brand-mark" aria-hidden="true">⌘</div><div class="brand-copy"><h1>Hubitat MCP AI <span class="brand-v">v2</span></h1><small>HomeBrainOS · Smart home assistant</small></div></div><div class="header-status"><button type="button" id="statusPill" aria-controls="statusPanel" aria-expanded="false" onclick="toggleStatusPill()"><span id="state">Checking configuration…</span></button><div id="statusPanel" class="status-popover" hidden><strong>V2 connection details</strong><p id="statusMeta">Model and MCP status not yet loaded.</p><div id="statusMonitor"></div><button id="checkConnection" type="button" onclick="checkMonitorSource()">Check Hub & Device Monitor</button></div><button id="reloadUI" hidden onclick="reloadInterface()">Reload interface</button></div></div></header>
@@ -557,8 +577,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
  </div>
 </section>
 <section id="diagnostics">
-<div class="row"><h2>Hub Diagnostics — external recorder</h2><button class="right" onclick="refreshDiagnostics()">Refresh</button></div>
-<details class="hint"><summary aria-label="About this view">ⓘ</summary><p class="muted">Independent SQLite observations outside Hubitat. Probe losses are not necessarily reboots. CPU shows five-minute load equivalent, not measured utilisation.</p></details>
+<div class="row"><h2>Hub Diagnostics — external recorder</h2><details class="hint"><summary aria-label="About this view">ⓘ</summary><p class="muted">Independent SQLite observations outside Hubitat. Probe losses are not necessarily reboots. CPU shows five-minute load equivalent, not measured utilisation.</p></details><button class="right" onclick="refreshDiagnostics()">Refresh</button></div>
 <p id="recorderNotice" role="status" hidden></p><div class="metrics" id="cards"></div>
 <div class="card" id="timelineCard">
 <div class="row"><h2>Unified incident timeline</h2><a class="graph-popout-return" id="timelineReturn" href="./" hidden>← Dashboard</a><a class="graph-popout-link right" id="timelinePopout" href="?graph_view=timeline" target="_blank" rel="noopener noreferrer" onclick="prepareGraphPopout('timeline')">↗ Pop out full page</a><button id="timelineRefresh" onclick="refreshDiagnostics()">Refresh timeline</button></div>
@@ -571,9 +590,11 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 <label for="plotExtent">Time axis <select id="plotExtent" onchange="resetDiagnosticZoom()"><option value="fit" selected>Fit observed data</option><option value="full">Full requested range</option></select></label></details>
 </div>
 <div class="graph-zoom-row"><button id="resetTimelineZoom" onclick="resetDiagnosticZoom()" disabled>Reset zoom</button><span id="timelineZoomInfo" class="graph-zoom-hint" role="status">Drag across a panel to zoom into a time interval. Click to inspect a point.</span></div>
+<p class="swipe-hint">Swipe sideways to see the full chart.</p>
 <div class="timeline-scroll" role="region" aria-label="Scrollable synchronized memory and CPU chart"><svg id="incidentTimeline" class="timeline-chart" viewBox="0 0 860 540" role="img" tabindex="0" aria-label="Memory and CPU observations with independent scales, outage intervals, confirmed startups, and a keyboard-operable source inspection cursor"></svg></div>
 <p class="timeline-meta" id="timelineCoverage" role="status">Native 5m coverage will be shown after loading; missing measurements are not zero.</p>
-<p class="timeline-readout" id="timelineReadout" aria-live="polite">Select an observed point on the timeline, or use the arrow keys. Source gaps are not zero.</p>
+<p class="ro-short" id="timelineReadoutShort" aria-live="polite"></p>
+<details class="ro-more" id="timelineReadoutMore"><summary>Source details</summary><p class="timeline-readout" id="timelineReadout" aria-live="polite">Select an observed point on the timeline, or use the arrow keys. Source gaps are not zero.</p></details>
 <div class="timeline-actions">
 <button id="timelineInspect" disabled onclick="inspectTimelineSelection()">Inspect selected time</button>
 <button id="timelineAsk" disabled onclick="prepareTimelineQuestion()">Prepare AI investigation</button>
@@ -600,7 +621,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.167";
+const UI_VERSION="2.0.0-alpha.168";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let activeAskController=null, askGeneration=0;
@@ -651,7 +672,7 @@ async function loadStatus(){
       ? 'Hub & Device Monitor: configuration invalid'
       : 'Hub & Device Monitor: not configured';
   ttsInfo=d.tts||{enabled:false};
-  byId('state').textContent=d.configured?'● Configured · '+d.version:'● Setup required · '+d.version;
+  byId('state').textContent=d.configured?'Configured · '+d.version:'Setup required · '+d.version;
   const route=d.model_routing||{};
   const mode=route.mode==='paid'?'paid (explicitly enabled)':'free';
   const selectedProvider=route.primary==='ollama'?'Ollama Cloud':'OpenRouter';
@@ -673,7 +694,8 @@ function overviewMemberLabel(member,kind){
  if(!name)return '';
  if(kind==='activity'&&typeof member.inactive_hours==='number'&&
     Number.isFinite(member.inactive_hours)&&member.inactive_hours>24){
-  return name+' · '+Math.floor(member.inactive_hours)+'h since recorded activity';
+  const hrs=Math.floor(member.inactive_hours);
+  return name+' · '+(hrs>=72?Math.floor(hrs/24)+' days':hrs+'h')+' since recorded activity';
  }
  if(kind==='battery'&&typeof member.battery_pct==='number'&&
   Number.isFinite(member.battery_pct)&&member.battery_pct>=0&&member.battery_pct<20){
@@ -713,10 +735,9 @@ function setOverviewCounts(data){
  const label=time&&!Number.isNaN(time.getTime())?time.toLocaleTimeString('en-GB',
   {timeZone:'Europe/London',hour:'2-digit',minute:'2-digit'}):'unknown time';
  byId('healthRefreshStatus').textContent='Snapshot '+label+' UK · '+
-  (data.inventory_full_coverage_verified?'inventory count reconciled':'inventory may be partial')+
+  (data.inventory_full_coverage_verified?'read-only':'inventory may be partial')+
   (Number.isInteger(data.unclassified_on_switches)&&data.unclassified_on_switches>0?
-   ' · '+data.unclassified_on_switches+' ON switches not identified as lights':'')+
-  ' · one read-only inventory request · no commands or model calls';
+   ' · '+data.unclassified_on_switches+' ON switches not identified as lights':'');
 }
 const HEALTH_ATTENTION=[
  ["battery_low","Low batteries","battery"],
@@ -796,13 +817,12 @@ function renderSystemHealth(snapshot){
  const stamp=valid?when.toLocaleString('en-GB',{timeZone:'Europe/London',
    day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'time unavailable';
  title.textContent='Snapshot · '+stamp+' UK';
- notes.textContent='No new scan on this tab. Indicators use explicit native states and lastActivity timestamps; older activity does not prove offline.';
+ notes.textContent='No new scan on this tab. Older activity does not prove a device is offline.';
  const returned=Number.isInteger(snapshot.returned_devices)?snapshot.returned_devices:null;
  const declared=Number.isInteger(snapshot.source_declared_total)?snapshot.source_declared_total:null;
  covered.textContent=(returned===null?'Count unavailable':returned+' devices inspected')+
   (declared!==null?' of '+declared+' declared':'')+
-  (snapshot.inventory_full_coverage_verified?' · inventory count reconciled':' · coverage not fully verified')+
-  ' · no model calls';
+  (snapshot.inventory_full_coverage_verified?' · reconciled':' · coverage not fully verified');
  const metrics=snapshot.metrics||{};
  for(const [key,label,kind] of HEALTH_ATTENTION)
   attention.appendChild(healthSnapshotCard(metrics[key],key,label,kind));
@@ -872,7 +892,7 @@ function renderRuntimeHealth(status){
   recStatus==='error'?'Recorder error':recStatus==='offline'?'Recent probes unreachable':
   recStatus==='degraded'?'Probe failure observed':'Status unknown';
  const sampleAge=probeAge===null?'Saved probe timestamp not reported':
-  'Last saved probe '+probeAge+' minutes before this view';
+  'Last saved probe '+probeAge+(Number(probeAge)===1?' minute':' minutes')+' before this view';
  const cadence=Number(r.probe_seconds);
  const staleLimit=Number.isFinite(cadence)&&cadence>0?Math.max(3,Math.ceil(cadence/60)*3):5;
  card('Hub diagnostics',recText,sampleAge+
@@ -2023,7 +2043,7 @@ function drawIncidentTimeline(){
   byId('timelineCoverage').textContent='No saved native observations in this requested interval; unknown is not zero.';
   svg.append(svgNode('text',{x:75,y:100,fill:'#cbd5e1','font-size':15},'No saved recorder history available'));
   byId('timelineMeta').textContent='No recorded interval available. Unknown is not zero.';
-  byId('timelineReadout').textContent='Waiting for saved recorder measurements.';
+  byId('timelineReadout').textContent='Waiting for saved recorder measurements.';byId('timelineReadoutShort').textContent='';
   byId('timelineInspect').disabled=true;byId('timelineAsk').disabled=true;
   byId('timelineEvents').replaceChildren();return;
  }
@@ -2283,7 +2303,7 @@ function drawIncidentTimeline(){
  else if(timelineFocusTimes.length)selectTimelineTime(timelineFocusTimes[timelineFocusTimes.length-1]);
  else{
   timelineSelection=null;byId('timelineInspect').disabled=true;byId('timelineAsk').disabled=true;
-  byId('timelineReadout').textContent='No observed readings in this displayed range. Blank means unknown.';
+  byId('timelineReadout').textContent='No observed readings in this displayed range. Blank means unknown.';byId('timelineReadoutShort').textContent='';
  }
 }
 function selectTimelineTime(when){
@@ -2292,7 +2312,7 @@ function selectTimelineTime(when){
  timelineSelection=at;
  const xx=x(at),cursor=byId('timelineCursor');
  if(cursor){cursor.setAttribute('x1',xx);cursor.setAttribute('x2',xx);cursor.setAttribute('visibility','visible')}
- const evidence=['Selected '+diagTime(at)];
+ const evidence=['Selected '+diagTime(at)];const shortParts=[];
  timelineNearest={memory:null,nativeMemory:null,cpu:null};
  for(const [kind,key,label,basis] of [
   ['memory','free_os_mb','OS memory','external probe'],
@@ -2310,6 +2330,7 @@ function selectTimelineTime(when){
     dot.setAttribute('cy',yFor(kind,row[key]));
    }
    timelineNearest[kind]=row;
+   shortParts.push((kind==='memory'?'OS memory':kind==='nativeMemory'?'Native 5m':'CPU 5m')+' '+diagValue(row[key],key));
    evidence.push(label+' '+diagValue(row[key],key)+' at '+diagTime(Date.parse(row.recorded_at))+
     ' ('+basis+(kind!=='memory'?', label '+String(row.native_sample_label||'unknown')+
     ', timestamp basis '+String(row.timestamp_basis||'legacy_collector_reception')+
@@ -2319,6 +2340,7 @@ function selectTimelineTime(when){
    (row?' · nearest observed '+diagTime(Date.parse(row.recorded_at)):' · none in displayed range'));
  }
  byId('timelineReadout').textContent=evidence.join(' · ')+' · These readings do not establish a cause.';
+ byId('timelineReadoutShort').textContent=['Selected '+diagTime(at)].concat(shortParts.length?shortParts:['no readings near this time']).join(' · ');
  byId('timelineInspect').disabled=false;byId('timelineAsk').disabled=false;
 }
 function inspectTimelineSelection(){
@@ -2652,4 +2674,6 @@ initGraphPopout();
 loadStatus().then(ready=>{
  if(ready&&byId('ask').classList.contains('active'))void refreshOverview();
 });
+try{const m=document.getElementById('timelineReadoutMore');if(m&&window.matchMedia&&window.matchMedia('(min-width:721px)').matches)m.open=true;
+const vs=document.getElementById('voiceStatus');if(vs&&window.matchMedia&&window.matchMedia('(pointer:coarse)').matches&&vs.textContent.startsWith('Enter to send'))vs.textContent='';}catch(e){}
 </script></body></html>
