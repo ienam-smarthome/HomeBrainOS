@@ -628,3 +628,25 @@ def partial_coverage_note(receipts: list[dict]) -> str | None:
                 if text not in notes:
                     notes.append(text)
     return " ".join(notes) if notes else None
+
+
+def unrun_tool_note(answer: str, receipts: list[dict], tool_names) -> str | None:
+    """Footnote naming catalog tools the answer mentions but never successfully ran.
+
+    Compares the answer against the declared tool catalog and this request's
+    receipts. It does not read the question and does not judge the wording: a
+    mention may be advice or a false claim, so the note only states the fact that
+    no successful read of that tool exists in this request.
+    """
+    if not answer or not tool_names:
+        return None
+    ran = {r.get("name") for r in receipts if isinstance(r, dict) and r.get("success")}
+    mentioned = sorted(
+        name for name in tool_names
+        if isinstance(name, str) and name not in ran and name != TOOL_NAME
+        and re.search(rf"(?<![A-Za-z0-9_]){re.escape(name)}(?![A-Za-z0-9_])", answer))
+    if not mentioned:
+        return None
+    return ("Not run in this request: " + ", ".join(mentioned)
+            + ". No figure here was read from that tool; any number the text above "
+              "attributes to it is not backed by a receipt.")
