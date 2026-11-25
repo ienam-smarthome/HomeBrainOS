@@ -225,3 +225,7 @@ answers and its round-time cost.
 
 - Question set report copy: `copyText` helper, then file download fallback. UI-only.
 - First live run (screenshot only, no report text): Q1 still 4 rounds with a ranking warning; Q4/Q8/Q10 flagged on rounds or tool error. Details need the copied report.
+
+## Alpha.183: question-set follow-ups
+
+The 25 Nov question-set run passed 4/10, every failure on rounds. Changes: the compute-nudge round now runs only when the model's own draft states a count, ranking, total or measurement (`draft_states_aggregate`, applied to the draft, not the user's text); a prompt rule asks for independent reads in the same turn; `rows_path` accepts a path missing the `modes` segment and the error lists the keys present; `temperature_unit_note` footnotes a °C/°F label that no receipt states (the heating answer labelled °C values as °F); and the prompt forbids unsupported causes ("just finished boiling"). Live effect on rounds is not yet measured.

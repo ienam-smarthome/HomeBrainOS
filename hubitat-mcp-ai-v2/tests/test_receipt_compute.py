@@ -477,3 +477,30 @@ class PartialRankingWarning(unittest.TestCase):
         self.assertIsNone(partial_ranking_warning(full, {"operation": "sort"}, self.CATALOG))
         self.assertIsNone(partial_ranking_warning(self.SOURCE, {"operation": "sort"}, [{"name": "hub_get_logs", "inputSchema": {"properties": {"mode": {}}}}]))
         self.assertIsNone(partial_ranking_warning(self.SOURCE, {"operation": "count"}, self.CATALOG))
+
+
+class UnitsPathsAndNudgeGate(unittest.TestCase):
+    def test_rows_path_tolerates_missing_modes_segment_and_lists_keys(self):
+        import json as _j
+        from receipt_compute import _receipt_rows, ComputeError
+        payload = {"content": [{"text": _j.dumps({"modes": {"apps": {"entries": [{"a": 1}]}}})}]}
+        receipt = {"response": _j.dumps({"mcp_result": payload})}
+        path, rows = _receipt_rows(receipt, "content.0.text.apps.entries")
+        self.assertEqual(rows, [{"a": 1}])
+        with self.assertRaises(ComputeError) as ctx:
+            _receipt_rows(receipt, "content.0.text.nope.entries")
+        self.assertIn("keys here: modes", str(ctx.exception))
+
+    def test_nudge_gate_skips_plain_lists_but_not_figures(self):
+        from receipt_compute import draft_states_aggregate
+        self.assertFalse(draft_states_aggregate("Front door: closed. Fridge door: closed. Water sensor: dry."))
+        self.assertTrue(draft_states_aggregate("The top three apps are listed below."))
+        self.assertTrue(draft_states_aggregate("Free memory is 839 MB."))
+        self.assertTrue(draft_states_aggregate("There are 12 devices offline."))
+
+    def test_temperature_unit_note(self):
+        from receipt_compute import temperature_unit_note
+        bare = [{"response": '{"temperature": 21.1}'}]
+        self.assertIn("not read from the hub", temperature_unit_note("Hallway 21.1 °F", bare))
+        self.assertEqual(temperature_unit_note("Hallway 21.1 °C", [{"response": '{"unit": "°C"}'}]), "")
+        self.assertEqual(temperature_unit_note("Hallway 21.1 degrees", bare), "")
