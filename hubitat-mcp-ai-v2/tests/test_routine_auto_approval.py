@@ -946,3 +946,93 @@ class FastLightOnOffTests(unittest.IsolatedAsyncioTestCase):
         from routine_approval_policy import batch_light_candidates
         self.assertIsNone(batch_light_candidates(
             {"commands": [{"command": "on", "deviceId": "5001"}]}, []))
+
+
+class BridgeLightHub:
+    """Two virtual component dimmers under a Matter bridge parent, as in the live bathroom."""
+
+    LABELS = {"6001": "Fictional Bath One", "6002": "Fictional Bath Two"}
+
+    def __init__(self):
+        self.calls = []
+        self.catalog = [{"name": n, "inputSchema": {"type": "object"}} for n in (
+            "hub_list_devices", "hub_get_device", "hub_call_device_command")]
+
+    async def list_tools(self, refresh=False):
+        return self.catalog
+
+    async def call(self, name, args):
+        from test_routine_action_fastpath import mcp_result
+        self.calls.append((name, deepcopy(args)))
+        if name == "hub_list_devices":
+            if args.get("labelFilter") == "Fictional Bridge":
+                return mcp_result({"devices": [{"id": "6000", "label": "Fictional Bridge", "name": "Bridge",
+                                                "driver": "Matter Advanced Bridge", "protocol": "matter",
+                                                "disabled": False}],
+                                   "count": 1, "total": 1, "labelFilter": "Fictional Bridge"})
+            return mcp_result({"devices": [
+                {"id": i, "label": label, "driver": "Generic Component Dimmer", "protocol": "virtual",
+                 "parentDeviceId": "6000", "disabled": False, "currentStates": {"switch": "off"}}
+                for i, label in self.LABELS.items()], "count": 2, "total": 2})
+        if name == "hub_get_device":
+            if args["deviceId"] == "6000":
+                return mcp_result({"id": "6000", "label": "Fictional Bridge", "name": "Generic Matter Bridge",
+                                   "capabilities": ["Actuator", "Battery", "HealthCheck", "Refresh", "Sensor"],
+                                   "commands": [], "attributes": []})
+            d = device(label=self.LABELS[args["deviceId"]], switch="off")
+            d["id"] = args["deviceId"]
+            d["capabilities"] = ["Actuator", "Light", "Switch", "SwitchLevel"]
+            d["name"] = "Dimmer"
+            return mcp_result(d)
+        if name == "hub_call_device_command":
+            cmds = args["commands"]
+            return mcp_result({"success": True, "count": len(cmds), "sentCount": len(cmds), "failedCount": 0,
+                               "results": [{"deviceId": c["deviceId"], "command": c["command"], "success": True,
+                                            "device": self.LABELS[c["deviceId"]], "parameters": None}
+                                           for c in cmds]})
+        raise AssertionError(name)
+
+
+class BridgeBatchSingleParentReadTests(unittest.IsolatedAsyncioTestCase):
+    async def test_two_bridge_lights_read_parent_once_and_skip_card(self):
+        from test_routine_action_fastpath import ScriptedAgent
+        hub = BridgeLightHub()
+        model = ScriptedAgent([
+            tool("hub_list_devices", format="summary"),
+            tool("hub_get_device", deviceId="6001"),
+            tool("hub_get_device", deviceId="6002"),
+            tool("hub_call_device_command", commands=[
+                {"command": "on", "deviceId": "6001"}, {"command": "on", "deviceId": "6002"}]),
+        ])
+        gate = Interaction(require_native_write_approval=True, auto_approve_lights=True)
+        result = await model.answer("turn on the fictional bath lights", [], hub, 60,
+                                    before_call=gate.before_call)
+        self.assertIsNone(gate.pending)
+        self.assertEqual(gate.routine_auto_approval_class, "verified_light_batch")
+        parent_reads = [c for c in hub.calls if c == ("hub_get_device", {"deviceId": "6000"})]
+        self.assertEqual(len(parent_reads), 1)
+        self.assertIn("2 of 2", result["answer"])
+
+    def test_duplicate_identical_parent_reads_still_authorize(self):
+        from routine_approval_policy import batch_light_authorization, batch_light_candidates
+        import asyncio
+        hub = BridgeLightHub()
+
+        async def gather():
+            from routine_component_light import _original_read_receipt
+            out = []
+            for name, args in [("hub_list_devices", {"format": "summary"}),
+                               ("hub_get_device", {"deviceId": "6001"}),
+                               ("hub_get_device", {"deviceId": "6002"})]:
+                out.append(_original_read_receipt(name, args, await hub.call(name, args), 1))
+                out[-1].pop("client_component_parent_verification_read")
+            for _ in range(2):
+                for name, args in [("hub_get_device", {"deviceId": "6000"}),
+                                   ("hub_list_devices", {"format": "summary", "labelFilter": "Fictional Bridge"})]:
+                    out.append(_original_read_receipt(name, args, await hub.call(name, args), 1))
+            return out
+        receipts = asyncio.run(gather())
+        args = {"commands": [{"command": "on", "deviceId": "6001"}, {"command": "on", "deviceId": "6002"}]}
+        cands = batch_light_candidates(args, receipts)
+        self.assertTrue(cands)
+        self.assertTrue(batch_light_authorization(cands, receipts))

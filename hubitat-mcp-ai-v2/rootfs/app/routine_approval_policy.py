@@ -9,6 +9,7 @@ the existing write submission boundary are never bypassed.
 """
 from __future__ import annotations
 
+import json
 import re
 
 from routine_action_fastpath import _normal, _original
@@ -288,6 +289,10 @@ async def read_batch_light_evidence(mcp, candidates: list[dict], receipts: list[
         remaining = budget_seconds - (time.monotonic() - start)
         if remaining <= 0.5:
             break
+        if any(isinstance(r, dict) and r.get("name") == "hub_get_device" and r.get("success") is True
+               and str((r.get("arguments") or {}).get("deviceId", "")).strip() == parent
+               for r in working):
+            continue
         collected.extend(await read_component_parent_evidence(mcp, parent, budget_seconds=min(4.0, remaining)))
     return collected
 
@@ -307,7 +312,18 @@ def batch_light_authorization(candidates: list[dict], receipts: list[dict], *,
         if parent:
             parent_rows = [r for r in details if str((r.get("arguments") or {}).get("deviceId", "")).strip() == parent]
             keep.update(id(r) for r in parent_rows)
-        scoped = [r for r in receipts if r not in details or id(r) in keep]
+        scoped = []
+        seen_reads: set[str] = set()
+        for r in receipts:
+            if r in details and id(r) not in keep:
+                continue
+            if isinstance(r, dict) and r.get("client_component_parent_verification_read"):
+                # Identical client-issued parent reads (one per target) are one piece of evidence.
+                signature = json.dumps([r.get("name"), r.get("arguments")], sort_keys=True, default=str)
+                if signature in seen_reads:
+                    continue
+                seen_reads.add(signature)
+            scoped.append(r)
         if source_verified_auto_approval_class(cand, scoped, auto_lights=True,
                                                safe_switch_ids=safe_switch_ids) is None:
             return False
