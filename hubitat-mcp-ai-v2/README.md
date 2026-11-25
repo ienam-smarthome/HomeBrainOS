@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-**Current code candidate: alpha.163 (24 November 2026).** Live alpha.162 memory answer: it ranked `stateSize` (bytes, correctly labelled a proxy) but only over the first 50 of 293 device rows without saying so, and its paging retries failed. Alpha.163 attaches a structural `coverage` note (rows returned vs the source's reported total, next cursor) to any row result that is partial, and the compute tool adds KB conversions for byte fields. Not installed; quality unmeasured.
+**Current code candidate: alpha.164 (25 November 2026).** Live alpha.163 memory answer: it ranked the apps table (not devices), omitted three larger entries from its list, and never said it covered 50 of 189 rows although the coverage note was present. On a phone the question box collapsed to a one-character column while a request ran. Alpha.164 appends a deterministic coverage footnote when a computation ran over a partial row result, adds a prompt rule (say N of M, list every higher-ranked row, apps are not devices), wraps the composer buttons below the input on narrow screens, and adds an on-demand Network status card to System Health (internet, DNS, Hubitat hub, optional router). Not installed; quality unmeasured.
 
 Previous candidate: alpha.160 (24 November 2026). Removes the AI Evaluation tab and Acceptance study link from the UI (backend routes remain), tells the model never to relabel a source field as a different quantity (a runtime `total` is not memory), and returns time gaps in chronological order. Not installed; quality unmeasured.
 
@@ -318,6 +318,7 @@ Refresh the HomeBrainOS add-on repository in Home Assistant and install/update *
 Configure:
 - `hubitat_mcp_url`: exact Streamable HTTP endpoint, including its path.
 - `hubitat_mcp_token`: token if not already in the endpoint URL.
+- Optional `network_router_host`: your router's LAN address, so the System Health **Network status** check can tell a router fault from an internet fault.
 - `model_base_url`: Ollama-compatible endpoint, e.g. `https://ollama.com` or your local Ollama address.
 - `model_name`: a tool-calling model supported by that endpoint.
 - `model_api_key`: required for Ollama Cloud; blank for local Ollama.

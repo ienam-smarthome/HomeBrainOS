@@ -586,3 +586,36 @@ def field_meaning_note(tool_name: str, result: Any) -> dict | None:
                 "(hub_get_memory_history or hub_get_metrics); a per-device memory "
                 "figure is not provided by this table."),
     }
+
+
+def partial_coverage_note(receipts: list[dict]) -> str | None:
+    """Deterministic footnote when a computation ran over a partial row result.
+
+    Structural only: it reads the declared compute receipts' arguments and the
+    coverage the client recorded from the source result's own total/cursor
+    fields, never the answer or question text.
+    """
+    notes: list[str] = []
+    for item in receipts:
+        if not (isinstance(item, dict) and item.get("name") == TOOL_NAME
+                and item.get("success") and item.get("result_kind") == "local_compute"):
+            continue
+        args = item.get("arguments") if isinstance(item.get("arguments"), dict) else {}
+        wanted = args.get("receipt_indexes") or ([args["receipt_index"]]
+                                                  if args.get("receipt_index") else [])
+        sources = []
+        for index in wanted:
+            if isinstance(index, int) and 1 <= index <= len(receipts):
+                sources.append(receipts[index - 1])
+        if not wanted:
+            sources = [r for r in receipts if isinstance(r, dict) and r.get("row_coverage")][-1:]
+        for source in sources:
+            cov = source.get("row_coverage") if isinstance(source, dict) else None
+            if isinstance(cov, dict) and cov.get("partial"):
+                total = cov.get("source_reported_total")
+                text = (f"Coverage: figures above come from {cov.get('rows_returned')}"
+                        + (f" of {total}" if total is not None else "")
+                        + f" rows returned by {source.get('name')}; the remaining rows were not read.")
+                if text not in notes:
+                    notes.append(text)
+    return " ".join(notes) if notes else None
