@@ -229,3 +229,62 @@ class FootnotesThroughAgentLoop(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Coverage: figures above come from 12 of 181 rows", answer)
         self.assertIn("Not run in this request: hub_list_device_events", answer)
         self.assertNotIn("hub_list_devices.", answer.split("Not run in this request:")[-1])
+
+
+class PagingGuardsThroughAgentLoop(unittest.IsolatedAsyncioTestCase):
+    def _hub(self, pages):
+        class PagedHub(Hub):
+            def __init__(self):
+                super().__init__()
+                self.catalog = [{"name": "hub_get_logs",
+                                 "inputSchema": {"type": "object", "properties": {}}}]
+
+            async def call(self, name, args):
+                self.calls.append((name, args))
+                body = pages[str(args.get("cursor", ""))]
+                return {"content": [{"type": "text", "text": json.dumps(body)}]}
+        return PagedHub()
+
+    async def test_unissued_cursor_is_not_sent_to_the_hub(self):
+        pages = {"": {"devices": [{"id": "1", "stateSize": 5}], "total": 3,
+                      "nextCursor": "50"}}
+        hub = self._hub(pages)
+        agent = Scripted([
+            {"content": "", "tool_calls": [call("hub_get_logs", {"mode": "devices"})]},
+            {"content": "", "tool_calls": [call("hub_get_logs", {"mode": "devices", "cursor": "99"})]},
+            {"content": "", "tool_calls": [call("hub_get_logs", {"mode": "devices", "cursor": "50"})]},
+            {"content": "done", "tool_calls": []},
+        ])
+        pages["50"] = {"devices": [{"id": "2", "stateSize": 9}], "total": 3}
+        try:
+            reply = await agent.answer("page it", [], hub, 60)
+        finally:
+            await agent.close()
+        sent = [args.get("cursor") for _, args in hub.calls]
+        self.assertEqual(sent, [None, "50"])
+        blocked = [r for r in reply["tool_calls"] if r.get("hub_called") is False]
+        self.assertEqual(len(blocked), 1)
+        self.assertIn("cursor '99'", blocked[0]["error"] + json.dumps(blocked[0]))
+
+    async def test_skipped_page_and_source_table_are_footnoted(self):
+        first = [{"id": str(i), "stateSize": 5 + i} for i in range(12)]
+        second = [{"id": str(100 + i), "stateSize": 99 + i} for i in range(12)]
+        pages = {
+            "": {"devices": first, "total": 24, "nextCursor": "50"},
+            "50": {"devices": second, "total": 24},
+        }
+        hub = self._hub(pages)
+        agent = Scripted([
+            {"content": "", "tool_calls": [call("hub_get_logs", {"mode": "devices"})]},
+            {"content": "", "tool_calls": [call("hub_get_logs", {"mode": "devices", "cursor": "50"})]},
+            {"content": "", "tool_calls": [call("homebrain_compute_receipt", {
+                "receipt_index": 1, "operation": "max", "field": "stateSize"})]},
+            {"content": "Largest is 16.", "tool_calls": []},
+        ])
+        try:
+            reply = await agent.answer("largest?", [], hub, 60)
+        finally:
+            await agent.close()
+        answer = reply["answer"]
+        self.assertIn("did not include 1 further page(s) of the same read", answer)
+        self.assertIn("Source table: `devices` of hub_get_logs (mode devices).", answer)

@@ -1,8 +1,8 @@
 # Hubitat MCP AI v2 — native MCP client
 
-**Current code candidate: alpha.169 (25 November 2026).** Alpha.169 tightens the phone Ask tab (New chat inline with the heading, no subtitle, a one-line empty state, a shorter composer), moves the per-alpha history out of this README into [the history file](../docs/HOMEBRAIN-V2-ALPHA-HISTORY.md), and adds a ratchet test that stops runtime modules from adding new regex checks on the user's question text (existing ones are listed and may only shrink). No agent behaviour change.
+**Current code candidate: alpha.170 (25 November 2026).** Alpha.170 adds three paging safeguards to the read-only compute path and fixes phone chart issues. (1) A paging `cursor` the hub did not issue earlier in the same request is refused locally and never sent to the hub, with a recoverable message (a likely cause of the unexplained `cursor 50 is out of range` error). (2) The compute result and the answer footnote now say when further pages of the same read were returned but not included, count combined pages correctly, and name the source table (for example `devices` of hub_get_logs, mode devices). (3) Phone UI: timeline chart fitted to 640 px with a shorter CPU title, axis labels that skip when they would overlap, a clean empty state and compact Troubleshooting rows. No question-text gating added; the ratchet baseline is unchanged.
 
-Per-alpha history (alpha.8 to alpha.169) is in [docs/HOMEBRAIN-V2-ALPHA-HISTORY.md](../docs/HOMEBRAIN-V2-ALPHA-HISTORY.md).
+Per-alpha history (alpha.8 to alpha.170) is in [docs/HOMEBRAIN-V2-ALPHA-HISTORY.md](../docs/HOMEBRAIN-V2-ALPHA-HISTORY.md).
 
 ## Everyday use and live review
 

@@ -109,6 +109,7 @@ from monitor_evidence import monitor_evidence_scope
 from retrieval_coverage import FileReadCoverage, file_chunk_scope, event_attribute_scope
 from receipt_compute import (
     partial_coverage_note, unrun_tool_note, unit_conversion_note,
+    issued_cursors, unissued_cursor_error,
     TOOL_NAME as COMPUTE_TOOL, TOOL_DEFINITION as COMPUTE_TOOL_DEFINITION,
     ComputeError, compute as compute_receipt, field_meaning_note, rows_hint,
 )
@@ -2744,6 +2745,7 @@ class Agent:
                     is_catalog = name == _CATALOG_TOOL
                     is_clock = name == CLOCK_TOOL
                     is_compute = name == COMPUTE_TOOL
+                    cursor_refusal = None
                     if not (is_prior or is_monitor or is_catalog or is_clock or is_compute) and name not in native_catalog_names:
                         raise CatalogToolUnavailable(
                             "Requested tool is not present in this request's connected "
@@ -2954,10 +2956,17 @@ class Agent:
                             interaction_status.set_phase(
                                 "native_call", detail="MCP tool in progress"
                             )
-                        result = await asyncio.wait_for(
-                            mcp.call(name, args),
-                            timeout=max(0.1, deadline - time.monotonic())
-                        )
+                        cursor_refusal = (None if name in (_PRIOR_TOOL, MONITOR_TOOL, _CATALOG_TOOL,
+                                                           CLOCK_TOOL, COMPUTE_TOOL)
+                                          else unissued_cursor_error(name, args, receipts))
+                        if cursor_refusal is not None:
+                            result = {"isError": True, "content": [{"type": "text", "text": json.dumps(
+                                {"client_cursor_check": cursor_refusal, "hub_called": False})}]}
+                        else:
+                            result = await asyncio.wait_for(
+                                mcp.call(name, args),
+                                timeout=max(0.1, deadline - time.monotonic())
+                            )
                         if (first_native_write_response_received_elapsed_ms is None
                                 and first_native_write_submission_elapsed_ms is not None
                                 and is_native_action_proposal(name, args, catalog)):
@@ -2970,6 +2979,7 @@ class Agent:
                     # response-size refusal, not the requested source rows.
                     # Preserve original response; classify evidence failure
                     # without routing a new tool, retrying, or altering writes.
+                    cursor_refusal_text = cursor_refusal
                     source_size_refusal = (
                         native_read_size_refusal(result, name)
                         if is_read_only_review_tool(name) else None
@@ -2983,10 +2993,31 @@ class Agent:
                     if source_size_refusal is not None:
                         record["error"] = "Native read returned response_too_large"
                         record["source_limit"] = source_size_refusal
+                    elif cursor_refusal_text:
+                        record["error"] = "Cursor check: " + cursor_refusal_text[:200]
+                        record["hub_called"] = False
                     elif tool_error:
                         record["error"] = "MCP tool reported isError"
+                    if not tool_error and not (is_compute or is_clock or is_catalog or is_prior or is_monitor):
+                        issued = issued_cursors(result)
+                        if issued:
+                            record["issued_cursors"] = sorted(issued)[:8]
                     if is_compute:
                         record["result_kind"] = "local_compute"
+                        payload = result.get("local_computation") if isinstance(result, dict) else None
+                        if isinstance(payload, dict) and not tool_error:
+                            used = payload.get("receipt_index")
+                            used = used[0] if isinstance(used, list) and used else used
+                            used_args = receipts[used - 1].get("arguments") if (
+                                isinstance(used, int) and 1 <= used <= len(receipts)) else {}
+                            record["compute_source"] = {
+                                "tool": payload.get("receipt_tool"),
+                                "rows_path": payload.get("rows_path"),
+                                "operation": payload.get("operation"),
+                                "mode": (used_args or {}).get("mode") if isinstance(used_args, dict) else None,
+                            }
+                            if payload.get("same_source_receipts_not_included"):
+                                record["same_source_receipts_not_included"] = payload["same_source_receipts_not_included"]
                         record["operation_executed"] = False
                         record["read_only"] = True
                         model_result = result

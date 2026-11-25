@@ -461,7 +461,7 @@ assert.equal(memoryPath().match(/[ML]/g).join(''),'MMMM');
 // The canvas detail graph consumes the same gap contract as the SVG timeline.
 const reducedCanvas=harness(),canvasOps=[];
 const fakeContext={
- scale(){},fillRect(){},fillText(){},setLineDash(){},beginPath(){},
+ scale(){},fillRect(){},fillText(){},measureText(s){return{width:String(s).length*6};},setLineDash(){},beginPath(){},
  moveTo(){if(this.strokeStyle==='#70b9ff'&&this.lineWidth===2.1)canvasOps.push('M');},
  lineTo(){if(this.strokeStyle==='#70b9ff'&&this.lineWidth===2.1)canvasOps.push('L');},
  stroke(){},save(){},rect(){},clip(){},restore(){},arc(){},fill(){}
