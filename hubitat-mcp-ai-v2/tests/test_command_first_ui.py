@@ -169,7 +169,7 @@ class UIContracts(unittest.TestCase):
             'duration>400&&activeRecognition',
             '@media(prefers-color-scheme:light)',
             '@media(prefers-reduced-motion:reduce)',
-            '2.0.0-alpha.172',
+            '2.0.0-alpha.173',
         ):
             self.assertIn(needle, HTML, needle)
         # System Health owns the inventory; chat stays a full-width conversation.
@@ -212,7 +212,7 @@ class UIContracts(unittest.TestCase):
             'Array.isArray(response?.answer_stage_trace)',
             'observed_after_ms',
             'Original MCP receipt',
-            'UI_VERSION="2.0.0-alpha.172"',
+            'UI_VERSION="2.0.0-alpha.173"',
             "api/activity/",
             'pendingApproval.effect_class',
             'void submitAsk()',
@@ -246,6 +246,10 @@ class UnqueuedActionChoices(unittest.TestCase):
         self.assertIn("No command sent.", HTML)
         self.assertNotIn("const unprepared=response?.action_selection?.status", HTML)
         self.assertIn("if(activeRequest||!lastUnpreparedQuestion)return;", HTML)
+    def test_currently_reported_counts_are_coloured_only_when_state_reports_exist(self):
+        self.assertIn(".health-card.has-reported:not(.needs-review) .health-count{color:var(--hb-accent)", HTML)
+        self.assertIn("else if(count!==null&&count>0&&covered>0)article.classList.add('has-reported')", HTML)
+
 
 if __name__ == "__main__":
     unittest.main()

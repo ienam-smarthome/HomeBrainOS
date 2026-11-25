@@ -348,6 +348,7 @@ main{max-width:1280px}
 #systemHealth .health-card.needs-review{order:-1}
 #systemHealth .health-card.needs-review .health-count{color:#ffc857;font-size:30px;font-weight:800}
 #systemHealth .health-card:not(.needs-review) .health-count{color:var(--hb-sub);font-weight:500}
+#systemHealth .health-card.has-reported:not(.needs-review) .health-count{color:var(--hb-accent);font-weight:700}
 #systemHealth .health-card-scope,#systemHealth .health-runtime-card p{font-size:11px}
 .network-card[data-level="ok"]{border-left:4px solid #3ddc84}
 .network-card[data-level="warn"]{border-left:4px solid #ffc857}
@@ -624,7 +625,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.172";
+const UI_VERSION="2.0.0-alpha.173";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let activeAskController=null, askGeneration=0;
@@ -774,6 +775,7 @@ function healthSnapshotCard(metric,key,label,kind){
  value.textContent=covered===null||covered===0||count===null?'—':String(count);
  if(count!==null&&count>0&&covered>0&&["water_wet","reported_offline","battery_low","contact_open","last_activity_over_24h"].includes(key))
   article.classList.add('needs-review');
+ else if(count!==null&&count>0&&covered>0)article.classList.add('has-reported');
  heading.append(name,value);article.appendChild(heading);
  const scope=document.createElement('p');scope.className='health-card-scope';
  scope.textContent=covered===null?'Attribute coverage unavailable':
