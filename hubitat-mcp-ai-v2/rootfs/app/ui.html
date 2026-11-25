@@ -362,6 +362,9 @@ main{max-width:1280px}
 .network-checks li span:last-child{color:var(--hb-sub);font-variant-numeric:tabular-nums}
 @media(max-width:650px){main{padding:11px}.ask-grid{gap:9px}
 #ask .compose-card{padding:10px 11px}
+#ask .compose-heading{flex-wrap:nowrap;align-items:center;margin-bottom:8px}#ask .compose-heading>div{flex:1 1 auto;min-width:0}#ask .compose-heading #newConversation{flex:0 0 auto;margin-left:auto;padding:7px 12px;font-size:13px}#ask .compose-subtitle{display:none}
+#ask .feed-empty{padding:14px 15px;font-size:16px}#ask .feed-empty span{display:inline;margin:0 0 0 6px;font-size:13px}
+#ask .command-form #question{height:44px;min-height:44px;padding:6px 0}
 .command-form{gap:7px;padding:7px;flex-wrap:wrap}.mic-round{flex-basis:45px;width:45px;height:45px}
 #ask .command-form #question{flex:1 1 calc(100% - 62px);min-width:0;width:auto;order:0}
 #ask .command-form #send,#ask .command-form #cancelAsk{flex:1 1 40%;order:2;min-height:44px}
@@ -621,7 +624,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.168";
+const UI_VERSION="2.0.0-alpha.169";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let activeAskController=null, askGeneration=0;

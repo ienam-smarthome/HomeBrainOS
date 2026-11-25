@@ -155,3 +155,9 @@ answers and its round-time cost.
 - UI review of six alpha.167 phone screenshots found: timeline chart clipped on mobile (scrolls sideways at 860 px; titles cut off, no cue), two status dots, "2339h" instead of days, "1 minutes", a selected-point box printing raw field names, ⓘ buttons on their own rows, duplicated snapshot phrases, a header and tabs filling about a third of the screen, blue (not amber) attention borders, centred network labels.
 - alpha.168: UI only. Header compact on mobile with sticky tabs; one status dot; inline ⓘ; a swipe hint on the chart (chart titles keep their "independent scale" and "not utilisation" wording, which tests protect); `#timelineReadoutShort` headline with the full text kept in `#timelineReadout` inside "Source details" (open on wide screens); one-line snapshot status; days for 72 h or more; amber attention borders; left-aligned network rows; keyboard hint cleared on touch devices.
 - Not done: the chart still scrolls sideways on narrow screens rather than rescaling; Hub Diagnostics tiles have no value-based highlighting; the 15-minute memory sawtooth and the 97-day heartbeat inactivity are observations to investigate, not explained.
+
+## alpha.169: Ask-tab tightening, README archive, question-text ratchet
+
+- Phone Ask tab: New chat sits inline with the heading, the subtitle is hidden below 650 px, the empty state is one line and the composer row is shorter.
+- The per-alpha history moved from `hubitat-mcp-ai-v2/README.md` to `docs/HOMEBRAIN-V2-ALPHA-HISTORY.md`.
+- `tests/test_question_text_gating_ratchet.py` counts regex calls whose argument is user question text (81 at baseline across 13 modules). It fails if any module grows or a new one appears, and fails if a count drops without lowering the baseline. No agent behaviour change.
