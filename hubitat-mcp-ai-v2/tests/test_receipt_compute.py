@@ -575,3 +575,14 @@ class ActionOutcomeNoteTests(unittest.TestCase):
         self.assertIn("not independently verified", action_outcome_note("Both lights are on.", done))
         self.assertEqual(action_outcome_note("Command accepted; not independently verified.", done), "")
         self.assertEqual(action_outcome_note("Both lights are on.", [{"success": True}]), "")
+
+
+class InternetSwitchNoteTests(unittest.TestCase):
+    def test_note_only_for_internet_control_drivers_or_attribute(self):
+        from receipt_compute import internet_switch_note
+        cudy = {"content": [{"type": "text", "text": '{"devices":[{"driver":"Cudy Managed Device"}]}'}]}
+        plain = {"content": [{"type": "text", "text": '{"devices":[{"driver":"Matter Generic Dimmer"}]}'}]}
+        note = internet_switch_note("hub_list_devices", cudy)
+        self.assertIn("ON means internet is ALLOWED", note["meaning"])
+        self.assertIsNone(internet_switch_note("hub_list_devices", plain))
+        self.assertIsNone(internet_switch_note("hub_get_logs", cudy))

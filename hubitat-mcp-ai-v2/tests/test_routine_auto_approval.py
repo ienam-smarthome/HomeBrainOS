@@ -864,3 +864,85 @@ class RoomListedBatchTests(unittest.IsolatedAsyncioTestCase):
         detail_only = [previous_receipt("hub_get_device", {"deviceId": "5001"}, device())]
         detail_only[0]["response"] = '{"id":"5001"}'
         self.assertIsNone(reinstate_reviewed_proposal(calls, detail_only))
+
+
+class LightHub:
+    """Two Matter-style dimmers discovered through an inventory read, as in a live full-inventory search."""
+
+    def __init__(self, state="off"):
+        self.calls = []
+        self.state = state
+        self.catalog = [{"name": n, "inputSchema": {"type": "object"}} for n in (
+            "hub_list_devices", "hub_get_device", "hub_call_device_command")]
+
+    async def list_tools(self, refresh=False):
+        return self.catalog
+
+    def _label(self, i):
+        return {"5001": "Fictional Hall Lamp", "5002": "Fictional Study Lamp"}[i]
+
+    async def call(self, name, args):
+        from test_routine_action_fastpath import mcp_result
+        self.calls.append((name, deepcopy(args)))
+        if name == "hub_list_devices":
+            ids = args.get("deviceIds") or ["5001", "5002"]
+            return mcp_result({"devices": [
+                {"id": i, "label": self._label(i), "driver": "Matter Generic Dimmer", "protocol": "matter",
+                 "disabled": False, "currentStates": {"switch": self.state}} for i in ids],
+                "count": len(ids), "total": len(ids)})
+        if name == "hub_get_device":
+            d = device(label=self._label(args["deviceId"]), switch=self.state)
+            d["id"] = args["deviceId"]
+            d["capabilities"] = ["Switch", "Light", "SwitchLevel"]
+            d["name"] = "Dimmer"
+            return mcp_result(d)
+        if name == "hub_call_device_command":
+            if "commands" in args:
+                return mcp_result({"success": True, "count": len(args["commands"]),
+                                   "sentCount": len(args["commands"]), "failedCount": 0,
+                                   "results": [{"deviceId": c["deviceId"], "command": c["command"], "success": True,
+                                                "device": self._label(c["deviceId"]), "parameters": None}
+                                               for c in args["commands"]]})
+            return mcp_result({"success": True, "device": self._label(args["deviceId"]),
+                               "command": args["command"], "parameters": None})
+        raise AssertionError(name)
+
+
+class FastLightOnOffTests(unittest.IsolatedAsyncioTestCase):
+    async def test_batch_skips_review_card_and_review_rounds(self):
+        from test_routine_action_fastpath import ScriptedAgent
+        hub = LightHub()
+        model = ScriptedAgent([
+            tool("hub_list_devices", format="summary"),
+            tool("hub_get_device", deviceId="5001"),
+            tool("hub_get_device", deviceId="5002"),
+            tool("hub_call_device_command", commands=[
+                {"command": "on", "deviceId": "5001"}, {"command": "on", "deviceId": "5002"}]),
+        ])
+        gate = Interaction(require_native_write_approval=True, auto_approve_lights=True)
+        result = await model.answer("turn on the fictional lamps", [], hub, 60, before_call=gate.before_call)
+        self.assertEqual(model.rounds_seen, 4)
+        self.assertFalse(result["prewrite_model_review_invoked"])
+        self.assertIsNone(gate.pending)
+        self.assertEqual(gate.routine_auto_approval_class, "verified_light_batch")
+        self.assertIn("ON command accepted", result["answer"])
+        self.assertIn("2 of 2", result["answer"])
+
+    async def test_single_draft_from_a_listing_is_also_fast(self):
+        from test_routine_action_fastpath import ScriptedAgent
+        hub = LightHub()
+        model = ScriptedAgent([
+            tool("hub_list_devices", format="summary"),
+            tool("hub_get_device", deviceId="5001"),
+            tool("hub_call_device_command", deviceId="5001", command="on"),
+        ])
+        gate = Interaction(require_native_write_approval=True, auto_approve_lights=True)
+        result = await model.answer("turn on the hall lamp please", [], hub, 60, before_call=gate.before_call)
+        self.assertEqual(model.rounds_seen, 3)
+        self.assertIsNone(gate.pending)
+        self.assertIn("Fictional Hall Lamp", result["answer"])
+
+    async def test_unread_id_still_needs_the_normal_path(self):
+        from routine_approval_policy import batch_light_candidates
+        self.assertIsNone(batch_light_candidates(
+            {"commands": [{"command": "on", "deviceId": "5001"}]}, []))

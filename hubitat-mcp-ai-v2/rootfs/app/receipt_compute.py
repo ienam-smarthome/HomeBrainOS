@@ -719,6 +719,25 @@ def field_meaning_note(tool_name: str, result: Any) -> dict | None:
     }
 
 
+def internet_switch_note(tool_name: str, result: Any) -> dict | None:
+    """Explain the on/off meaning of per-device internet-control switches seen in a read result.
+
+    Structural: keyed on the driver names or the internetAccess attribute the hub itself returned.
+    """
+    if tool_name not in ("hub_list_devices", "hub_get_device"):
+        return None
+    dumped = json.dumps(result, default=str)
+    if not any(marker in dumped for marker in
+               ("Cudy Managed Device", "Cudy Category Device", "internetAccess")):
+        return None
+    return {
+        "source": "client note from driver names or attributes in this result; not hub data",
+        "meaning": ("For these internet-control switches, switch ON means internet is ALLOWED and "
+                    "switch OFF means internet is BLOCKED. The internetAccess attribute (allowed or "
+                    "blocked) states it directly. Do not report an ON switch as blocking active."),
+    }
+
+
 def partial_coverage_note(receipts: list[dict]) -> str | None:
     """Deterministic footnote when a computation ran over a partial row result.
 

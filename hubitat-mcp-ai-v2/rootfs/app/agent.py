@@ -26,8 +26,8 @@ from routine_post_write_readback import (
     inspect_routine_post_write_state, routine_readback_answer,
 )
 from routine_approval_policy import (
-    batch_light_candidates, read_batch_light_evidence,
-    internet_block_answer, internet_block_candidate,
+    batch_light_answer, batch_light_authorization, batch_light_candidates,
+    internet_block_answer, internet_block_candidate, read_batch_light_evidence,
 )
 from routine_component_light import (
     component_parent_id, read_component_parent_evidence,
@@ -116,7 +116,7 @@ from receipt_compute import (
     draft_states_aggregate, field_meaning_prose_note, normalize_list_devices_args, filter_scope_note, partial_coverage_note, temperature_unit_note, unsupported_year_note, action_outcome_note, changed_since_refusal, partial_ranking_warning, unrun_tool_note, unit_conversion_note,
     issued_cursors, cursor_continuation,
     TOOL_NAME as COMPUTE_TOOL, TOOL_DEFINITION as COMPUTE_TOOL_DEFINITION,
-    ComputeError, compute as compute_receipt, field_meaning_note, rows_hint,
+    ComputeError, compute as compute_receipt, field_meaning_note, internet_switch_note, rows_hint,
 )
 from time_evidence import (
     TOOL_NAME as CLOCK_TOOL, TOOL_DEFINITION as CLOCK_TOOL_DEFINITION,
@@ -281,7 +281,7 @@ For a ranking ("most", "largest", "top N"), first use the source tool's own sort
 Receipts record the exact arguments of every call; before saying a filter or argument was not applied, check the call's arguments.
 For a "which are on", "which have" or "which are low" list over many devices, never request format "detailed" for all devices; use summary with attributeNames or filters.
 A summary device list has no capability data, so it cannot show that a device is or is not a light; use capabilityFilter or a label/room filter, or say that capability was not checked.
-Before searching for a device, split the request into room, device type and qualifier (number, plural or all). Search with roomFilter and capabilityFilter where they fit, and use labelFilter only for a name the user gave. labelFilter matches label text literally, so if it finds nothing, retry with a different structured filter before reading the whole inventory; never narrow to a single common word. A singular request with several candidates needs a question or an explicit list for approval, a plural or "all" request targets every match, and the answer names every device acted on. roomFilter needs the room's exact name including spaces ("Living Room", not "Livingroom"); when a result says roomFilterMatchedKnownRoom is false, call hub_list_rooms once and use the real name. A device that declares blockInternet and allowInternet is blocked and unblocked with those commands, never with on/off.
+Before searching for a device, split the request into room, device type and qualifier (number, plural or all). Search with roomFilter and capabilityFilter where they fit, and use labelFilter only for a name the user gave. labelFilter matches label text literally, so if it finds nothing, retry with a different structured filter before reading the whole inventory; never narrow to a single common word. A singular request with several candidates needs a question or an explicit list for approval, a plural or "all" request targets every match, and the answer names every device acted on. roomFilter needs the room's exact name including spaces ("Living Room", not "Livingroom"); when a result says roomFilterMatchedKnownRoom is false, call hub_list_rooms once and use the real name. For a battery list, state the threshold you used; unless the user gave one, call below 20 percent low and below 10 percent critical, and never call a higher level low or critical. A device that declares blockInternet and allowInternet is blocked and unblocked with those commands, never with on/off.
 Before creating any rule, read the target device and use its own advertised commands when they do the job (for example Block Internet, Allow Internet, Block In Minutes, Allow For Minutes); for a wall-clock time, compute the minutes with homebrain_read_clock and use the device's timed command.
 capabilityFilter takes Hubitat capability names without spaces, for example ContactSensor, WaterSensor, Switch, SwitchLevel, Thermostat, Battery, MotionSensor; do not guess variants.
 A device list shows current state, not what happened. Do not say a device was switched on, activated or triggered from current state, lastActivity or a changedSince list; say it is on now and was active since the time given.
@@ -1099,6 +1099,9 @@ class Agent:
         prewrite_model_review_invoked = False
         prewrite_review_due = False
         block_for_round = None
+        light_write_ready = False
+        batch_dispatch_args: dict | None = None
+        batch_dispatch_targets: list | None = None
         routine_prewrite_review_skipped = False
         routine_terminal_fastpath_used = False
         routine_detail_verification_status = "not_invoked"
@@ -1999,11 +2002,26 @@ class Agent:
                 approval_available=before_call is not None,
             ) if not source_review_invoked else None
             block_for_round = None
+            light_write_ready = False
             if (calls and before_call is not None and not source_review_invoked
                     and not prewrite_model_review_invoked and len(calls) == 1):
                 only = calls[0].get("function") if isinstance(calls[0], dict) else None
                 if isinstance(only, dict) and only.get("name") == "hub_call_device_command":
-                    block_for_round = internet_block_candidate(arguments_of(calls[0]), receipts)
+                    draft_args = arguments_of(calls[0])
+                    block_for_round = internet_block_candidate(draft_args, receipts)
+                    draft_owner = getattr(before_call, "__self__", None)
+                    if (block_for_round is None and isinstance(draft_owner, Interaction)
+                            and draft_owner.auto_approve_lights
+                            and {"hub_get_device", "hub_list_devices"} <= native_catalog_names
+                            and deadline - time.monotonic() > 10):
+                        draft_targets = batch_light_candidates(draft_args, receipts)
+                        if draft_targets:
+                            # Native READS only: the same evidence the dispatch step would read.
+                            receipts.extend(await read_batch_light_evidence(
+                                mcp, draft_targets, receipts, budget_seconds=6.0))
+                            light_write_ready = batch_light_authorization(
+                                draft_targets, receipts,
+                                safe_switch_ids=draft_owner.trusted_safe_switch_ids)
             if (routine_for_round is not None and enable_action_proposal_review
                     and not prewrite_model_review_invoked):
                 routine_prewrite_review_skipped = True
@@ -2015,6 +2033,7 @@ class Agent:
             # No orphaned assistant tool_calls are placed in model history.
             if (enable_action_proposal_review and calls and before_call is not None
                     and routine_for_round is None and block_for_round is None
+                    and not light_write_ready
                     and not source_review_invoked
                     and not prewrite_model_review_invoked
                     and deadline - time.monotonic() > 12):
@@ -3004,8 +3023,10 @@ class Agent:
                                 batch_reads = await read_batch_light_evidence(
                                     mcp, batch_targets, receipts, budget_seconds=6.0)
                                 receipts.extend(batch_reads)
-                                approval_owner.offer_batch_routine_authorization(
-                                    args, batch_targets, receipts)
+                                if approval_owner.offer_batch_routine_authorization(
+                                        args, batch_targets, receipts):
+                                    batch_dispatch_args = deepcopy(args)
+                                    batch_dispatch_targets = batch_targets
                         approval_started = time.monotonic()
                         try:
                             await asyncio.wait_for(
@@ -3227,6 +3248,9 @@ class Agent:
                             unit_note = unit_conversion_note(result)
                             if unit_note is not None:
                                 model_result["client_unit_conversions"] = unit_note
+                            switch_note = internet_switch_note(name, result)
+                            if switch_note is not None:
+                                model_result["client_switch_meaning"] = switch_note
                             scope_note = filter_scope_note(name, args)
                             if scope_note is not None:
                                 model_result["client_filter_scope"] = scope_note
@@ -3499,6 +3523,14 @@ class Agent:
                 if block_answer is not None:
                     routine_terminal_fastpath_used = True
                     return completed_answer(block_answer, "not_applicable_to_routine_action")
+            if (batch_dispatch_args is not None and name == "hub_call_device_command"
+                    and getattr(getattr(before_call, "__self__", None),
+                                "routine_auto_approval_class", None) == "verified_light_batch"):
+                light_answer = batch_light_answer(
+                    batch_dispatch_args, batch_dispatch_targets or [], receipts)
+                if light_answer is not None:
+                    routine_terminal_fastpath_used = True
+                    return completed_answer(light_answer, "not_applicable_to_routine_action")
             if routine_for_round is not None:
                 routine_answer = accepted_routine_answer(
                     routine_for_round, receipts
