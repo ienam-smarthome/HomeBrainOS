@@ -63,6 +63,7 @@ DEFAULTS: dict[str, Any] = {
     # native-ID allowlist; all sensitive actions retain approval.
     "routine_auto_approve_lights": True,
     "routine_auto_approve_safe_switch_ids": "",
+    "routine_auto_approve_internet_block": True,
     "hub_timezone": "Europe/London",
     "external_hub_diagnostics_enabled": False,
     "external_hub_diagnostics_hub_url": "",
@@ -289,7 +290,7 @@ async def lifecycle(app: FastAPI):
             await app.state.model.close()
 
 
-app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.192", lifespan=lifecycle)
+app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.193", lifespan=lifecycle)
 app.include_router(benchmark_router)
 app.include_router(autonomous_router)
 app.include_router(reasoning_router)
@@ -609,6 +610,8 @@ async def ask(request: AskRequest, http_request: Request):
         trusted_safe_switch_ids=trusted_switch_ids(
             str(app.state.options.get("routine_auto_approve_safe_switch_ids", ""))
         ),
+        auto_approve_internet_block=app.state.options.get(
+            "routine_auto_approve_internet_block") is True,
     )
     app.state.interactions[request_id] = interaction
     request_task = asyncio.current_task()
