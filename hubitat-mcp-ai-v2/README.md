@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Current code candidate: `2.0.0-alpha.190`. When the pre-write review round ends without re-issuing a drafted write, and every targeted device id was read this request, the original draft is now reinstated so it reaches the normal approval card instead of the dead-end "Action not queued" (seen with "turn on bathroom lights"). Nothing is written without that approval. Prompt rules: retry a label search with the single most distinctive word, and prefer a device's own advertised block/timed commands over creating a rule.
+Current code candidate: `2.0.0-alpha.191`. Device lookup now interprets first: the model splits a request into room, device type and qualifier, searches with roomFilter/capabilityFilter, and uses labelFilter only for a name the user gave; it no longer narrows to a single common word. Singular requests with several candidates ask or list them for approval; plural/all requests target every match.
 
 Per-alpha history (alpha.8 to alpha.171) is in [docs/HOMEBRAIN-V2-ALPHA-HISTORY.md](../docs/HOMEBRAIN-V2-ALPHA-HISTORY.md).
 
