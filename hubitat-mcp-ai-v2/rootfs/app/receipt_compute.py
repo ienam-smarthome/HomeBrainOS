@@ -650,3 +650,34 @@ def unrun_tool_note(answer: str, receipts: list[dict], tool_names) -> str | None
     return ("Not run in this request: " + ", ".join(mentioned)
             + ". No figure here was read from that tool; any number the text above "
               "attributes to it is not backed by a receipt.")
+
+
+def unit_conversion_note(result: Any) -> dict | None:
+    """Decimal MB and binary MiB for numeric fields whose key ends in KB.
+
+    Keyed only on returned field names, so the model never has to convert by
+    hand. Looks a few levels into the decoded result.
+    """
+    found: dict[str, dict] = {}
+    queue: list[tuple[Any, int]] = [(_decode(result), 0)]
+    while queue and len(found) < 6:
+        node, level = queue.pop(0)
+        node = _decode(node)
+        if isinstance(node, dict) and level < 5:
+            for key, value in node.items():
+                if isinstance(key, str) and key.startswith("client_"):
+                    continue
+                if (isinstance(key, str) and key.endswith("KB") and isinstance(value, (int, float))
+                        and not isinstance(value, bool)):
+                    found.setdefault(key, {"value_KB": value,
+                                           "MB_decimal": round(value / 1000, 3),
+                                           "MiB_binary": round(value / 1024, 3)})
+                elif isinstance(value, (dict, list, str)):
+                    queue.append((value, level + 1))
+        elif isinstance(node, list) and level < 5:
+            queue.extend((child, level + 1) for child in node[:3])
+    if not found:
+        return None
+    return {"source": "client conversion of returned KB fields; not hub data",
+            "fields": found,
+            "use": "Quote MB as the decimal figure (KB divided by 1,000) unless the person asked for MiB."}

@@ -206,6 +206,20 @@ class SortRowsGetKbColumn(unittest.TestCase):
         self.assertNotIn("client_stateSize_KB_decimal", rows[0])
 
 
+class UnitConversionNote(unittest.TestCase):
+    def test_free_memory_kb_gets_decimal_mb(self):
+        from receipt_compute import unit_conversion_note
+        body = {"current": {"freeMemoryKB": 881592, "internalTempC": 43.0}}
+        res = {"content": [{"type": "text", "text": json.dumps(body)}]}
+        note = unit_conversion_note(res)
+        self.assertEqual(note["fields"]["freeMemoryKB"]["MB_decimal"], 881.592)
+        self.assertEqual(note["fields"]["freeMemoryKB"]["MiB_binary"], 860.93)
+
+    def test_no_kb_fields_no_note(self):
+        from receipt_compute import unit_conversion_note
+        self.assertIsNone(unit_conversion_note({"a": 1, "b": {"c": "x"}}))
+
+
 class UnrunToolNote(unittest.TestCase):
     NAMES = {"hub_list_device_events", "hub_list_devices", "hub_get_metrics"}
 
