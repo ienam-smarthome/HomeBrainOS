@@ -206,6 +206,33 @@ class SortRowsGetKbColumn(unittest.TestCase):
         self.assertNotIn("client_stateSize_KB_decimal", rows[0])
 
 
+class UnrunToolNote(unittest.TestCase):
+    NAMES = {"hub_list_device_events", "hub_list_devices", "hub_get_metrics"}
+
+    def test_names_mentioned_without_a_successful_receipt(self):
+        from receipt_compute import unrun_tool_note
+        receipts = [{"name": "hub_list_devices", "success": True}]
+        answer = "Counts came from hub_list_device_events(deviceId=1) and hub_list_devices."
+        note = unrun_tool_note(answer, receipts, self.NAMES)
+        self.assertIn("hub_list_device_events", note)
+        self.assertNotIn("hub_list_devices,", note)
+
+    def test_failed_receipt_does_not_count_as_run(self):
+        from receipt_compute import unrun_tool_note
+        receipts = [{"name": "hub_get_metrics", "success": False}]
+        self.assertIn("hub_get_metrics", unrun_tool_note("see hub_get_metrics", receipts, self.NAMES))
+
+    def test_no_note_when_all_mentioned_tools_ran_or_none_mentioned(self):
+        from receipt_compute import unrun_tool_note
+        receipts = [{"name": "hub_get_metrics", "success": True}]
+        self.assertIsNone(unrun_tool_note("free memory from hub_get_metrics", receipts, self.NAMES))
+        self.assertIsNone(unrun_tool_note("nothing relevant", receipts, self.NAMES))
+
+    def test_partial_name_is_not_matched(self):
+        from receipt_compute import unrun_tool_note
+        self.assertIsNone(unrun_tool_note("hub_list_devices_extra", [], {"hub_list_devices"}))
+
+
 class PartialCoverageNote(unittest.TestCase):
     def receipts(self, partial=True):
         src = {"name": "hub_get_logs", "success": True, "result_kind": "tool_result",

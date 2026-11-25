@@ -194,3 +194,38 @@ class FieldNoteForbidsMemoryColumn(unittest.TestCase):
         use = field_meaning_note("hub_get_logs", {"entries": rows})["use"]
         self.assertIn("do not title a column Memory or RAM", use)
         self.assertIn("client_*_KB_decimal", use)
+
+
+class FootnotesThroughAgentLoop(unittest.IsolatedAsyncioTestCase):
+    async def test_unrun_tool_and_partial_coverage_footnotes_are_appended(self):
+        rows = [{"id": str(i), "name": f"d{i}", "stateSize": 100 + i} for i in range(12)]
+
+        class PagedHub(Hub):
+            def __init__(self):
+                super().__init__()
+                self.catalog = [
+                    {"name": "hub_list_devices", "inputSchema": {"type": "object", "properties": {}}},
+                    {"name": "hub_list_device_events", "inputSchema": {"type": "object", "properties": {}}},
+                ]
+
+            async def call(self, name, args):
+                self.calls.append((name, args))
+                body = {"devices": rows, "count": 12, "total": 181, "hasMore": True, "nextCursor": "12"}
+                return {"content": [{"type": "text", "text": json.dumps(body)}]}
+
+        hub = PagedHub()
+        agent = Scripted([
+            {"content": "", "tool_calls": [call("hub_list_devices", {})]},
+            {"content": "", "tool_calls": [call("homebrain_compute_receipt", {
+                "receipt_index": 1, "operation": "max", "field": "stateSize"})]},
+            {"content": "Counts came from hub_list_device_events for each id. Largest is 111.",
+             "tool_calls": []},
+        ])
+        try:
+            reply = await agent.answer("which is biggest?", [], hub, 60)
+        finally:
+            await agent.close()
+        answer = reply["answer"]
+        self.assertIn("Coverage: figures above come from 12 of 181 rows", answer)
+        self.assertIn("Not run in this request: hub_list_device_events", answer)
+        self.assertNotIn("hub_list_devices.", answer.split("Not run in this request:")[-1])

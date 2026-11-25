@@ -135,3 +135,10 @@ answers and its round-time cost.
 - Network card (alpha.164): without a router address all four checks were green; with one, Router showed "no response" under an "Internet reachable" headline. Cause not established (address form, ping unavailable, or no answer on 80/443/53/22).
 - alpha.165: sorted rows over byte fields carry `client_<field>_KB_decimal`; field note forbids a Memory/RAM column title; router value accepts URL or host:port; ports probed in parallel; failed router row says what was tried; summary is a warning when only the router fails.
 - Not done: paging past 50 rows (an earlier cursor call returned "out of range (size=20)", unexplained); no enforcement of column titles.
+
+## alpha.165 review and alpha.166
+
+- Network card (alpha.165): with the router address set, Router showed 24.9 ms and all five rows were green.
+- Memory (alpha.165): receipts are `hub_get_metrics` (free memory 847,352 KB) and `hub_list_devices` limit 5 of 181. The answer gave no per-device memory (correct that none exists) but then tabulated event counts for five devices and said they were "obtained by running the event-lookup call for each ID". No `hub_list_device_events` call exists in the request, so those numbers are unsupported. It also said "you already have the list" although only 5 of 181 devices were read, did not use `hub_get_logs`, and the "Interpretation" and tuning advice rests on the invented counts. Only `lastActivity` markers (2026-11-25 01:33, 01:30, 01:36 for three devices; 2026-08-19 for the virtual switch) are real, and they are not event counts.
+- alpha.166: `unrun_tool_note` appends "Not run in this request: ..." for catalog tool names the answer mentions with no successful receipt (compared with the declared catalog and receipts, not the question). Prompt rule added. End-to-end test covers this and the alpha.164 coverage footnote through the agent loop.
+- Not done: the note only exposes an unbacked claim, it does not remove or correct the invented figures, and a fabrication that names no tool is not caught. Run-to-run variation in which source the model reads (logs table vs inventory) remains.

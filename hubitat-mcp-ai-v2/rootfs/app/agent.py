@@ -108,7 +108,7 @@ from device_monitor import TOOL_NAME as MONITOR_TOOL, TOOL_DEFINITION as MONITOR
 from monitor_evidence import monitor_evidence_scope
 from retrieval_coverage import FileReadCoverage, file_chunk_scope, event_attribute_scope
 from receipt_compute import (
-    partial_coverage_note,
+    partial_coverage_note, unrun_tool_note,
     TOOL_NAME as COMPUTE_TOOL, TOOL_DEFINITION as COMPUTE_TOOL_DEFINITION,
     ComputeError, compute as compute_receipt, field_meaning_note, rows_hint,
 )
@@ -270,6 +270,7 @@ stored power/energy/health attribute; only that attribute's dated native
 event or separately timestamped measurement supports a measurement time.
 Convert KB to MB by dividing by 1,000 (decimal) unless the user asks for MiB;
 never label a divide-by-1,024 figure as MB.
+Never say or imply a tool was run unless this request has a successful receipt for it. A table of numbers must come from receipts; if a figure was not read, say it was not read and offer to read it.
 When a row result's client_row_compute_hint.coverage.partial is true, any ranking, count or maximum you give covers only the returned rows: say "N of M rows". List every row the compute result ranked above the ones you mention, in the computed order. A table of apps is not a table of devices: choose the source whose rows are the thing asked about, or say it is the closest available one.
 Name every source field exactly as the source names it and never relabel it
 as a different quantity: a field called total/count/average/pct in a runtime
@@ -1401,6 +1402,9 @@ class Agent:
                 coverage_note = partial_coverage_note(receipts)
                 if coverage_note:
                     verified_answer = f"{verified_answer}\n\n{coverage_note}"
+                unrun_note = unrun_tool_note(verified_answer, receipts, native_catalog_names)
+                if unrun_note:
+                    verified_answer = f"{verified_answer}\n\n{unrun_note}"
             claim_receipt_contract = build_claim_receipt_contract(
                 question, verified_answer, receipts,
             )
