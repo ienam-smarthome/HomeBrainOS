@@ -108,7 +108,7 @@ from device_monitor import TOOL_NAME as MONITOR_TOOL, TOOL_DEFINITION as MONITOR
 from monitor_evidence import monitor_evidence_scope
 from retrieval_coverage import FileReadCoverage, file_chunk_scope, event_attribute_scope
 from receipt_compute import (
-    draft_states_aggregate, field_meaning_prose_note, partial_coverage_note, temperature_unit_note, partial_ranking_warning, unrun_tool_note, unit_conversion_note,
+    draft_states_aggregate, field_meaning_prose_note, filter_scope_note, partial_coverage_note, temperature_unit_note, partial_ranking_warning, unrun_tool_note, unit_conversion_note,
     issued_cursors, cursor_continuation,
     TOOL_NAME as COMPUTE_TOOL, TOOL_DEFINITION as COMPUTE_TOOL_DEFINITION,
     ComputeError, compute as compute_receipt, field_meaning_note, rows_hint,
@@ -3121,6 +3121,9 @@ class Agent:
                             unit_note = unit_conversion_note(result)
                             if unit_note is not None:
                                 model_result["client_unit_conversions"] = unit_note
+                            scope_note = filter_scope_note(name, args)
+                            if scope_note is not None:
+                                model_result["client_filter_scope"] = scope_note
                         if tool_error and name == "hub_list_devices":
                             note = inventory_failure_recovery_note(args)
                             if note is not None:

@@ -731,6 +731,8 @@ def partial_coverage_note(receipts: list[dict]) -> str | None:
         if not (isinstance(item, dict) and item.get("name") == TOOL_NAME
                 and item.get("success") and item.get("result_kind") == "local_compute"):
             continue
+        if item.get("ranking_held_back"):
+            continue  # no figure was computed; the model re-read instead
         args = item.get("arguments") if isinstance(item.get("arguments"), dict) else {}
         wanted = args.get("receipt_indexes") or ([args["receipt_index"]]
                                                   if args.get("receipt_index") else [])
@@ -950,3 +952,24 @@ def temperature_unit_note(answer: str, receipts: list) -> str:
     return ("Unit note: no tool result this request states a temperature unit, so the "
             f"{'/'.join('°' + u for u in unsupported)} label above is not read from the hub; "
             "treat the numbers as degrees in the hub's configured scale.")
+
+
+_LIST_FILTER_ARGS = ("changedSince", "stateFilter", "labelFilter", "roomFilter", "capabilityFilter",
+                     "deviceIds", "attributeNames")
+
+
+def filter_scope_note(name: str, args: dict) -> dict | None:
+    """Tell the model that a filtered device list's total/count refers to the filtered set.
+
+    Built only from the call's own arguments; it adds no hub data.
+    """
+    if name != "hub_list_devices" or not isinstance(args, dict):
+        return None
+    applied = {k: args[k] for k in _LIST_FILTER_ARGS if k in args and k != "attributeNames"}
+    if not applied:
+        return None
+    return {"source": "client note from this call's arguments; not hub data",
+            "filters_applied": applied,
+            "meaning": "total, count and hasMore in this result describe only the devices that match "
+                       "these filters, not the whole inventory. Do not report that number as how many "
+                       "devices exist."}

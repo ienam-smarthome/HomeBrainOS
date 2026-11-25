@@ -504,3 +504,23 @@ class UnitsPathsAndNudgeGate(unittest.TestCase):
         self.assertIn("not read from the hub", temperature_unit_note("Hallway 21.1 °F", bare))
         self.assertEqual(temperature_unit_note("Hallway 21.1 °C", [{"response": '{"unit": "°C"}'}]), "")
         self.assertEqual(temperature_unit_note("Hallway 21.1 degrees", bare), "")
+
+
+class FilterScopeAndHeldBackCoverage(unittest.TestCase):
+    def test_filter_scope_note_uses_only_call_arguments(self):
+        from receipt_compute import filter_scope_note
+        note = filter_scope_note("hub_list_devices", {"changedSince": "2026-11-25T12:00:00Z", "format": "summary"})
+        self.assertEqual(note["filters_applied"], {"changedSince": "2026-11-25T12:00:00Z"})
+        self.assertIn("not the whole inventory", note["meaning"])
+        self.assertIsNone(filter_scope_note("hub_list_devices", {"format": "summary"}))
+        self.assertIsNone(filter_scope_note("hub_get_logs", {"changedSince": "x"}))
+
+    def test_held_back_ranking_adds_no_coverage_footnote(self):
+        from receipt_compute import partial_coverage_note, TOOL_NAME
+        receipts = [
+            {"name": "hub_get_logs", "success": True, "row_coverage": {"partial": True, "rows_returned": 50,
+                                                                       "source_reported_total": 293}},
+            {"name": TOOL_NAME, "success": True, "result_kind": "local_compute", "ranking_held_back": True,
+             "arguments": {"receipt_index": 1, "operation": "sort", "field": "stateSize"}},
+        ]
+        self.assertIsNone(partial_coverage_note(receipts))
