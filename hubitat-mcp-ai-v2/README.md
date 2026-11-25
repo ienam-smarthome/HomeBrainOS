@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Current code candidate: `2.0.0-alpha.189`. Fixes from the alpha.188 3× report: the self-test matches device names, alternate names and ids (fewer false "missing" results) and allows 5 rounds; answers naming a year no tool result contains get a date note; numeric `changedSince` is refused before reaching the hub; prompt rules for ranking with `sortBy` first. New proactive home alerts (`home_alerts_enabled`): water wet at once, contacts left open past `home_alert_open_minutes`, batteries under 10 %, with recovery messages and retry; status at `/api/home/alerts`. Daily briefing and network alerts are unchanged.
+Current code candidate: `2.0.0-alpha.190`. When the pre-write review round ends without re-issuing a drafted write, and every targeted device id was read this request, the original draft is now reinstated so it reaches the normal approval card instead of the dead-end "Action not queued" (seen with "turn on bathroom lights"). Nothing is written without that approval. Prompt rules: retry a label search with the single most distinctive word, and prefer a device's own advertised block/timed commands over creating a rule.
 
 Per-alpha history (alpha.8 to alpha.171) is in [docs/HOMEBRAIN-V2-ALPHA-HISTORY.md](../docs/HOMEBRAIN-V2-ALPHA-HISTORY.md).
 

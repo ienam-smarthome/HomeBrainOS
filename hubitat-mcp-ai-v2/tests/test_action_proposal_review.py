@@ -196,6 +196,30 @@ class ProposalLoopTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["prewrite_no_fresh_evidence_rejections"], 0)
         self.assertIn("later physical outcome", result["answer"])
 
+    async def test_review_round_without_a_call_reinstates_proposal_for_approval(self):
+        hub = FictionalHub()
+        assistant = ScriptedAgent([
+            tool("hub_list_devices", labelFilter="Demo Screen"),
+            tool("hub_get_device", deviceId="TEST-MEDIA"),
+            tool("hub_call_device_command", deviceId="TEST-MEDIA", command="off"),
+            {"content": "The device looks right."},
+            {"content": "Command accepted; later outcome unverified."},
+            {"content": "Command accepted; later outcome unverified."},
+            {"content": "Command accepted; later outcome unverified."},
+        ])
+        approvals = []
+
+        async def permit(name, args, explanation):
+            approvals.append((name, args.get("deviceId")))
+
+        try:
+            result = await assistant.answer("Turn off the demo screen", [], hub, 90,
+                                            before_call=permit)
+        finally:
+            await assistant.close()
+        self.assertTrue(result["prewrite_proposal_reinstated"])
+        self.assertEqual(approvals.count(("hub_call_device_command", "TEST-MEDIA")), 1)
+
     async def test_no_new_persistent_rule_from_old_chat_only(self):
         hub = FictionalHub()
         assistant = ScriptedAgent([
@@ -272,3 +296,18 @@ class ProposalLoopTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReinstateProposalTests(unittest.TestCase):
+    def _call(self, ids):
+        return [{"function": {"name": "hub_call_device_command", "arguments": {
+            "commands": [{"command": "on", "deviceId": i} for i in ids]}}}]
+
+    def test_reinstated_only_when_every_id_was_read(self):
+        from action_proposal_review import reinstate_reviewed_proposal
+        reads = [{"success": True, "read_only": True,
+                  "response": '{"devices":[{"id":"7818"},{"id":"7821"},{"id":"7807"}]}'}]
+        self.assertEqual(len(reinstate_reviewed_proposal(self._call(["7818", "7821", "7807"]), reads)), 1)
+        self.assertIsNone(reinstate_reviewed_proposal(self._call(["7818", "9999"]), reads))
+        self.assertIsNone(reinstate_reviewed_proposal(self._call(["781"]), reads))
+        self.assertIsNone(reinstate_reviewed_proposal(self._call(["7818"]), []))
