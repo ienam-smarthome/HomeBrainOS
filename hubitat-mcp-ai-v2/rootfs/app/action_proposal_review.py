@@ -175,3 +175,30 @@ def reinstate_reviewed_proposal(original_calls, receipts):
     if all(re.search(r'(?<![0-9])' + re.escape(i) + r'(?![0-9])', seen) for i in ids):
         return list(original_calls)
     return None
+
+
+def _canonical_write(args) -> str:
+    """Arguments without waitFor, with key order fixed, for comparing repeated writes."""
+    if not isinstance(args, dict):
+        return json.dumps(args, sort_keys=True, default=str)
+    kept = {k: v for k, v in args.items() if k != "waitFor"}
+    return json.dumps(kept, sort_keys=True, default=str)
+
+
+def repeat_write_refusal(name: str, args, receipts, catalog) -> str | None:
+    """Refuse re-sending a native write that this request already got accepted.
+
+    Compares tool name and structured arguments (waitFor ignored) with earlier successful
+    write receipts. Never reads the user's wording.
+    """
+    if not is_native_action_proposal(name, args, catalog):
+        return None
+    wanted = _canonical_write(args)
+    for row in receipts:
+        if (isinstance(row, dict) and row.get("name") == name and row.get("success") is True
+                and row.get("possible_native_action")
+                and _canonical_write(row.get("arguments")) == wanted):
+            return ("This exact write was already accepted earlier in this request; it was not "
+                    "sent again. Confirm the result with a read (for example hub_list_devices "
+                    "with deviceIds and waitFor) and answer from that read.")
+    return None

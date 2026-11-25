@@ -1045,3 +1045,13 @@ def changed_since_refusal(name: str, args: dict) -> str | None:
         return ("changedSince must be an ISO 8601 timestamp string with an offset taken from "
                 "homebrain_read_clock, not a number. Nothing was read from the hub.")
     return None
+
+
+def action_outcome_note(answer: str, receipts: list) -> str:
+    """Footnote for accepted native writes: acceptance and a stored-state readback are not proof of the physical effect."""
+    accepted = [r for r in receipts if isinstance(r, dict) and r.get("success") is True
+                and r.get("possible_native_action")]
+    if not accepted or "not independently verified" in (answer or ""):
+        return ""
+    return ("Action note: Hubitat accepted the command. A readback of the hub's stored state is not "
+            "proof of the physical effect, which was not independently verified.")

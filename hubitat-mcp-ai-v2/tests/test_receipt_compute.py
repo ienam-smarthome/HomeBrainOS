@@ -566,3 +566,12 @@ class UnrunMentionTests(unittest.TestCase):
         names = ["hub_get_device"]
         self.assertIsNone(unrun_tool_note("For details run hub_get_device with the id.", [], names))
         self.assertIsNotNone(unrun_tool_note("hub_get_device shows battery 12%.", [], names))
+
+
+class ActionOutcomeNoteTests(unittest.TestCase):
+    def test_note_added_only_for_accepted_writes_without_the_hedge(self):
+        from receipt_compute import action_outcome_note
+        done = [{"success": True, "possible_native_action": True}]
+        self.assertIn("not independently verified", action_outcome_note("Both lights are on.", done))
+        self.assertEqual(action_outcome_note("Command accepted; not independently verified.", done), "")
+        self.assertEqual(action_outcome_note("Both lights are on.", [{"success": True}]), "")

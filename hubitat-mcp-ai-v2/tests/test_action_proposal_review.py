@@ -311,3 +311,16 @@ class ReinstateProposalTests(unittest.TestCase):
         self.assertIsNone(reinstate_reviewed_proposal(self._call(["7818", "9999"]), reads))
         self.assertIsNone(reinstate_reviewed_proposal(self._call(["781"]), reads))
         self.assertIsNone(reinstate_reviewed_proposal(self._call(["7818"]), []))
+
+
+class RepeatWriteTests(unittest.TestCase):
+    def test_same_accepted_write_is_refused_even_with_waitfor(self):
+        from action_proposal_review import repeat_write_refusal
+        args = {"commands": [{"command": "on", "deviceId": "7818"}]}
+        done = [{"name": "hub_call_device_command", "success": True,
+                 "possible_native_action": True, "arguments": args}]
+        again = {**args, "waitFor": {"attribute": "switch", "expectedValue": "on"}}
+        self.assertIn("already accepted", repeat_write_refusal("hub_call_device_command", again, done, []))
+        other = {"commands": [{"command": "off", "deviceId": "7818"}]}
+        self.assertIsNone(repeat_write_refusal("hub_call_device_command", other, done, []))
+        self.assertIsNone(repeat_write_refusal("hub_call_device_command", args, [], []))

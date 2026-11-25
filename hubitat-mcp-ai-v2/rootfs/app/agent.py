@@ -36,6 +36,7 @@ from one_off_rule_policy import (
 )
 from action_proposal_review import (
     PREWRITE_PROPOSAL_PROMPT, is_native_action_proposal, reinstate_reviewed_proposal,
+    repeat_write_refusal,
     is_persistent_construct, has_current_native_evidence,
 )
 from control_surface_recovery import (
@@ -108,7 +109,7 @@ from device_monitor import TOOL_NAME as MONITOR_TOOL, TOOL_DEFINITION as MONITOR
 from monitor_evidence import monitor_evidence_scope
 from retrieval_coverage import FileReadCoverage, file_chunk_scope, event_attribute_scope
 from receipt_compute import (
-    draft_states_aggregate, field_meaning_prose_note, normalize_list_devices_args, filter_scope_note, partial_coverage_note, temperature_unit_note, unsupported_year_note, changed_since_refusal, partial_ranking_warning, unrun_tool_note, unit_conversion_note,
+    draft_states_aggregate, field_meaning_prose_note, normalize_list_devices_args, filter_scope_note, partial_coverage_note, temperature_unit_note, unsupported_year_note, action_outcome_note, changed_since_refusal, partial_ranking_warning, unrun_tool_note, unit_conversion_note,
     issued_cursors, cursor_continuation,
     TOOL_NAME as COMPUTE_TOOL, TOOL_DEFINITION as COMPUTE_TOOL_DEFINITION,
     ComputeError, compute as compute_receipt, field_meaning_note, rows_hint,
@@ -1448,6 +1449,9 @@ class Agent:
                 field_note = field_meaning_prose_note(verified_answer, receipts)
                 if field_note:
                     verified_answer = f"{verified_answer}\n\n{field_note}"
+                outcome_note = action_outcome_note(verified_answer, receipts)
+                if outcome_note:
+                    verified_answer = f"{verified_answer}\n\n{outcome_note}"
                 year_note = unsupported_year_note(verified_answer, receipts)
                 if year_note:
                     verified_answer = f"{verified_answer}\n\n{year_note}"
@@ -2904,6 +2908,9 @@ class Agent:
                         one_off_rule_preflight_rejections += 1
                         one_off_rule_rejected = True
                         raise MCPError(one_off_problem)
+                    repeat_problem = repeat_write_refusal(name, args, receipts, catalog)
+                    if repeat_problem:
+                        raise MCPError(repeat_problem)
                     # The selected native writer/leaf, never raw prompt words,
                     # establishes the need for a separate UI approval.
                     automation_approval_required = (
