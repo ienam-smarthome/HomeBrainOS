@@ -277,6 +277,13 @@ def compute(receipts: list[dict], args: dict) -> dict:
                                   "KiB_binary": round(value / 1024, 6)}
         if converted:
             local["unit_conversions_from_bytes"] = converted
+    if isinstance(local, dict) and isinstance(field, str) and isinstance(local.get("rows"), list) \
+            and (field.lower() == "statesize" or field.lower().endswith("bytes")):
+        key = f"client_{field}_KB_decimal"
+        local["rows"] = [dict(r, **{key: round(r[field] / 1000, 3)})
+                         if isinstance(r, dict) and isinstance(r.get(field), (int, float))
+                         and not isinstance(r.get(field), bool) else r
+                         for r in local["rows"]]
     if isinstance(local, dict) and isinstance(field, str) and field.lower().endswith("kb"):
         converted = {}
         for key in ("result", "min", "max"):
@@ -582,7 +589,9 @@ def field_meaning_note(tool_name: str, result: Any) -> dict | None:
             "count": "number of runtime samples",
         },
         "use": ("None of these fields is RAM or memory use. Report them under their "
-                "own names. For hub-wide free memory use a memory source "
+                "own names; do not title a column Memory or RAM. For KB use the "
+                "client_*_KB_decimal value (bytes divided by 1,000), never bytes divided "
+                "by 1,024. For hub-wide free memory use a memory source "
                 "(hub_get_memory_history or hub_get_metrics); a per-device memory "
                 "figure is not provided by this table."),
     }

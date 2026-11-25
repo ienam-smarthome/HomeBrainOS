@@ -49,6 +49,19 @@ async def ping_ms(host: str, timeout: float = TIMEOUT) -> float | None:
     return round((time.monotonic() - started) * 1000, 1) if code == 0 else None
 
 
+def clean_host(value: str) -> str:
+    """Accept '192.168.1.1', 'http://192.168.1.1/', '192.168.1.1:80' and return the host."""
+    text = (value or "").strip()
+    if not text:
+        return ""
+    if "://" not in text:
+        text = "//" + text
+    try:
+        return urlsplit(text).hostname or ""
+    except ValueError:
+        return ""
+
+
 def _host_port(url: str) -> tuple[str, int] | None:
     try:
         parts = urlsplit(url)
@@ -77,7 +90,7 @@ async def network_status(hub_url: str = "", router_host: str = "",
                          connect: Connect = tcp_connect_ms,
                          ping: Callable[[str], Awaitable[float | None]] = ping_ms,
                          dns: Callable[[], Awaitable[bool]] = _dns_ok) -> dict:
-    router_host = (router_host or "").strip()
+    router_host = clean_host(router_host)
     hub = _host_port(hub_url) if hub_url else None
 
     async def internet(label, host, port):
@@ -92,11 +105,12 @@ async def network_status(hub_url: str = "", router_host: str = "",
         ms = await ping(router_host)
         if ms is not None:
             return _check("Router", True, ms, "ping")
-        for port in ROUTER_TCP_PORTS:
-            ms = await connect(router_host, port, TIMEOUT)
+        found = await asyncio.gather(*[connect(router_host, p, TIMEOUT) for p in ROUTER_TCP_PORTS])
+        for port, ms in zip(ROUTER_TCP_PORTS, found):
             if ms is not None:
                 return _check("Router", True, ms, f"tcp {port}")
-        return _check("Router", False, None, "ping and tcp")
+        tried = "ping, tcp " + "/".join(str(p) for p in ROUTER_TCP_PORTS)
+        return _check("Router", False, None, f"no answer to {tried}")
 
     tasks = [internet(*t) for t in INTERNET_TARGETS]
     if hub:
@@ -112,7 +126,10 @@ async def network_status(hub_url: str = "", router_host: str = "",
     internet_ok = any(c["ok"] for c in net)
     hub_ok = by["Hubitat hub"]["ok"] if "Hubitat hub" in by else None
     router_ok = by["Router"]["ok"] if "Router" in by else None
-    if internet_ok and dns_ok:
+    if internet_ok and dns_ok and router_ok is False:
+        summary, level = ("Internet reachable; router address did not answer (it may block ping and "
+                          "these ports, or the address in network_router_host may be wrong)"), "warn"
+    elif internet_ok and dns_ok:
         summary, level = "Internet reachable", "ok"
     elif internet_ok:
         summary, level = "Internet reachable by address, but DNS lookup failed", "warn"
