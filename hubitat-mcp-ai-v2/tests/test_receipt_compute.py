@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "rootfs" / "app"))
 
-from receipt_compute import ComputeError, TOOL_NAME, compute, rows_hint  # noqa: E402
+from receipt_compute import ComputeError, TOOL_NAME, compute, partial_coverage_note, rows_hint  # noqa: E402
 from investigation_review import is_read_only_review_tool  # noqa: E402
 
 
@@ -375,3 +375,41 @@ class PagedReceipts(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SourceOrderedCoverage(unittest.TestCase):
+    def _result(self, sizes, total=293):
+        rows = [{"id": i, "stateSize": s} for i, s in enumerate(sizes)]
+        body = {"modes": {"devices": {"total": total, "entries": rows, "nextCursor": "50"}}}
+        return {"content": [{"type": "text", "text": json.dumps(body)}]}
+
+    def test_rows_that_follow_the_named_sort_are_marked_source_ordered(self):
+        sizes = list(range(60, 10, -1))
+        hint = rows_hint(self._result(sizes), 2, {"mode": ["devices"], "sortBy": "stateSize", "limit": 100})
+        cov = hint["coverage"]
+        self.assertEqual(cov["ordered_by_source"],
+                         {"field": "stateSize", "argument": "sortBy", "direction": "descending"})
+        self.assertIn("leading rows of the source's own ordering", cov["use"])
+        self.assertTrue(cov["partial"])
+
+    def test_unsorted_rows_or_no_sort_argument_stay_plain_partial(self):
+        shuffled = [5, 9, 1, 7, 3, 8, 2, 6, 4, 10, 11, 12]
+        self.assertNotIn("ordered_by_source",
+                         rows_hint(self._result(shuffled), 1, {"sortBy": "stateSize"})["coverage"])
+        self.assertNotIn("ordered_by_source",
+                         rows_hint(self._result(sorted(shuffled, reverse=True)), 1, {"limit": 50})["coverage"])
+
+    def test_footnote_uses_source_order_wording_for_matching_compute(self):
+        sizes = list(range(60, 10, -1))
+        read = {"name": "hub_get_logs", "success": True,
+                "arguments": {"mode": ["devices"], "sortBy": "stateSize", "limit": 100},
+                "row_coverage": rows_hint(self._result(sizes), 1,
+                                          {"sortBy": "stateSize"})["coverage"]}
+        compute = {"name": TOOL_NAME, "success": True, "result_kind": "local_compute",
+                   "arguments": {"receipt_index": 1, "operation": "sort", "field": "stateSize"}}
+        note = partial_coverage_note([read, compute])
+        self.assertIn("already ordered descending by its own `stateSize` sort", note)
+        self.assertIn("not independently verified", note)
+        self.assertNotIn("remaining rows were not read", note)
+        other = dict(compute, arguments={"receipt_index": 1, "operation": "sort", "field": "id"})
+        self.assertIn("remaining rows were not read", partial_coverage_note([read, other]))

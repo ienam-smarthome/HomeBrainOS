@@ -271,6 +271,7 @@ stored power/energy/health attribute; only that attribute's dated native
 event or separately timestamped measurement supports a measurement time.
 Convert KB to MB by dividing by 1,000 (decimal) unless the user asks for MiB;
 never label a divide-by-1,024 figure as MB.
+For a ranking ("most", "largest", "top N"), first use the source tool's own sort or limit parameters when its schema offers them (for example a sortBy argument with a small limit); the rows then come back already ordered, and the first N rows are the answer without paging through everything. When coverage says the rows are source-ordered, describe them as the leading rows of the hub's own ordering, not as an arbitrary partial sample.
 Never say or imply a tool was run unless this request has a successful receipt for it. A table of numbers must come from receipts; if a figure was not read, say it was not read and offer to read it.
 When a row result's client_row_compute_hint.coverage.partial is true, any ranking, count or maximum you give covers only the returned rows: say "N of M rows". List every row the compute result ranked above the ones you mention, in the computed order. A table of apps is not a table of devices: choose the source whose rows are the thing asked about, or say it is the closest available one.
 Name every source field exactly as the source names it and never relabel it
@@ -1761,6 +1762,7 @@ class Agent:
             if interaction_status is not None:
                 interaction_status.set_phase(
                     "model", detail=f"AI model round {rounds + 1}"
+                    + (f" · {len(receipts)} step(s) done" if receipts else "")
                 )
             # Attribution only: never select, skip, retry or reorder any model
             # round. Record counts rather than prompts, tools, private IDs or
@@ -2955,7 +2957,7 @@ class Agent:
                             interaction_status.note_native_write_submission()
                         if interaction_status is not None:
                             interaction_status.set_phase(
-                                "native_call", detail="MCP tool in progress"
+                                "native_call", detail=f"Waiting on {str(name)[:60]}"
                             )
                         if name not in (_PRIOR_TOOL, MONITOR_TOOL, _CATALOG_TOOL,
                                         CLOCK_TOOL, COMPUTE_TOOL):
@@ -3067,7 +3069,7 @@ class Agent:
                         if source_size_refusal is not None:
                             model_result["client_source_limit"] = source_size_refusal
                         elif not tool_error:
-                            row_hint = rows_hint(result, len(receipts) + 1)
+                            row_hint = rows_hint(result, len(receipts) + 1, args)
                             if row_hint is not None:
                                 model_result["client_row_compute_hint"] = row_hint
                                 record["row_coverage"] = row_hint.get("coverage")

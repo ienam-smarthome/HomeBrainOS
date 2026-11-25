@@ -654,3 +654,5 @@ This release changes no production reasoning, diagnostics, credentials,
 Hubitat or Home Assistant device state. The prospective six-pair Gemma trial
 and post-install acceptance remain outstanding.
 
+
+**Current code candidate: alpha.171 (25 November 2026).** The alpha.170 live capture explained the `cursor 50 is out of range (size=20)` error: the hub only accepts a paging cursor when the read repeats the call that issued it (single-value `mode`, same `limit`). The model sent a one-item mode list, then a default page size of 20. Alpha.171 sends every cursor read with the issuing call's arguments (and says so to the model), drops an empty cursor, and the answer footnote now reports failed paging attempts and prints the source mode as text. Network status now checks automatically when System Health opens and about once a minute while it stays open and visible. Hypothesis not yet confirmed on a live hub: that `mode:"devices", limit:0, cursor:"50"` is accepted.
