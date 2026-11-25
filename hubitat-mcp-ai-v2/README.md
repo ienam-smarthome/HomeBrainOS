@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Current code candidate: `2.0.0-alpha.199`. Live capture for "Block Nest Mini": the model added an undeclared `confirm: true` to hub_call_device_command, which forced an approval card and was then rejected by the hub (unknown argument), costing a second attempt and a second card. Prompt now says device commands take only deviceId, command, commands, parameters, includeState and waitFor and that confirm belongs only to tools whose schema declares it.
+Current code candidate: `2.0.0-alpha.200`. Fix for alpha.199 live captures: the model still added `confirm` (even as the string "True") to hub_call_device_command, forcing a card the hub then rejected, and an extra configuration-mode read of the same device made the unblock fail the single-detail-read check. The client now drops `confirm` from any call whose live tool schema does not declare it, and only the default/summary device read counts toward block/allow qualification.
 
 Per-alpha history (alpha.8 to alpha.171) is in [docs/HOMEBRAIN-V2-ALPHA-HISTORY.md](../docs/HOMEBRAIN-V2-ALPHA-HISTORY.md).
 

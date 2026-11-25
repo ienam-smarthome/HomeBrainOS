@@ -698,6 +698,32 @@ def arguments_of(call: dict) -> dict:
     return raw
 
 
+def drop_undeclared_confirm(calls: list, catalog: list[dict]) -> int:
+    """Remove a model-invented ``confirm`` from calls whose live schema does not declare it.
+
+    Decided only from the tool name and the server-advertised ``inputSchema`` properties.
+    The hub rejects undeclared arguments, and a stray ``confirm`` also forces an approval
+    card, so it can only waste the call. A schema that declares ``confirm`` is untouched.
+    """
+    dropped = 0
+    for call in calls:
+        function = call.get("function") if isinstance(call, dict) else None
+        if not isinstance(function, dict):
+            continue
+        declared = next((item for item in catalog if isinstance(item, dict)
+                         and item.get("name") == function.get("name")), None)
+        schema = declared.get("inputSchema") if isinstance(declared, dict) else None
+        props = schema.get("properties") if isinstance(schema, dict) else None
+        if not isinstance(props, dict) or not props or "confirm" in props:
+            continue
+        args = arguments_of(call)
+        if "confirm" not in args or "_invalid_arguments" in args:
+            continue
+        function["arguments"] = {k: v for k, v in args.items() if k != "confirm"}
+        dropped += 1
+    return dropped
+
+
 def compact_tool_result(value: dict, max_chars: int = 90000) -> str:
     # Client annotations (compute hint, coverage, field meanings) go first: a long
     # source body otherwise buries them at the end where the model skips them.
@@ -1907,6 +1933,7 @@ class Agent:
             text = str(message.get("content") or "").strip()
             if not isinstance(calls, list):
                 calls = []
+            drop_undeclared_confirm(calls, catalog)
             review_response_now, prewrite_review_due = prewrite_review_due, False
             if (review_response_now and not calls and not prewrite_reinstated
                     and prewrite_original_calls and before_call is not None):

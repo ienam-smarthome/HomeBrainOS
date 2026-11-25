@@ -121,7 +121,7 @@ class ClaimDeltaReviewTests(unittest.TestCase):
 
     def test_evaluation_review_ui_is_removed(self):
         ui = (ROOT / "rootfs" / "app" / "ui.html").read_text(encoding="utf-8")
-        self.assertIn('const UI_VERSION="2.0.0-alpha.199"', ui)
+        self.assertIn('const UI_VERSION="2.0.0-alpha.200"', ui)
         for gone in ("evalReviewDownload", "evaluationManualReview", "evaluationDownloadPrivate",
                      "evalOriginalReceipts"):
             self.assertNotIn(gone, ui)

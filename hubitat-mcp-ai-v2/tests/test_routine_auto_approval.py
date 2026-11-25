@@ -1085,6 +1085,66 @@ class InternetSwitchOnOffTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("block command accepted", result["answer"])
 
 
+class UndeclaredConfirmAndExtraReadTests(unittest.IsolatedAsyncioTestCase):
+    def test_confirm_is_dropped_only_when_the_live_schema_omits_it(self):
+        from agent import drop_undeclared_confirm
+        declared = [{"name": "hub_call_device_command", "inputSchema": {
+            "type": "object", "properties": {"deviceId": {}, "command": {}}}}]
+        calls = tool("hub_call_device_command", deviceId=1, command="off", confirm="True")["tool_calls"]
+        self.assertEqual(drop_undeclared_confirm(calls, declared), 1)
+        self.assertEqual(calls[0]["function"]["arguments"], {"deviceId": 1, "command": "off"})
+        keeps = [{"name": "hub_manage_x", "inputSchema": {
+            "type": "object", "properties": {"confirm": {}, "a": {}}}}]
+        kept = tool("hub_manage_x", a=1, confirm=True)["tool_calls"]
+        self.assertEqual(drop_undeclared_confirm(kept, keeps), 0)
+        self.assertEqual(kept[0]["function"]["arguments"], {"a": 1, "confirm": True})
+        unknown = tool("hub_call_device_command", deviceId=1, command="off", confirm=True)["tool_calls"]
+        self.assertEqual(drop_undeclared_confirm(unknown, [{"name": "hub_call_device_command"}]), 0)
+
+    async def test_block_with_invented_confirm_runs_without_a_card(self):
+        from test_routine_action_fastpath import ScriptedAgent
+
+        class Hub(BlockHub):
+            def __init__(self):
+                super().__init__()
+                self.catalog[2]["inputSchema"] = {"type": "object", "properties": {
+                    "deviceId": {}, "command": {}, "parameters": {}}}
+
+            async def call(self, name, args):
+                if name == "hub_call_device_command":
+                    assert "confirm" not in args, args
+                if name == "hub_get_device":
+                    from test_routine_action_fastpath import mcp_result
+                    self.calls.append((name, deepcopy(args)))
+                    d = block_detail()
+                    d["commands"] += [{"name": "off", "arguments": None}]
+                    return mcp_result(d)
+                return await super().call(name, args)
+
+        hub = Hub()
+        model = ScriptedAgent([
+            tool("hub_get_device", deviceId="7001", mode="summary"),
+            tool("hub_call_device_command", deviceId=7001, command="off", confirm="True"),
+        ])
+        gate = Interaction(require_native_write_approval=True, auto_approve_lights=True,
+                           auto_approve_internet_block=True)
+        result = await model.answer("block Fictional Gadget", [], hub, 60, before_call=gate.before_call)
+        self.assertIsNone(gate.pending)
+        self.assertEqual(gate.routine_auto_approval_class, "verified_internet_block")
+        self.assertIn("block command accepted", result["answer"])
+
+    def test_an_extra_configuration_read_does_not_disqualify_the_device(self):
+        from routine_approval_policy import internet_block_candidate
+        d = block_detail()
+        d["commands"] += [{"name": "on", "arguments": None}]
+        receipts = [previous_receipt("hub_get_device", {"deviceId": "7001"}, d),
+                    previous_receipt("hub_get_device", {"deviceId": "7001", "mode": "configuration"},
+                                     {"id": "7001", "editableFields": []})]
+        self.assertIsNotNone(internet_block_candidate({"deviceId": "7001", "command": "on"}, receipts))
+        twice = receipts[:1] + [previous_receipt("hub_get_device", {"deviceId": "7001", "mode": "summary"}, d)]
+        self.assertIsNone(internet_block_candidate({"deviceId": "7001", "command": "on"}, twice))
+
+
 class PromptGuidanceTests(unittest.TestCase):
     def test_prompt_forbids_extra_arguments_on_device_commands(self):
         import agent
