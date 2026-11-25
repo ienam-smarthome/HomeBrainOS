@@ -290,6 +290,43 @@ def summarize_device_inventory(response, *, observed_at=None):
     }
 
 
+PAGE_SIZE = 60
+MAX_PAGES = 12
+
+
+async def _read_device_pages(mcp: MCPClient, has_format: bool):
+    """Read the inventory in bounded pages so no response nears the hub's size cap.
+
+    Only used when the live tool schema advertises limit and offset. Any failed
+    page makes the whole snapshot unavailable: a partial list would misstate
+    coverage. Pages are merged into one result shaped like a single read.
+    """
+    devices: list = []
+    declared = None
+    for page in range(MAX_PAGES):
+        args: dict = {"limit": PAGE_SIZE, "offset": len(devices)}
+        if has_format:
+            args["format"] = "summary"
+        body = _body(await mcp.call("hub_list_devices", args))
+        rows = body["devices"]
+        if declared is None:
+            total = body.get("unfilteredTotal", body.get("total"))
+            declared = total if type(total) is int else None
+        devices.extend(rows)
+        if not rows or body.get("hasMore") is False:
+            break
+        if declared is not None and len(devices) >= declared:
+            break
+    else:
+        raise OverviewUnavailable("Inventory has more pages than the overview reads")
+    if declared is not None and len(devices) < declared and body.get("hasMore") is not False:
+        raise OverviewUnavailable("Inventory paging ended before the declared total")
+    merged = {"devices": devices, "count": len(devices)}
+    if declared is not None:
+        merged["total"] = declared
+    return {"content": [{"type": "text", "text": json.dumps(merged)}]}
+
+
 async def read_overview(mcp: MCPClient):
     """Select only the exact advertised read-only inventory tool.
 
@@ -299,7 +336,10 @@ async def read_overview(mcp: MCPClient):
     catalog = await mcp.list_tools()
     by_name = {x["name"]: x for x in catalog if isinstance(x, dict) and isinstance(x.get("name"), str)}
     direct = by_name.get("hub_list_devices")
-    if direct:
+    props = ((direct or {}).get("inputSchema") or {}).get("properties")
+    if direct and isinstance(props, dict) and "limit" in props and "offset" in props:
+        result = await _read_device_pages(mcp, "format" in props)
+    elif direct:
         result = await mcp.call("hub_list_devices", {})
     else:
         gateway = by_name.get("hub_read_devices")

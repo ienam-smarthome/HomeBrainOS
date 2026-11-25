@@ -290,5 +290,49 @@ class OverviewHTTPTests(unittest.IsolatedAsyncioTestCase):
             runtime.app.state._state.update(previous)
 
 
+class PagedOverviewTests(unittest.IsolatedAsyncioTestCase):
+    SCHEMA = {"type": "object", "properties": {"limit": {}, "offset": {}, "format": {}}}
+
+    class Paged(FakeCatalog):
+        def __init__(self, catalog, devices, fail_at=None):
+            super().__init__(catalog, None)
+            self.devices = devices
+            self.fail_at = fail_at
+
+        async def call(self, name, args):
+            self.calls.append((name, args))
+            off, lim = args["offset"], args["limit"]
+            if self.fail_at is not None and off == self.fail_at:
+                return {"isError": True, "content": [{"type": "text", "text": "MCP response too large"}]}
+            rows = self.devices[off:off + lim]
+            body = {"devices": rows, "offset": off, "count": len(rows),
+                    "total": len(self.devices), "hasMore": off + len(rows) < len(self.devices)}
+            return {"content": [{"type": "text", "text": json.dumps(body)}]}
+
+    def _devices(self, n):
+        return [{"id": str(i), "label": f"Lamp {i}", "currentStates": {"switch": "on"}} for i in range(n)]
+
+    async def test_reads_bounded_pages_and_merges_every_device(self):
+        fake = self.Paged([{"name": "hub_list_devices", "inputSchema": self.SCHEMA}], self._devices(130))
+        data = await read_overview(fake)
+        self.assertEqual([c[1]["offset"] for c in fake.calls], [0, 60, 120])
+        self.assertTrue(all(c[1]["limit"] == 60 and c[1]["format"] == "summary" for c in fake.calls))
+        self.assertEqual(data["returned_devices"], 130)
+        self.assertEqual(data["source_declared_total"], 130)
+
+    async def test_one_failed_page_makes_snapshot_unavailable_not_partial(self):
+        fake = self.Paged([{"name": "hub_list_devices", "inputSchema": self.SCHEMA}],
+                          self._devices(130), fail_at=60)
+        with self.assertRaises(OverviewUnavailable):
+            await read_overview(fake)
+
+    async def test_schema_without_paging_keeps_single_unfiltered_read(self):
+        fake = FakeCatalog([{"name": "hub_list_devices",
+                             "inputSchema": {"type": "object", "properties": {"limit": {}}}}],
+                           inventory_reply(DEVICES, unfilteredTotal=6))
+        await read_overview(fake)
+        self.assertEqual(fake.calls, [("hub_list_devices", {})])
+
+
 if __name__ == "__main__":
     unittest.main()

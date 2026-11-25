@@ -215,3 +215,8 @@ answers and its round-time cost.
 
 - UI-only self-test: `QUESTION_SET` (10 read-only questions), `scoreQuestionRun` (measurable checks only; correctness stays a human review), `runQuestionSet`/`copyQuestionSetReport`. No new server route; reuses `/api/ask`.
 - Limits: sequential, no write ever prepared; a failing question does not stop the run; results are not stored server-side.
+
+## alpha.179
+
+- Evidence (hub log screenshot, private): app 4151 logged `MCP response too large: ~108,683 bytes (limit 99,500)` about 15 times between 07:37 and 09:52. Most likely source is the System Health snapshot (`hub_list_devices` with no arguments); not proven from the log alone.
+- `home_overview._read_device_pages`: schema-gated paging (limit/offset/hasMore as already used by bounded_source_projection). Model-issued broad `hub_list_devices` reads can still hit the cap; the agent reports that as a tool error.
