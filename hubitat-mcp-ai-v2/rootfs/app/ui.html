@@ -381,7 +381,8 @@ main{max-width:1280px}
 :root{color-scheme:light;--hb-bg:#f2f5fa;--hb-panel:#fff;--hb-edge:#c9d4e4;--hb-text:#182640;--hb-sub:#53637c;--hb-accent:#136aca;--hb-ink:#fff;--hb-tile:#edf2f9}
 body{background:var(--hb-bg);color:var(--hb-text)}
 header{background:#fff;border-bottom:1px solid var(--hb-edge)}
-.brand h1,.brand-mark{color:var(--hb-text)}.brand-copy small{color:var(--hb-sub)}
+.brand h1{color:var(--hb-text)}.brand-copy small{color:var(--hb-sub)}
+.brand-mark{background:linear-gradient(155deg,#3f86d4,#1f6cc4);border-color:#1b5fae;color:#fff;box-shadow:0 1px 2px #1b5fae55}
 #ask .card,#systemHealth .overview-shell,.app-tabs,.status-popover{background:var(--hb-panel);color:var(--hb-text);border-color:var(--hb-edge);box-shadow:none}
 .app-tabs button{color:var(--hb-sub)}.app-tabs button.active{background:var(--hb-accent);color:#fff}
 button,textarea,select{color:var(--hb-text);border-color:var(--hb-edge);background:var(--hb-panel)}
@@ -590,7 +591,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
  <div id="healthRuntime" class="health-grid" aria-label="HomeBrainOS setup, diagnostics and optional monitor"></div>
  <h3 class="health-section-title">Network status</h3>
  <details class="hint"><summary aria-label="About this section">ⓘ</summary><p class="health-helper">One read-only check from the add-on host: internet, DNS, the Hubitat hub and an optional router. It runs when this tab opens and about once a minute while it stays open; Check network runs it now. It does not test the hub's own internet access.</p></details>
- <div class="card network-card" id="networkCard"><div class="network-head"><strong id="networkSummary" role="status" aria-live="polite">Not checked yet</strong><button id="checkNetwork" type="button" class="health-refresh" onclick="checkNetworkStatus()">Check network</button></div><ul id="networkChecks" class="network-checks"></ul><small id="networkScope" class="muted"></small></div>
+ <div class="card network-card" id="networkCard"><div class="network-head"><strong id="networkSummary" role="status" aria-live="polite">Not checked yet</strong><button id="checkNetwork" type="button" class="health-refresh" onclick="checkNetworkStatus()">Check network</button></div><ul id="networkChecks" class="network-checks"></ul><small id="networkScope" class="muted"></small><small id="networkAlertLine" class="muted" hidden></small></div>
  <h3 class="health-section-title">Needs attention</h3>
  <details class="hint"><summary aria-label="About this section">ⓘ</summary><p class="health-helper">Observed states, not independently verified faults. Missing state reports are unknown, not healthy.</p></details>
  <div id="healthAttention" class="health-grid" aria-label="Potential issues reported by returned attributes"></div>
@@ -661,7 +662,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.181";
+const UI_VERSION="2.0.0-alpha.182";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let activeAskController=null, askGeneration=0;
@@ -893,7 +894,20 @@ function networkAuto(on){
 document.addEventListener('visibilitychange',()=>{
  if(networkTimer&&document.visibilityState==='visible'&&Date.now()-networkLastAt>30000)checkNetworkStatus();
 });
+async function loadNetworkAlerts(){
+ try{
+  const a=await readJson('api/network/alerts',{headers:{'X-Homebrain-Request':'1'}});
+  const line=byId('networkAlertLine');if(!line)return;
+  if(!a.enabled){line.hidden=true;return}
+  const g=a.grace_seconds||{};
+  line.hidden=false;
+  line.textContent='Alerts on: phone notification if the internet is down for '+Math.round((g.internet||300)/60)+
+   ' min or the hub for '+Math.round((g.hub||480)/60)+' min.'+(a.undelivered?' '+a.undelivered+' alert(s) waiting to be delivered.':'')+
+   (a.last_error?' Last problem: '+a.last_error:'');
+ }catch(e){}
+}
 async function checkNetworkStatus(){
+ loadNetworkAlerts();
  if(networkPending)return;networkPending=true;networkLastAt=Date.now();
  const button=byId('checkNetwork');button.disabled=true;
  byId('networkSummary').textContent='Checking…';

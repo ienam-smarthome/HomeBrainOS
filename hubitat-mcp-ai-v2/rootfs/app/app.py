@@ -34,7 +34,7 @@ from agent import Agent, InitialCatalogUnavailable
 from interaction import Interaction
 from routine_approval_policy import trusted_switch_ids
 from one_off_cleanup import OneOffCleanup
-from network_status import network_status
+from network_status import NetworkWatch, network_status
 from conversation import ConversationEvidence
 from frozen_evaluation import FrozenEvaluationError, freeze_capture, replay_frozen_capture
 
@@ -77,6 +77,10 @@ DEFAULTS: dict[str, Any] = {
     "ha_tts_enabled": False,
     "ha_tts_notify_service": "",
     "ha_tts_media_stream": "",
+    "network_alerts_enabled": False,
+    "network_alert_notify_service": "",
+    "network_alert_grace_minutes": 5,
+    "network_alert_hub_grace_minutes": 8,
 }
 
 
@@ -129,6 +133,22 @@ async def lifecycle(app: FastAPI):
         notify_service=str(options["ha_tts_notify_service"]),
         media_stream=str(options["ha_tts_media_stream"]),
     )
+    app.state.alert_push = HomeAssistantTTS(
+        enabled=True,
+        supervisor_token=str(os.getenv("SUPERVISOR_TOKEN") or os.getenv("HASSIO_TOKEN") or ""),
+        notify_service=str(options["network_alert_notify_service"] or options["ha_tts_notify_service"]),
+    )
+
+    async def _probe_network():
+        return await network_status(str(options.get("hubitat_mcp_url", "")),
+                                    str(options.get("network_router_host", "")))
+
+    app.state.network_watch = NetworkWatch(
+        _probe_network, app.state.alert_push.push,
+        grace={"internet": max(1, int(options["network_alert_grace_minutes"])) * 60,
+               "hub": max(1, int(options["network_alert_hub_grace_minutes"])) * 60},
+        enabled=bool(options["network_alerts_enabled"]))
+    app.state.network_watch.start()
     try:
         app.state.model = CloudAgent(
             mode=str(options["cloud_mode"]),
@@ -207,13 +227,15 @@ async def lifecycle(app: FastAPI):
         if app.state.device_monitor:
             await app.state.device_monitor.close()
         await app.state.tts.close()
+        await app.state.network_watch.close()
+        await app.state.alert_push.close()
         if app.state.mcp:
             await app.state.mcp.close()
         if app.state.model:
             await app.state.model.close()
 
 
-app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.181", lifespan=lifecycle)
+app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.182", lifespan=lifecycle)
 app.include_router(benchmark_router)
 app.include_router(autonomous_router)
 app.include_router(reasoning_router)
@@ -338,6 +360,23 @@ async def network(request: Request):
     options = app.state.options
     return await network_status(str(options.get("hubitat_mcp_url", "")),
                                 str(options.get("network_router_host", "")))
+
+
+@app.get("/api/network/alerts")
+async def network_alerts(request: Request):
+    require_ui_request(request)
+    return app.state.network_watch.status()
+
+
+@app.post("/api/network/alerts/test")
+async def network_alert_test(request: Request):
+    """Sends one clearly labelled test push so the notify service can be verified."""
+    require_ui_request(request)
+    try:
+        return await app.state.alert_push.push(
+            "HomeBrainOS: test alert", "Network alerts are set up. This is only a test.")
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
 
 
 @app.get("/api/sources/device-monitor/check")

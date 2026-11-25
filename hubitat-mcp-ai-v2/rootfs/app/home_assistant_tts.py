@@ -170,6 +170,24 @@ class HomeAssistantTTS:
             "method": "home-assistant-mobile-app",
         }
 
+    async def push(self, title: str, message: str) -> dict[str, Any]:
+        """Plain text push to the mobile app (not TTS); needs the token, not ha_tts_enabled."""
+        if not self.token_available:
+            raise HomeAssistantTTSConfigurationError("SUPERVISOR_TOKEN is missing")
+        previously, self.enabled = self.enabled, True
+        try:
+            service = await self.resolve_notify_service()
+        finally:
+            self.enabled = previously
+        response = await self._http().post(
+            f"{self.base_url}/services/notify/{service}",
+            headers=self._headers(),
+            json={"title": str(title)[:100], "message": str(message)[:500],
+                  "data": {"tag": "homebrainos-network", "ttl": 0, "priority": "high"}},
+        )
+        response.raise_for_status()
+        return {"sent": True, "service": f"notify.{service}"}
+
     async def stop(self) -> dict[str, Any]:
         service = await self.resolve_notify_service()
         response = await self._http().post(

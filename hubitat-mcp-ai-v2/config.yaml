@@ -1,5 +1,5 @@
 name: "Hubitat MCP AI v2 (Preview)"
-version: "2.0.0-alpha.181"
+version: "2.0.0-alpha.182"
 slug: hubitat_mcp_ai_v2
 description: "Clean, model-led Hubitat MCP assistant with external diagnostics recorder"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
@@ -55,6 +55,9 @@ options:
   one_off_cleanup_timezone: "Europe/London"
   one_off_cleanup_grace_minutes: 15
   ha_tts_enabled: false
+  network_alerts_enabled: false
+  network_alert_grace_minutes: 5
+  network_alert_hub_grace_minutes: 8
 schema:
   hubitat_mcp_url: str?
   hubitat_mcp_token: password?
@@ -90,3 +93,7 @@ schema:
   ha_tts_enabled: bool
   ha_tts_notify_service: str?
   ha_tts_media_stream: str?
+  network_alerts_enabled: bool
+  network_alert_notify_service: str?
+  network_alert_grace_minutes: int(1,120)
+  network_alert_hub_grace_minutes: int(1,120)
