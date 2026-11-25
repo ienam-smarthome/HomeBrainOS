@@ -155,6 +155,12 @@ def summarize_device_inventory(response, *, observed_at=None):
         "last_activity_over_24h": [],
     }
     max_members_per_metric = 250
+    profile = {"lights": [], "heating_devices": [], "contact_sensors": [],
+               "water_sensors": [], "motion_sensors": 0, "battery_devices": 0}
+
+    def _note(kind, label):
+        if len(profile[kind]) < 60 and label not in profile[kind]:
+            profile[kind].append(label)
     for device in devices:
         if not isinstance(device, dict):
             continue
@@ -174,6 +180,7 @@ def summarize_device_inventory(response, *, observed_at=None):
         if isinstance(switch, str) and switch.strip().lower() in ("on", "off"):
             is_light = _is_recognised_light(device, label)
             if is_light:
+                _note("lights", label)
                 light_covered += 1
                 if switch.strip().lower() == "on":
                     lights_on += 1
@@ -188,6 +195,7 @@ def summarize_device_inventory(response, *, observed_at=None):
         motion = states.get("motion")
         if isinstance(motion, str) and motion.strip().lower() in ("active", "inactive"):
             motion_covered += 1
+            profile["motion_sensors"] += 1
             if motion.strip().lower() == "active":
                 motion_active += 1
                 if len(members["motion_active"]) < max_members_per_metric:
@@ -195,6 +203,7 @@ def summarize_device_inventory(response, *, observed_at=None):
         level = _numeric(states.get("battery"))
         if level is not None:
             battery_covered += 1
+            profile["battery_devices"] += 1
             if level < 20:
                 battery_low += 1
                 if len(members["battery_low"]) < max_members_per_metric:
@@ -205,6 +214,7 @@ def summarize_device_inventory(response, *, observed_at=None):
         contact = states.get("contact")
         if isinstance(contact, str) and contact.strip().lower() in ("open", "closed"):
             contact_covered += 1
+            _note("contact_sensors", label)
             if contact.strip().lower() == "open":
                 contact_open += 1
                 if len(members["contact_open"]) < max_members_per_metric:
@@ -212,6 +222,7 @@ def summarize_device_inventory(response, *, observed_at=None):
         water = states.get("water")
         if isinstance(water, str) and water.strip().lower() in ("wet", "dry"):
             water_covered += 1
+            _note("water_sensors", label)
             if water.strip().lower() == "wet":
                 water_wet += 1
                 if len(members["water_wet"]) < max_members_per_metric:
@@ -223,6 +234,7 @@ def summarize_device_inventory(response, *, observed_at=None):
                 "heating", "idle", "cooling", "pending heat",
                 "pending cool", "fan only", "off"):
             heating_covered += 1
+            _note("heating_devices", label)
             if heat.strip().lower() == "heating":
                 heating_active += 1
                 if len(members["heating_active"]) < max_members_per_metric:
@@ -261,6 +273,7 @@ def summarize_device_inventory(response, *, observed_at=None):
         "source_declared_total": total,
         "inventory_full_coverage_verified": not partial,
         "unclassified_on_switches": unclassified_switch_on,
+        "profile": profile,
         "metrics": {
             "lights_on": metric("lights_on", lights_on, light_covered),
             "motion_active": metric("motion_active", motion_active, motion_covered),

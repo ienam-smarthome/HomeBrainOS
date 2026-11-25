@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Current code candidate: `2.0.0-alpha.186`. Fixes a lost-answer bug: when the model replied to the internal compute check with only an acknowledgement ("my draft stands as written") and computed nothing, that acknowledgement replaced the real answer (seen on two question-set answers). The original draft is now kept in that case.
+Current code candidate: `2.0.0-alpha.187`. Home knowledge and briefing: an owner-editable Home notes card and an observed device profile (lights vs sockets, heating devices, contact/water sensors) are given to the model before every answer; an on-demand and optional daily phone Home briefing is built from one read-only inventory snapshot (no model). `hub_list_devices` calls are kept inside what the hub accepts (attributeNames with detailed becomes summary; unbounded detailed reads get a limit) after the hub log showed validation errors and 108 KB response-cap errors. Prompt: dates only from tool results, no invented filter syntax.
 
 Per-alpha history (alpha.8 to alpha.171) is in [docs/HOMEBRAIN-V2-ALPHA-HISTORY.md](../docs/HOMEBRAIN-V2-ALPHA-HISTORY.md).
 
@@ -33,6 +33,7 @@ Configure:
 - `hubitat_mcp_token`: token if not already in the endpoint URL.
 - Optional `network_router_host`: your router's LAN address, so the System Health **Network status** check can tell a router fault from an internet fault.
 - Optional network alerts: set `network_alerts_enabled` to push a Home Assistant mobile-app notification when the internet (default 5 min, `network_alert_grace_minutes`) or the Hubitat hub (default 8 min, `network_alert_hub_grace_minutes`, long enough for a reboot) stays unreachable, plus one message when it recovers. Uses `network_alert_notify_service` (a `notify.mobile_app_*` service), else `ha_tts_notify_service`, else the only mobile app found. Needs `network_router_host` for best diagnosis. During a full internet outage the phone push may only arrive once the connection returns; the message then states how long it lasted.
+- Home notes: write how your home is organised (what counts as a light, which switches are internet blockers, units) in System Health → Home notes; the assistant reads them before every answer, together with an observed device profile (lights, heating devices, contact and water sensors) from the last inventory read. Optional daily briefing: set `briefing_enabled` and `briefing_time` (hub timezone) to receive low batteries, open contacts, leaks, stale devices, lights on, heating and any network problem as a phone notification (same notify service as network alerts). The System Health tab can also show it on demand.
 - `model_base_url`: Ollama-compatible endpoint, e.g. `https://ollama.com` or your local Ollama address.
 - `model_name`: a tool-calling model supported by that endpoint.
 - `model_api_key`: required for Ollama Cloud; blank for local Ollama.

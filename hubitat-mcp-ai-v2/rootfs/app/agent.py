@@ -108,7 +108,7 @@ from device_monitor import TOOL_NAME as MONITOR_TOOL, TOOL_DEFINITION as MONITOR
 from monitor_evidence import monitor_evidence_scope
 from retrieval_coverage import FileReadCoverage, file_chunk_scope, event_attribute_scope
 from receipt_compute import (
-    draft_states_aggregate, field_meaning_prose_note, filter_scope_note, partial_coverage_note, temperature_unit_note, partial_ranking_warning, unrun_tool_note, unit_conversion_note,
+    draft_states_aggregate, field_meaning_prose_note, normalize_list_devices_args, filter_scope_note, partial_coverage_note, temperature_unit_note, partial_ranking_warning, unrun_tool_note, unit_conversion_note,
     issued_cursors, cursor_continuation,
     TOOL_NAME as COMPUTE_TOOL, TOOL_DEFINITION as COMPUTE_TOOL_DEFINITION,
     ComputeError, compute as compute_receipt, field_meaning_note, rows_hint,
@@ -276,6 +276,9 @@ For a ranking ("most", "largest", "top N"), first use the source tool's own sort
 Receipts record the exact arguments of every call; before saying a filter or argument was not applied, check the call's arguments.
 For a "which are on", "which have" or "which are low" list over many devices, never request format "detailed" for all devices; use summary with attributeNames or filters.
 A summary device list has no capability data, so it cannot show that a device is or is not a light; use capabilityFilter or a label/room filter, or say that capability was not checked.
+State a date or year only if a tool result (clock, event or device timestamp) gives it; for "in the last hour" style questions read the clock first.
+Use only argument names and filter forms that appear in the tool's schema; never suggest filter syntax the schema does not show.
+Owner home notes, when present, say how this home is organised (what counts as a light, which switches are blockers); follow them, and treat the observed device profile as a starting map, not live state.
 When a question needs several independent reads (for example contact sensors and water sensors, or devices and apps), request all of them together in one turn rather than one per turn.
 Write a temperature unit (°C or °F) only if a tool result states it; otherwise write "degrees" and say the hub does not report the unit.
 Report observed values only. Do not state causes or intentions behind a change (for example "just finished boiling", "arriving", "arrived") unless a tool result states them.
@@ -769,6 +772,13 @@ class ModelEndpointUnavailable(RuntimeError):
 
 
 class Agent:
+    def _home_context_block(self) -> str:
+        try:
+            text = self.home_context() if callable(self.home_context) else ""
+        except Exception:
+            text = ""
+        return ("\n\n" + text) if text else ""
+
     def __init__(self, base_url: str, model: str, api_key: str, model_timeout: int,
                  cpu_cores: int = 4, *, local_think: bool | None = None,
                  local_num_ctx: int | None = None):
@@ -778,6 +788,7 @@ class Agent:
         self.cpu_cores = max(1, min(64, int(cpu_cores)))
         # None preserves the original Ollama Cloud/custom endpoint contract.
         self.local_think = local_think
+        self.home_context = None  # callable returning owner notes + device profile text
         self.local_num_ctx = local_num_ctx
         self.client = httpx.AsyncClient(
             timeout=httpx.Timeout(float(self.timeout), connect=3.0),
@@ -1023,7 +1034,7 @@ class Agent:
         ) if prepare_action and is_explicit_device_imperative(question) else ""
         messages: list[dict] = [
             {"role": "system", "content": _SKILL + "\n\n" + source_context
-             + preparation_guidance},
+             + preparation_guidance + self._home_context_block()},
             *history,
             *([{"role": "user", "content": prior_evidence}] if prior_evidence else []),
             {"role": "user", "content": question},
@@ -2780,6 +2791,7 @@ class Agent:
                     is_compute = name == COMPUTE_TOOL
                     cursor_refusal = None
                     cursor_note = None
+                    arg_adjustment = None
                     if not (is_prior or is_monitor or is_catalog or is_clock or is_compute) and name not in native_catalog_names:
                         raise CatalogToolUnavailable(
                             "Requested tool is not present in this request's connected "
@@ -2994,6 +3006,7 @@ class Agent:
                                         CLOCK_TOOL, COMPUTE_TOOL):
                             args, cursor_refusal, cursor_note = cursor_continuation(
                                 name, args, receipts)
+                            args, arg_adjustment = normalize_list_devices_args(name, args, catalog)
                         if cursor_refusal is not None:
                             result = {"isError": True, "content": [{"type": "text", "text": json.dumps(
                                 {"client_cursor_check": cursor_refusal, "hub_called": False})}]}
@@ -3113,6 +3126,9 @@ class Agent:
                         if cursor_note and not tool_error:
                             model_result["client_cursor_note"] = cursor_note
                             record["client_cursor_note"] = cursor_note
+                        if arg_adjustment:
+                            model_result["client_arg_adjustment"] = arg_adjustment
+                            record["client_arg_adjustment"] = arg_adjustment["changes"]
                         if source_size_refusal is not None:
                             model_result["client_source_limit"] = source_size_refusal
                         elif not tool_error:

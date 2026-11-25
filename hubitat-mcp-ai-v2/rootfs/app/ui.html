@@ -532,6 +532,9 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 #questionSetCard .qs-row small{display:block;color:var(--hb-sub);margin-top:2px;overflow-wrap:anywhere}
 #questionSetCard .qs-ok{color:#4ade80;font-weight:700}#questionSetCard .qs-bad{color:#ff6b6b;font-weight:700}
 @media(prefers-color-scheme:light){#questionSetCard .qs-ok{color:#17794a}#questionSetCard .qs-bad{color:#c62828}}
+.briefing-body{white-space:pre-wrap;font:inherit;margin:.6rem 0 0;padding:.7rem .8rem;border:1px solid var(--hb-border,#2a3a52);border-radius:10px}
+#homeNotesText{width:100%;box-sizing:border-box;font:inherit;padding:.6rem .7rem;border-radius:10px;border:1px solid var(--hb-border,#2a3a52);background:transparent;color:inherit;resize:vertical}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 </style></head>
 <body>
 <header><div class="header-inner"><div class="brand"><div class="brand-mark" aria-hidden="true">⌘</div><div class="brand-copy"><h1>Hubitat MCP AI <span class="brand-v">v2</span></h1><small>HomeBrainOS · Smart home assistant</small></div></div><div class="header-status"><button type="button" id="statusPill" aria-controls="statusPanel" aria-expanded="false" onclick="toggleStatusPill()"><span id="state">Checking configuration…</span></button><div id="statusPanel" class="status-popover" hidden><strong>V2 connection details</strong><p id="statusMeta">Model and MCP status not yet loaded.</p><div id="statusMonitor"></div><button id="checkConnection" type="button" onclick="checkMonitorSource()">Check Hub & Device Monitor</button></div><button id="reloadUI" hidden onclick="reloadInterface()">Reload interface</button></div></div></header>
@@ -598,6 +601,20 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
  <h3 class="health-section-title">Currently reported</h3>
  <details class="hint"><summary aria-label="About this section">ⓘ</summary><p class="health-helper">Lights, motion, heating and other switches are snapshots, not continuous activity or inferred heating demand.</p></details>
  <div id="healthActive" class="health-grid" aria-label="Observed active device states"></div>
+ <div class="health-actions card" id="briefingCard">
+  <h3>Home briefing</h3>
+  <p class="muted">Low batteries, open contacts, leaks, stale devices, lights on, heating and network problems from one read-only inventory read. A daily phone notification can be turned on in the add-on options.</p>
+  <div class="qs-actions"><button type="button" id="briefingShow">Show briefing now</button></div>
+  <pre id="briefingBody" class="briefing-body" role="status" aria-live="polite" hidden></pre>
+ </div>
+ <div class="health-actions card" id="homeNotesCard">
+  <h3>Home notes</h3>
+  <p class="muted">Tell the assistant how your home is organised. It reads these notes before every answer. Plain text, up to 3000 characters.</p>
+  <label for="homeNotesText" class="sr-only">Home notes</label>
+  <textarea id="homeNotesText" rows="7" maxlength="3000" spellcheck="true" placeholder="For example: Lights are dimmers named 'Light'. Switches named Block ... are internet blockers."></textarea>
+  <div class="qs-actions"><button type="button" id="homeNotesSave">Save notes</button><button type="button" id="homeNotesStarter">Insert suggested starter</button><span id="homeNotesCount" class="muted"></span></div>
+  <p id="homeNotesStatus" role="status" aria-live="polite" class="muted"></p>
+ </div>
  <div class="health-actions card" id="questionSetCard">
   <h3>Question set (self-test)</h3>
   <details class="hint-block"><summary>What this does</summary><p>Runs 10 fixed read-only questions one after another through the normal Ask path (about 4 minutes, one model request per round, so it uses your configured model). It never prepares or sends a write. Each answer is checked only for measurable things: success, tool errors, any write attempt, time, rounds. Whether an answer is correct still needs a human review: use Copy report and paste it into your review chat. The report includes answer text, so treat it as private.</p></details>
@@ -662,7 +679,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.186";
+const UI_VERSION="2.0.0-alpha.187";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let activeAskController=null, askGeneration=0;
@@ -894,6 +911,41 @@ function networkAuto(on){
 document.addEventListener('visibilitychange',()=>{
  if(networkTimer&&document.visibilityState==='visible'&&Date.now()-networkLastAt>30000)checkNetworkStatus();
 });
+
+let homeNotesStarter='';
+async function loadHomeNotes(){
+ try{
+  const d=await readJson('api/home-notes',{headers:{'X-Homebrain-Request':'1'}});
+  homeNotesStarter=d.starter||'';
+  const box=byId('homeNotesText');if(!box)return;
+  if(document.activeElement!==box)box.value=d.notes||'';
+  updateHomeNotesCount();
+  byId('homeNotesStatus').textContent=d.notes?'Saved notes are in use.':'No notes saved yet; the assistant relies on live reads only.';
+ }catch(e){}
+}
+function updateHomeNotesCount(){const b=byId('homeNotesText'),c=byId('homeNotesCount');if(b&&c)c.textContent=b.value.length+' / 3000';}
+async function saveHomeNotes(){
+ const st=byId('homeNotesStatus');st.textContent='Saving…';
+ try{
+  const r=await fetch('api/home-notes',{method:'PUT',headers:{'Content-Type':'application/json','X-Homebrain-Request':'1'},body:JSON.stringify({notes:byId('homeNotesText').value})});
+  const d=await r.json();
+  st.textContent=r.ok?'Saved. The assistant uses these from the next question.':'Not saved: '+(d.detail||r.status);
+ }catch(e){st.textContent='Not saved: '+e.message}
+}
+async function showBriefing(){
+ const out=byId('briefingBody'),btn=byId('briefingShow');
+ btn.disabled=true;out.hidden=false;out.textContent='Reading the hub…';
+ try{
+  const d=await readJson('api/briefing',{headers:{'X-Homebrain-Request':'1'}});
+  out.textContent=d.available?d.title+'\n'+d.body:(d.reason||'Briefing unavailable');
+ }catch(e){out.textContent='Briefing unavailable: '+e.message}
+ btn.disabled=false;
+}
+byId('homeNotesSave')?.addEventListener('click',saveHomeNotes);
+byId('homeNotesText')?.addEventListener('input',updateHomeNotesCount);
+byId('homeNotesStarter')?.addEventListener('click',()=>{const b=byId('homeNotesText');b.value=(b.value?b.value.replace(/\s+$/,'')+'\n':'')+homeNotesStarter;updateHomeNotesCount();byId('homeNotesStatus').textContent='Starter inserted; edit it to match your home, then Save.'});
+byId('briefingShow')?.addEventListener('click',showBriefing);
+loadHomeNotes();
 async function loadNetworkAlerts(){
  try{
   const a=await readJson('api/network/alerts',{headers:{'X-Homebrain-Request':'1'}});

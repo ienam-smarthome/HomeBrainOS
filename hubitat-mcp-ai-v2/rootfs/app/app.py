@@ -6,7 +6,9 @@ import json
 import os
 import re
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -35,6 +37,8 @@ from interaction import Interaction
 from routine_approval_policy import trusted_switch_ids
 from one_off_cleanup import OneOffCleanup
 from network_status import NetworkWatch, network_status
+from home_knowledge import (STARTER_NOTES, BriefingSchedule, HomeKnowledge, HomeNotes,
+                            briefing_text)
 from conversation import ConversationEvidence
 from frozen_evaluation import FrozenEvaluationError, freeze_capture, replay_frozen_capture
 
@@ -77,6 +81,8 @@ DEFAULTS: dict[str, Any] = {
     "ha_tts_enabled": False,
     "ha_tts_notify_service": "",
     "ha_tts_media_stream": "",
+    "briefing_enabled": False,
+    "briefing_time": "07:30",
     "network_alerts_enabled": False,
     "network_alert_notify_service": "",
     "network_alert_grace_minutes": 5,
@@ -175,6 +181,39 @@ async def lifecycle(app: FastAPI):
             )
     except (MCPError, ValueError) as exc:
         app.state.configuration_error = str(exc)
+    async def _read_snapshot():
+        if app.state.mcp is None:
+            raise RuntimeError("MCP not configured")
+        return await asyncio.wait_for(read_overview(app.state.mcp), timeout=25)
+
+    app.state.home_knowledge = HomeKnowledge(
+        HomeNotes(Path("/data/homebrain-v2-home-notes.txt")), _read_snapshot)
+    if app.state.model is not None:
+        app.state.model.home_context = app.state.home_knowledge.context
+
+    async def _build_briefing():
+        snapshot = await app.state.home_knowledge.refresh(force=True)
+        if snapshot is None:
+            raise RuntimeError("inventory unavailable")
+        failing = app.state.network_watch.status().get("failing", {})
+        problems = {k: f"{k} unreachable for about {round(v / 60)} min" for k, v in failing.items()}
+        zone = ZoneInfo(str(options["hub_timezone"]))
+        return briefing_text(snapshot, problems=problems, local_now=datetime.now(zone))
+
+    async def _send_briefing(title, body):
+        await app.state.alert_push.push(title, body)
+
+    app.state.briefing = None
+    try:
+        if options["briefing_enabled"]:
+            app.state.briefing = BriefingSchedule(
+                _build_briefing, _send_briefing, time_of_day=str(options["briefing_time"]),
+                timezone=str(options["hub_timezone"]))
+            app.state.briefing.start()
+    except (ValueError, KeyError) as exc:
+        app.state.configuration_error = f"briefing: {exc}"
+    app.state._build_briefing = _build_briefing
+    app.state.home_profile_task = asyncio.create_task(app.state.home_knowledge.refresh())
     app.state.one_off_cleanup = OneOffCleanup(
         app.state.mcp,
         enabled=bool(options["one_off_cleanup_enabled"]),
@@ -228,6 +267,9 @@ async def lifecycle(app: FastAPI):
             await app.state.device_monitor.close()
         await app.state.tts.close()
         await app.state.network_watch.close()
+        if app.state.briefing:
+            await app.state.briefing.close()
+        app.state.home_profile_task.cancel()
         await app.state.alert_push.close()
         if app.state.mcp:
             await app.state.mcp.close()
@@ -235,7 +277,7 @@ async def lifecycle(app: FastAPI):
             await app.state.model.close()
 
 
-app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.186", lifespan=lifecycle)
+app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.187", lifespan=lifecycle)
 app.include_router(benchmark_router)
 app.include_router(autonomous_router)
 app.include_router(reasoning_router)
@@ -360,6 +402,38 @@ async def network(request: Request):
     options = app.state.options
     return await network_status(str(options.get("hubitat_mcp_url", "")),
                                 str(options.get("network_router_host", "")))
+
+
+@app.get("/api/home-notes")
+async def home_notes_get(request: Request):
+    require_ui_request(request)
+    saved = app.state.home_knowledge.notes.load()
+    return {"notes": saved, "starter": STARTER_NOTES, "max_chars": 3000,
+            "profile_available": bool(app.state.home_knowledge.snapshot)}
+
+
+@app.put("/api/home-notes")
+async def home_notes_put(request: Request):
+    require_ui_request(request)
+    body = await request.json()
+    try:
+        saved = app.state.home_knowledge.notes.save(body.get("notes"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"notes": saved, "saved": True}
+
+
+@app.get("/api/briefing")
+async def briefing(request: Request):
+    """On-demand briefing from one read-only inventory snapshot; no model, no writes."""
+    require_ui_request(request)
+    try:
+        title, body = await app.state._build_briefing()
+    except Exception:
+        return {"available": False, "reason": "Inventory unavailable for the briefing"}
+    sched = app.state.briefing
+    return {"available": True, "title": title, "body": body,
+            "scheduled": bool(sched), "last_error": sched.last_error if sched else None}
 
 
 @app.get("/api/network/alerts")
