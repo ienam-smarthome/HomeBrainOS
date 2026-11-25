@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-**Current code candidate: alpha.174 (25 November 2026).** Fixes desktop light-theme System Health colours: the attention banner and the Network status card kept dark backgrounds under dark text (unreadable), amber counts were pale on white, and the heading sat on a stray white band. Light theme now has readable banner/card surfaces and darker amber (attention), red (Reported offline) and green (Currently reported) counts; the dark theme shows Currently reported counts in green. Presentation only; no counts or logic changed. Local validation: pytest, UI node test, browser smoke, golden suite, screenshot contrast checks, add-on validation.
+**Current code candidate: alpha.175 (25 November 2026).** The alpha.173 capture ranked devices correctly by `stateSize` but closed by saying it "correlates with memory consumption". When a receipt carries the client field-meaning note (runtime table fields, not memory), a clause of the model's answer that names memory/RAM next to `stateSize` without a negation now gets a deterministic footnote saying those fields are stored-state bytes or runtime measures, not RAM, and whether a memory source was read. The model's text is never edited; the prompt also forbids calling those fields a proxy for memory. Local validation: pytest, unittest, UI node test, browser smoke, golden suite, screenshots, add-on validation.
 
 Per-alpha history (alpha.8 to alpha.171) is in [docs/HOMEBRAIN-V2-ALPHA-HISTORY.md](../docs/HOMEBRAIN-V2-ALPHA-HISTORY.md).
 

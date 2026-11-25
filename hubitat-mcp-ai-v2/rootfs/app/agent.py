@@ -108,7 +108,7 @@ from device_monitor import TOOL_NAME as MONITOR_TOOL, TOOL_DEFINITION as MONITOR
 from monitor_evidence import monitor_evidence_scope
 from retrieval_coverage import FileReadCoverage, file_chunk_scope, event_attribute_scope
 from receipt_compute import (
-    partial_coverage_note, unrun_tool_note, unit_conversion_note,
+    field_meaning_prose_note, partial_coverage_note, unrun_tool_note, unit_conversion_note,
     issued_cursors, cursor_continuation,
     TOOL_NAME as COMPUTE_TOOL, TOOL_DEFINITION as COMPUTE_TOOL_DEFINITION,
     ComputeError, compute as compute_receipt, field_meaning_note, rows_hint,
@@ -272,6 +272,7 @@ event or separately timestamped measurement supports a measurement time.
 Convert KB to MB by dividing by 1,000 (decimal) unless the user asks for MiB;
 never label a divide-by-1,024 figure as MB.
 For a ranking ("most", "largest", "top N"), first use the source tool's own sort or limit parameters when its schema offers them (for example a sortBy argument with a small limit); the rows then come back already ordered, and the first N rows are the answer without paging through everything. When coverage says the rows are source-ordered, describe them as the leading rows of the hub's own ordering, not as an arbitrary partial sample.
+Never say a stored-state or runtime field (stateSize, pct, total) correlates with, approximates or is a proxy for memory or RAM; state what it measures and that per-device memory is not provided.
 Never say or imply a tool was run unless this request has a successful receipt for it. A table of numbers must come from receipts; if a figure was not read, say it was not read and offer to read it.
 When a row result's client_row_compute_hint.coverage.partial is true, any ranking, count or maximum you give covers only the returned rows: say "N of M rows". List every row the compute result ranked above the ones you mention, in the computed order. A table of apps is not a table of devices: choose the source whose rows are the thing asked about, or say it is the closest available one.
 Name every source field exactly as the source names it and never relabel it
@@ -1404,6 +1405,9 @@ class Agent:
                 coverage_note = partial_coverage_note(receipts)
                 if coverage_note:
                     verified_answer = f"{verified_answer}\n\n{coverage_note}"
+                field_note = field_meaning_prose_note(verified_answer, receipts)
+                if field_note:
+                    verified_answer = f"{verified_answer}\n\n{field_note}"
                 unrun_note = unrun_tool_note(verified_answer, receipts, native_catalog_names)
                 if unrun_note:
                     verified_answer = f"{verified_answer}\n\n{unrun_note}"
@@ -3077,6 +3081,9 @@ class Agent:
                             meaning = field_meaning_note(name, result)
                             if meaning is not None:
                                 model_result["client_field_meaning"] = meaning
+                                record["field_meaning_fields"] = sorted(
+                                    k for k, v in meaning["meanings"].items() if "not " in v
+                                    or k == "stateSize")
                             unit_note = unit_conversion_note(result)
                             if unit_note is not None:
                                 model_result["client_unit_conversions"] = unit_note

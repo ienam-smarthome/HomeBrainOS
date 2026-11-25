@@ -193,3 +193,8 @@ answers and its round-time cost.
 
 - UI only: light-theme overrides for System Health banner, network card, attention/offline/reported count colours; Currently reported counts are green in both themes.
 - alpha.173 capture (private): sortBy read of 20 rows plus compute; footnote used the new source-ordered wording; answer still called stateSize a proxy that 'correlates with memory consumption' (unsupported); the prompt rule on not equating stateSize with memory needs tightening (not in this alpha).
+
+## alpha.175
+
+- `field_meaning_prose_note(answer, receipts)` (receipt_compute.py), appended beside the coverage note. Trigger is structural (a receipt recorded `field_meaning_fields`); it inspects the model's answer clauses, not the question. Heuristic: clause contains memory/RAM and `stateSize` with no negation word.
+- Limits: a heuristic on model wording; may miss paraphrases or flag a correct clause lacking a negation word.
