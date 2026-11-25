@@ -169,7 +169,7 @@ class UIContracts(unittest.TestCase):
             'duration>400&&activeRecognition',
             '@media(prefers-color-scheme:light)',
             '@media(prefers-reduced-motion:reduce)',
-            '2.0.0-alpha.177',
+            '2.0.0-alpha.178',
         ):
             self.assertIn(needle, HTML, needle)
         # System Health owns the inventory; chat stays a full-width conversation.
@@ -212,7 +212,7 @@ class UIContracts(unittest.TestCase):
             'Array.isArray(response?.answer_stage_trace)',
             'observed_after_ms',
             'Original MCP receipt',
-            'UI_VERSION="2.0.0-alpha.177"',
+            'UI_VERSION="2.0.0-alpha.178"',
             "api/activity/",
             'pendingApproval.effect_class',
             'void submitAsk()',
@@ -261,6 +261,12 @@ class UnqueuedActionChoices(unittest.TestCase):
                      '.health-card.needs-review.is-offline .health-count{color:#c62828}',
                      '.health-card.has-reported:not(.needs-review) .health-count{color:#17794a}'):
             self.assertIn(rule, light)
+
+    def test_question_set_card_is_read_only_and_labelled_private(self):
+        card = HTML.split('id="questionSetCard"')[1].split('<h3>Troubleshooting</h3>')[0]
+        for needle in ("Run question set", "Copy report", "never prepares or sends a write", "private"):
+            self.assertIn(needle, card)
+        self.assertIn("prepare_action:false", HTML.split("async function runQuestionSet")[1])
 
 
 if __name__ == "__main__":

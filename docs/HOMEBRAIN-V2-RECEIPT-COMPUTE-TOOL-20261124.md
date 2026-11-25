@@ -210,3 +210,8 @@ answers and its round-time cost.
 
 - Evidence (alpha.175 apps capture, private): 4 rounds, ranked apps over the first 50 of 189 unsorted rows; the field-note footnote fired and read correctly.
 - `partial_ranking_warning(source_receipt, compute_args, catalog)`: structural (receipt coverage and args, compute op/field, live schema parameter names). Warns; never auto-reruns or blocks. A model that ignores it still produces a partial-disclosed answer.
+
+## alpha.178
+
+- UI-only self-test: `QUESTION_SET` (10 read-only questions), `scoreQuestionRun` (measurable checks only; correctness stays a human review), `runQuestionSet`/`copyQuestionSetReport`. No new server route; reuses `/api/ask`.
+- Limits: sequential, no write ever prepared; a failing question does not stop the run; results are not stored server-side.
