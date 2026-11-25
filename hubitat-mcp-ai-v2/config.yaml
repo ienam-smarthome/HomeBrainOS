@@ -42,6 +42,7 @@ options:
   # Comma-separated native IDs of explicitly trusted physical safe switches.
   # Empty = other switches still require approval.
   routine_auto_approve_safe_switch_ids: ""
+  routine_auto_approve_internet_block: true
   hub_timezone: "Europe/London"
   external_hub_diagnostics_enabled: false
   external_hub_diagnostics_probe_seconds: 30
@@ -79,6 +80,7 @@ schema:
   investigation_timeout_seconds: int(30,1800)
   routine_auto_approve_lights: bool
   routine_auto_approve_safe_switch_ids: str?
+  routine_auto_approve_internet_block: bool
   hub_timezone: str
   external_hub_diagnostics_enabled: bool
   external_hub_diagnostics_hub_url: str?

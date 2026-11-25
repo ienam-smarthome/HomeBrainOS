@@ -116,7 +116,9 @@ def action_preview(name: str, arguments: dict, effect: str, *, verified_devices:
 class Interaction:
     def __init__(self, *, require_native_write_approval: bool = False,
                  auto_approve_lights: bool = False,
-                 trusted_safe_switch_ids: frozenset[str] = frozenset()):
+                 trusted_safe_switch_ids: frozenset[str] = frozenset(),
+                 auto_approve_internet_block: bool = False):
+        self.auto_approve_internet_block = auto_approve_internet_block is True
         self.require_native_write_approval = require_native_write_approval
         self.auto_approve_lights = auto_approve_lights is True
         self.trusted_safe_switch_ids = frozenset(trusted_safe_switch_ids)
@@ -195,6 +197,15 @@ class Interaction:
         self._routine_proof = {"batch_args": copy.deepcopy(args), "class": "verified_light_batch"}
         return True
 
+    def offer_internet_block_authorization(self, args: dict, candidate: dict | None) -> bool:
+        """Single-use authorization for one verified per-device block/allow command, bound to exact args."""
+        self._routine_proof = None
+        if (candidate is None or self._cancelled or self.native_write_submission_started
+                or not self.require_native_write_approval or not self.auto_approve_internet_block):
+            return False
+        self._routine_proof = {"internet_args": copy.deepcopy(args), "class": "verified_internet_block"}
+        return True
+
     def status(self) -> dict:
         return {"current": self.current, "pending": self.pending,
                 "phase": self.phase, "cancelled": self._cancelled}
@@ -227,6 +238,9 @@ class Interaction:
                 and ((proof.get("batch_args") is not None
                       and name == "hub_call_device_command"
                       and proof["batch_args"] == arguments)
+                     or (proof.get("internet_args") is not None
+                         and name == "hub_call_device_command"
+                         and proof["internet_args"] == arguments)
                      or (proof.get("candidate") is not None
                          and matches_original_native_write(
                              proof["candidate"], name, arguments)))):
