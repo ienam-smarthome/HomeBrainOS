@@ -250,6 +250,10 @@ class UnqueuedActionChoices(unittest.TestCase):
         self.assertIn(".health-card.has-reported:not(.needs-review) .health-count{color:var(--hb-accent)", HTML)
         self.assertIn("else if(count!==null&&count>0&&covered>0)article.classList.add('has-reported')", HTML)
 
+    def test_reported_offline_count_is_red_only_when_above_zero(self):
+        self.assertIn("if(key==='reported_offline')article.classList.add('is-offline')", HTML)
+        self.assertIn(".health-card.needs-review.is-offline .health-count{color:#ff6b6b}", HTML)
+
 
 if __name__ == "__main__":
     unittest.main()

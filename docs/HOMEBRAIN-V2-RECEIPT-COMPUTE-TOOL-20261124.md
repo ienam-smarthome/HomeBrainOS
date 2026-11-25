@@ -187,3 +187,4 @@ answers and its round-time cost.
 ## alpha.173
 
 - UI only: `has-reported` class on System Health snapshot tiles with state readings and a count above zero (outside Needs attention) colours the number with `--hb-accent`.
+- UI only: `is-offline` class turns the Reported offline count and left edge red when the count is above zero with state readings.
