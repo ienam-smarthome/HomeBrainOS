@@ -233,3 +233,7 @@ The 25 Nov question-set run passed 4/10, every failure on rounds. Changes: the c
 ## Alpha.184: hold back partial rankings
 
 In the alpha.183 run the ranking warning appeared on Q1 and Q2 but the model ignored it and answered "top N" from an unsorted first page (Q2 listed apps that were not the largest). The first sort/min/max compute over a partial, unsorted page whose source offers a sort parameter now returns `ranking_computed: false` plus the warning; the second attempt on the same receipt is computed as before, so there is no loop. Derived only from receipt coverage, the compute call's declared field and the live schema. Live effect not yet measured.
+
+## Alpha.185: filter scope and held-back coverage
+
+The alpha.184 run fixed the Q1/Q2 rankings but (a) the footnote still said "50 of 293 rows" because the held-back compute counted as a computation, and (b) for "What changed in the last hour?" the model twice read the filtered `total` (96) as the inventory size and claimed `changedSince` had not been applied. Held-back computes are now ignored by `partial_coverage_note`; `filter_scope_note` adds `client_filter_scope` to `hub_list_devices` results whose call carried a filter. Both derive only from receipts and call arguments. Live effect not yet measured.
