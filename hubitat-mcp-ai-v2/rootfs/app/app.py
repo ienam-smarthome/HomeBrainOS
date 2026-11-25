@@ -34,6 +34,7 @@ from agent import Agent, InitialCatalogUnavailable
 from interaction import Interaction
 from routine_approval_policy import trusted_switch_ids
 from one_off_cleanup import OneOffCleanup
+from network_status import network_status
 from conversation import ConversationEvidence
 from frozen_evaluation import FrozenEvaluationError, freeze_capture, replay_frozen_capture
 
@@ -41,6 +42,7 @@ from frozen_evaluation import FrozenEvaluationError, freeze_capture, replay_froz
 DEFAULTS: dict[str, Any] = {
     "hubitat_mcp_url": "",
     "hubitat_mcp_token": "",
+    "network_router_host": "",
     "cloud_mode": "free",
     "cloud_free_model": "openrouter/free",
     "cloud_paid_provider": "openrouter",
@@ -211,7 +213,7 @@ async def lifecycle(app: FastAPI):
             await app.state.model.close()
 
 
-app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.163", lifespan=lifecycle)
+app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.164", lifespan=lifecycle)
 app.include_router(benchmark_router)
 app.include_router(autonomous_router)
 app.include_router(reasoning_router)
@@ -327,6 +329,15 @@ async def overview(request: Request):
         return {"available": False, "read_only": True,
                 "reason": "Read-only inventory unavailable; verify MCP connectivity and inventory permissions"}
     return {"available": True, **snapshot}
+
+
+@app.get("/api/network/status")
+async def network(request: Request):
+    """One bounded, read-only reachability probe set; no model calls or writes."""
+    require_ui_request(request)
+    options = app.state.options
+    return await network_status(str(options.get("hubitat_mcp_url", "")),
+                                str(options.get("network_router_host", "")))
 
 
 @app.get("/api/sources/device-monitor/check")

@@ -195,6 +195,26 @@ class RowsHint(unittest.TestCase):
         self.assertEqual(out["rows_in_list"], 12)
 
 
+class PartialCoverageNote(unittest.TestCase):
+    def receipts(self, partial=True):
+        src = {"name": "hub_get_logs", "success": True, "result_kind": "tool_result",
+               "row_coverage": {"rows_returned": 50, "source_reported_total": 189, "partial": partial}}
+        comp = {"name": "homebrain_compute_receipt", "success": True, "result_kind": "local_compute",
+                "arguments": {"receipt_index": 1, "operation": "max", "field": "stateSize"}}
+        return [src, comp]
+
+    def test_note_added_for_partial_source(self):
+        from receipt_compute import partial_coverage_note
+        note = partial_coverage_note(self.receipts())
+        self.assertIn("50 of 189 rows", note)
+        self.assertIn("hub_get_logs", note)
+
+    def test_no_note_when_complete_or_no_compute(self):
+        from receipt_compute import partial_coverage_note
+        self.assertIsNone(partial_coverage_note(self.receipts(partial=False)))
+        self.assertIsNone(partial_coverage_note(self.receipts()[:1]))
+
+
 class RowCoverage(unittest.TestCase):
     def result(self, total, cursor=None):
         rows = [{"name": f"d{i}", "stateSize": 1000 + i} for i in range(12)]

@@ -329,9 +329,16 @@ main{max-width:1280px}
 .overview-footer{margin:5px 0 0;gap:6px}
 .overview-footer small,.overview-limits summary{font-size:10.5px;color:var(--hb-sub)}
 @media(min-width:1000px){#systemHealth .overview-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}}
+.network-head{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.network-checks{list-style:none;margin:10px 0 6px;padding:0;display:grid;gap:6px}
+.network-checks li{display:flex;gap:8px;justify-content:space-between;font-size:13px;border:1px solid var(--hb-edge);border-radius:9px;padding:8px 10px}
+.network-checks li.ok::before{content:"● ";color:#3ddc84}.network-checks li.down::before{content:"● ";color:#ff6b6b}
+.network-checks li span:last-child{color:var(--hb-sub);font-variant-numeric:tabular-nums}
 @media(max-width:650px){main{padding:11px}.ask-grid{gap:9px}
 #ask .compose-card{padding:10px 11px}
-.command-form{gap:7px;padding:7px}.mic-round{flex-basis:45px;width:45px;height:45px}
+.command-form{gap:7px;padding:7px;flex-wrap:wrap}.mic-round{flex-basis:45px;width:45px;height:45px}
+#ask .command-form #question{flex:1 1 calc(100% - 62px);min-width:0;width:auto;order:0}
+#ask .command-form #send,#ask .command-form #cancelAsk{flex:1 1 40%;order:2;min-height:44px}
 #ask #send{padding:11px 13px;min-width:58px}
 .overview-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.overview-tile{padding:8px}
 .overview-tile span{font-size:10px}.overview-tile strong{font-size:19px}
@@ -502,6 +509,9 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
  <h3 class="health-section-title">HomeBrainOS runtime</h3>
  <p class="health-helper">Existing page-start status, not a live connection test. Saved diagnostics use their observation timestamps.</p>
  <div id="healthRuntime" class="health-grid" aria-label="HomeBrainOS setup, diagnostics and optional monitor"></div>
+ <h3 class="health-section-title">Network status</h3>
+ <p class="health-helper">One read-only check from the add-on host when you press the button: internet, DNS, the Hubitat hub and an optional router. Not polled. It does not test the hub's own internet access.</p>
+ <div class="card network-card" id="networkCard"><div class="network-head"><strong id="networkSummary" role="status" aria-live="polite">Not checked yet</strong><button id="checkNetwork" type="button" class="health-refresh" onclick="checkNetworkStatus()">Check network</button></div><ul id="networkChecks" class="network-checks"></ul><small id="networkScope" class="muted"></small></div>
  <h3 class="health-section-title">Needs attention</h3>
  <p class="health-helper">Observed states, not independently verified faults. Missing state reports are unknown, not healthy.</p>
  <div id="healthAttention" class="health-grid" aria-label="Potential issues reported by returned attributes"></div>
@@ -564,7 +574,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.163";
+const UI_VERSION="2.0.0-alpha.164";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let activeAskController=null, askGeneration=0;
@@ -772,6 +782,25 @@ function renderSystemHealth(snapshot){
   attention.appendChild(healthSnapshotCard(metrics[key],key,label,kind));
  for(const [key,label,kind] of HEALTH_ACTIVE)
   active.appendChild(healthSnapshotCard(metrics[key],key,label,kind));
+}
+let networkPending=false;
+async function checkNetworkStatus(){
+ if(networkPending)return;networkPending=true;
+ const button=byId('checkNetwork');button.disabled=true;
+ byId('networkSummary').textContent='Checking…';
+ try{
+  const d=await readJson('api/network/status',{headers:{'X-Homebrain-Request':'1'}});
+  byId('networkSummary').textContent=d.summary||'No result';
+  const list=byId('networkChecks');list.replaceChildren();
+  for(const c of d.checks||[]){
+   const li=document.createElement('li');li.className=c.ok?'ok':'down';
+   const n=document.createElement('span');n.textContent=c.name;
+   const r=document.createElement('span');r.textContent=c.ok?(c.ms!=null?c.ms+' ms':'ok'):'no response';
+   li.append(n,r);list.append(li);
+  }
+  byId('networkScope').textContent=(d.router_configured?'':'Set network_router_host in the add-on options to include your router. ')+(d.scope||'');
+ }catch(e){byId('networkSummary').textContent='Network check unavailable';}
+ finally{networkPending=false;button.disabled=false;}
 }
 function renderRuntimeHealth(status){
  // Read-only view of the cached initial /api/status response. No new calls.
