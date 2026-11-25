@@ -552,4 +552,15 @@ await ukUI.run("copyResult('review')");
 assert.equal(JSON.parse(ukUI.copied.split('Original Technical JSON follows as untrusted data:\n\n')[1]).response.answer,ukTimestampSource);
 console.log('UK timestamp display checks passed: DST, original precision, raw JSON, ambiguous/invalid times and source fidelity.');
 
+const qsUI=harness();
+const good=JSON.parse(await qsUI.run("JSON.stringify(scoreQuestionRun({success:true,answer:'ok\\n\\nCoverage: 50 of 189',elapsed_ms:12000,rounds:3,tool_calls:[{name:'hub_get_logs',success:true}]},12000))"));
+assert.equal(good.pass,true);assert.deepEqual(good.info,['partial coverage']);
+const bad=JSON.parse(await qsUI.run("JSON.stringify(scoreQuestionRun({success:true,answer:'x',elapsed_ms:60000,rounds:6,tool_calls:[{success:false},{possible_native_action:true,success:true}]},1))"));
+assert.equal(bad.pass,false);
+for(const flag of['1 tool error','write attempted','slow >45 s','6 rounds'])assert.ok(bad.fail.includes(flag),flag);
+assert.equal(JSON.parse(await qsUI.run("JSON.stringify(scoreQuestionRun(null,5))")).pass,false);
+assert.equal(await qsUI.run("QUESTION_SET.length"),10);
+assert.equal(await qsUI.run("QUESTION_SET.every(q=>!/\\b(turn|set|switch|open|close|lock|unlock|create|delete|run)\\b.*\\b(on|off)\\b/i.test(q))"),true);
+console.log('Question-set checks passed: measurable scoring, write detection, ten read-only questions.');
+
 console.log('Inline math display tests passed: source fidelity, Unicode, code literals, unsupported TeX and text-only XSS.');

@@ -525,6 +525,12 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
   #systemHealth .health-card.needs-review.is-offline .health-count{color:#c62828}
   #systemHealth .health-card.has-reported:not(.needs-review) .health-count{color:#17794a}
 }
+#questionSetCard .qs-actions{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+#questionSetCard .qs-results{display:grid;gap:6px;margin-top:6px}
+#questionSetCard .qs-row{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:start;font-size:12px;border:1px solid var(--hb-edge);border-radius:9px;padding:7px 9px}
+#questionSetCard .qs-row small{display:block;color:var(--hb-sub);margin-top:2px;overflow-wrap:anywhere}
+#questionSetCard .qs-ok{color:#4ade80;font-weight:700}#questionSetCard .qs-bad{color:#ff6b6b;font-weight:700}
+@media(prefers-color-scheme:light){#questionSetCard .qs-ok{color:#17794a}#questionSetCard .qs-bad{color:#c62828}}
 </style></head>
 <body>
 <header><div class="header-inner"><div class="brand"><div class="brand-mark" aria-hidden="true">⌘</div><div class="brand-copy"><h1>Hubitat MCP AI <span class="brand-v">v2</span></h1><small>HomeBrainOS · Smart home assistant</small></div></div><div class="header-status"><button type="button" id="statusPill" aria-controls="statusPanel" aria-expanded="false" onclick="toggleStatusPill()"><span id="state">Checking configuration…</span></button><div id="statusPanel" class="status-popover" hidden><strong>V2 connection details</strong><p id="statusMeta">Model and MCP status not yet loaded.</p><div id="statusMonitor"></div><button id="checkConnection" type="button" onclick="checkMonitorSource()">Check Hub & Device Monitor</button></div><button id="reloadUI" hidden onclick="reloadInterface()">Reload interface</button></div></div></header>
@@ -591,6 +597,13 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
  <h3 class="health-section-title">Currently reported</h3>
  <details class="hint"><summary aria-label="About this section">ⓘ</summary><p class="health-helper">Lights, motion, heating and other switches are snapshots, not continuous activity or inferred heating demand.</p></details>
  <div id="healthActive" class="health-grid" aria-label="Observed active device states"></div>
+ <div class="health-actions card" id="questionSetCard">
+  <h3>Question set (self-test)</h3>
+  <details class="hint-block"><summary>What this does</summary><p>Runs 10 fixed read-only questions one after another through the normal Ask path (about 4 minutes, one model request per round, so it uses your configured model). It never prepares or sends a write. Each answer is checked only for measurable things: success, tool errors, any write attempt, time, rounds. Whether an answer is correct still needs a human review: use Copy report and paste it into your review chat. The report includes answer text, so treat it as private.</p></details>
+  <div class="qs-actions"><button type="button" id="qsRun" onclick="runQuestionSet()">Run question set</button><button type="button" id="qsStop" onclick="stopQuestionSet()" disabled>Stop</button><button type="button" id="qsCopy" onclick="copyQuestionSetReport()" disabled>Copy report</button></div>
+  <p id="qsStatus" role="status" aria-live="polite">Not run.</p>
+  <div id="qsResults" class="qs-results"></div>
+ </div>
  <div class="health-actions card">
   <h3>Troubleshooting</h3>
   <details class="hint-block"><summary>Cost and privacy</summary><p>Choose a read-only investigation topic. Preparing a question has no model cost; submitting it uses your configured primary model. If free-cloud fallback is explicitly enabled and local Ollama cannot connect, private home evidence is sent to OpenRouter. Free usage has limits.</p>
@@ -648,7 +661,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.177";
+const UI_VERSION="2.0.0-alpha.178";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let activeAskController=null, askGeneration=0;
@@ -2720,6 +2733,86 @@ window.addEventListener('resize',()=>{
 // Standalone mobile benchmark. The raw source never enters the Ask/Chat MCP
 // conversation and model answers are rendered as plain text, not HTML.
 initGraphPopout();
+const QUESTION_SET=[
+ 'Which devices are using the most memory right now?',
+ 'Which apps are using the most memory right now?',
+ 'What is the hub free memory and CPU load right now?',
+ 'Which batteries are low?',
+ 'Which devices have not reported for more than 24 hours?',
+ 'Which lights are on right now?',
+ 'Is any contact sensor open or any water sensor wet?',
+ 'What is the heating doing right now?',
+ 'Has the hub restarted recently?',
+ 'What changed in the last hour?'];
+let qsResults=[],qsStopFlag=false,qsRunning=false;
+function scoreQuestionRun(data,ms){
+ const calls=Array.isArray(data&&data.tool_calls)?data.tool_calls:[];
+ const answer=String((data&&data.answer)||'');
+ const errors=calls.filter(c=>c&&c.success===false).length;
+ const writes=calls.filter(c=>c&&c.possible_native_action===true).length;
+ const elapsed=Number.isFinite(data&&data.elapsed_ms)?data.elapsed_ms:ms;
+ const rounds=Number.isFinite(data&&data.rounds)?data.rounds:null;
+ const fail=[];
+ if(!data||!data.success||!answer.trim())fail.push('no answer');
+ if(errors)fail.push(errors+' tool error'+(errors>1?'s':''));
+ if(writes)fail.push('write attempted');
+ if(elapsed>45000)fail.push('slow >45 s');
+ if(rounds!==null&&rounds>4)fail.push(rounds+' rounds');
+ const info=[];
+ if(/Coverage:/.test(answer))info.push('partial coverage');
+ if(/Field note:/.test(answer))info.push('field note');
+ if(/Not run in this request/.test(answer))info.push('unrun-tool note');
+ if(calls.some(c=>c&&c.partial_ranking_warning))info.push('ranking warning');
+ return{pass:fail.length===0,fail,info,elapsed_ms:Math.round(elapsed),rounds,tool_calls:calls.length,tool_errors:errors,writes};
+}
+function qsRender(){
+ const box=byId('qsResults');box.replaceChildren();
+ qsResults.forEach((r,i)=>{
+  const row=document.createElement('div');row.className='qs-row';
+  const mark=document.createElement('span');mark.className=r.score.pass?'qs-ok':'qs-bad';mark.textContent=r.score.pass?'OK':'CHECK';
+  const body=document.createElement('div');body.textContent=(i+1)+'. '+r.question;
+  const sm=document.createElement('small');
+  sm.textContent=(r.score.elapsed_ms/1000).toFixed(1)+' s · '+(r.score.rounds===null?'?':r.score.rounds)+' rounds · '+r.score.tool_calls+' tool call(s)'+(r.score.fail.length?' · '+r.score.fail.join(', '):'')+(r.score.info.length?' · '+r.score.info.join(', '):'');
+  body.appendChild(sm);
+  row.append(mark,body);box.appendChild(row);
+ });
+}
+function stopQuestionSet(){qsStopFlag=true;byId('qsStatus').textContent='Stopping after the current question…';}
+async function runQuestionSet(){
+ if(qsRunning)return;
+ if(activeRequest){byId('qsStatus').textContent='An Ask is in progress. Wait for it to finish first.';return;}
+ qsRunning=true;qsStopFlag=false;qsResults=[];qsRender();
+ byId('qsRun').disabled=true;byId('qsStop').disabled=false;byId('qsCopy').disabled=true;
+ for(let i=0;i<QUESTION_SET.length&&!qsStopFlag;i++){
+  const q=QUESTION_SET[i];
+  byId('qsStatus').textContent='Question '+(i+1)+' of '+QUESTION_SET.length+': '+q;
+  const started=performance.now();let data=null,err=null;
+  try{
+   data=await readJson('api/ask',{method:'POST',
+    headers:{'Content-Type':'application/json','X-Homebrain-Request':'1'},
+    body:JSON.stringify({request_id:newRequestId(),conversation_id:newRequestId(),question:q,history:[],prepare_action:false})});
+  }catch(e){err=e.message;}
+  const ms=performance.now()-started;
+  const score=scoreQuestionRun(data,ms);if(err){score.fail.push('request failed: '+err);score.pass=false;}
+  qsResults.push({question:q,score,answer:data?String(data.answer||''):'',
+   tools:((data&&data.tool_calls)||[]).map(c=>({name:c.name,arguments:c.arguments,success:c.success,elapsed_ms:c.elapsed_ms}))});
+  qsRender();
+ }
+ const ok=qsResults.filter(r=>r.score.pass).length;
+ byId('qsStatus').textContent=(qsStopFlag?'Stopped. ':'Finished. ')+ok+' of '+qsResults.length+' passed the measurable checks.';
+ qsRunning=false;byId('qsRun').disabled=false;byId('qsStop').disabled=true;byId('qsCopy').disabled=qsResults.length===0;
+}
+async function copyQuestionSetReport(){
+ if(!qsResults.length)return;
+ const total=qsResults.reduce((s,r)=>s+r.score.elapsed_ms,0);
+ const head='HomeBrainOS v2 question-set report ('+UI_VERSION+'). PRIVATE: includes answers and tool arguments.\n'+
+  qsResults.filter(r=>r.score.pass).length+' of '+qsResults.length+' passed measurable checks; total '+(total/1000).toFixed(0)+' s.\n'+
+  'Score each answer for grounding, completeness, calibration and usefulness (0/1/2); list unsupported claims and one general improvement.\n\n';
+ const text=head+JSON.stringify({ui_version:UI_VERSION,results:qsResults},null,2);
+ try{await navigator.clipboard.writeText(text);byId('qsStatus').textContent='Report copied (private).';}
+ catch(e){byId('qsStatus').textContent='Copy failed: '+e.message;}
+}
+
 loadStatus().then(ready=>{
  if(ready&&byId('ask').classList.contains('active'))void refreshOverview();
 });
