@@ -791,3 +791,76 @@ class InternetBlockAgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(gate.routine_auto_approval_class, "verified_internet_block")
         self.assertIn("block command accepted", result["answer"])
         self.assertEqual([c[0] for c in hub.calls], ["hub_get_device", "hub_call_device_command"])
+
+
+class InternetBlockAfterReviewTests(unittest.IsolatedAsyncioTestCase):
+    async def test_call_changed_by_prewrite_review_is_judged_as_dispatched(self):
+        from test_routine_action_fastpath import ScriptedAgent
+        hub = BlockHub()
+        model = ScriptedAgent([
+            tool("hub_get_device", deviceId="7001"),
+            tool("hub_call_device_command", deviceId=7001, command="on"),   # draft: plain switch command
+            tool("hub_call_device_command", deviceId=7001, command="blockInternet"),  # after review
+        ])
+        gate = Interaction(require_native_write_approval=True, auto_approve_internet_block=True)
+        result = await model.answer("block Fictional Gadget", [], hub, 60, before_call=gate.before_call)
+        self.assertTrue(result["prewrite_model_review_invoked"])
+        self.assertIsNone(gate.pending)
+        self.assertEqual(gate.routine_auto_approval_class, "verified_internet_block")
+        self.assertEqual([c[1]["command"] for c in hub.calls if c[0] == "hub_call_device_command"],
+                         ["blockInternet"])
+
+
+class RoomListedBatchTests(unittest.IsolatedAsyncioTestCase):
+    def _room(self):
+        return previous_receipt("hub_get_room", {"roomId": "34"}, {"id": "34", "devices": [
+            {"id": "5001", "label": "Fictional Hall Lamp", "accessible": True},
+            {"id": "5002", "label": "Fictional Study Lamp", "accessible": True},
+            {"id": "5003", "label": "(device not accessible via MCP)", "accessible": False}]})
+
+    async def test_room_membership_names_targets_and_missing_inventory_is_read(self):
+        from routine_approval_policy import (batch_light_authorization, batch_light_candidates,
+                                             read_batch_light_evidence)
+        from test_routine_action_fastpath import mcp_result
+
+        class Mcp:
+            def __init__(self):
+                self.calls = []
+
+            async def call(self, name, args):
+                self.calls.append((name, deepcopy(args)))
+                if name == "hub_get_device":
+                    d = device(label="Fictional Hall Lamp" if args["deviceId"] == "5001" else "Fictional Study Lamp",
+                               switch="on")
+                    d["id"] = args["deviceId"]
+                    d["capabilities"] = ["Switch", "Light", "SwitchLevel"]
+                    d["name"] = "Dimmer"
+                    return mcp_result(d)
+                if name == "hub_list_devices":
+                    return mcp_result({"devices": [
+                        {"id": i, "label": "Fictional Hall Lamp" if i == "5001" else "Fictional Study Lamp",
+                         "driver": "Matter Generic Dimmer", "protocol": "matter", "disabled": False}
+                        for i in args["deviceIds"]], "count": 2, "total": 2})
+                raise AssertionError(name)
+
+        receipts = [self._room()]
+        args = {"commands": [{"command": "off", "deviceId": "5001"}, {"command": "off", "deviceId": "5002"}]}
+        cands = batch_light_candidates(args, receipts)
+        self.assertEqual(len(cands), 2)
+        mcp = Mcp()
+        receipts.extend(await read_batch_light_evidence(mcp, cands, receipts, budget_seconds=6.0))
+        self.assertEqual([c[0] for c in mcp.calls].count("hub_list_devices"), 1)
+        self.assertTrue(batch_light_authorization(cands, receipts))
+
+    def test_inaccessible_room_member_is_never_a_target(self):
+        from routine_approval_policy import batch_light_candidates
+        args = {"commands": [{"command": "off", "deviceId": "5001"}, {"command": "off", "deviceId": "5003"}]}
+        self.assertIsNone(batch_light_candidates(args, [self._room()]))
+
+    def test_reinstatement_accepts_ids_seen_in_a_room_listing_only_for_listing_reads(self):
+        from action_proposal_review import reinstate_reviewed_proposal
+        calls = [proposal(identifier="5001")]
+        self.assertIsNotNone(reinstate_reviewed_proposal(calls, [self._room()]))
+        detail_only = [previous_receipt("hub_get_device", {"deviceId": "5001"}, device())]
+        detail_only[0]["response"] = '{"id":"5001"}'
+        self.assertIsNone(reinstate_reviewed_proposal(calls, detail_only))
