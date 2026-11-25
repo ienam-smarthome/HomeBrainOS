@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Current code candidate: `2.0.0-alpha.200`. Fix for alpha.199 live captures: the model still added `confirm` (even as the string "True") to hub_call_device_command, forcing a card the hub then rejected, and an extra configuration-mode read of the same device made the unblock fail the single-detail-read check. The client now drops `confirm` from any call whose live tool schema does not declare it, and only the default/summary device read counts toward block/allow qualification.
+Current code candidate: `2.0.0-alpha.201`. Faster block/unblock: when the model sends a plain block, allow, on or off command for a device it has only listed, the client now reads that device's detail itself (one native read) instead of costing the model a round, then applies the same checks as before. Prompt tells the model to search once, then send the command, without reading details or asking first.
 
 Per-alpha history (alpha.8 to alpha.171) is in [docs/HOMEBRAIN-V2-ALPHA-HISTORY.md](../docs/HOMEBRAIN-V2-ALPHA-HISTORY.md).
 

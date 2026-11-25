@@ -1145,8 +1145,71 @@ class UndeclaredConfirmAndExtraReadTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(internet_block_candidate({"deviceId": "7001", "command": "on"}, twice))
 
 
+class ClientReadsBlockEvidenceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_direct_command_after_a_label_search_needs_no_model_detail_read(self):
+        from test_routine_action_fastpath import ScriptedAgent, mcp_result
+
+        class Hub(BlockHub):
+            async def call(self, name, args):
+                if name == "hub_list_devices":
+                    self.calls.append((name, deepcopy(args)))
+                    return mcp_result({"devices": [{"id": "7001", "label": "Block Fictional-Gadget"}],
+                                       "count": 1, "total": 1})
+                if name == "hub_get_device":
+                    self.calls.append((name, deepcopy(args)))
+                    d = block_detail()
+                    d["commands"] += [{"name": "on", "arguments": None}, {"name": "off", "arguments": None}]
+                    return mcp_result(d)
+                return await super().call(name, args)
+
+        hub = Hub()
+        model = ScriptedAgent([
+            tool("hub_list_devices", labelFilter="gadget"),
+            tool("hub_call_device_command", deviceId=7001, command="off"),
+        ])
+        gate = Interaction(require_native_write_approval=True, auto_approve_lights=True,
+                           auto_approve_internet_block=True)
+        result = await model.answer("block gadget", [], hub, 60, before_call=gate.before_call)
+        self.assertIsNone(gate.pending)
+        self.assertEqual(gate.routine_auto_approval_class, "verified_internet_block")
+        self.assertEqual(model.rounds_seen, 2)
+        self.assertEqual([c[0] for c in hub.calls],
+                         ["hub_list_devices", "hub_get_device", "hub_call_device_command"])
+        self.assertEqual(hub.calls[1][1], {"deviceId": "7001", "mode": "summary"})
+        self.assertIn("block command accepted", result["answer"])
+
+    async def test_unqualified_device_still_gets_a_card_after_the_client_read(self):
+        from test_routine_action_fastpath import ScriptedAgent, mcp_result
+
+        class Hub(BlockHub):
+            async def call(self, name, args):
+                if name == "hub_get_device":
+                    self.calls.append((name, deepcopy(args)))
+                    return mcp_result(block_detail(with_ip=False))
+                return await super().call(name, args)
+
+        hub = Hub()
+        model = ScriptedAgent([tool("hub_call_device_command", deviceId=7001, command="blockInternet"),
+                               tool("hub_call_device_command", deviceId=7001, command="blockInternet")])
+        gate = Interaction(require_native_write_approval=True, auto_approve_internet_block=True)
+        task = asyncio.ensure_future(
+            model.answer("block gadget", [], hub, 30, before_call=gate.before_call))
+        for _ in range(200):
+            if gate.pending or task.done():
+                break
+            await asyncio.sleep(0.02)
+        self.assertIsNotNone(gate.pending)
+        self.assertEqual(hub.calls[0][0], "hub_get_device")
+        task.cancel()
+        try:
+            await task
+        except BaseException:
+            pass
+
+
 class PromptGuidanceTests(unittest.TestCase):
     def test_prompt_forbids_extra_arguments_on_device_commands(self):
         import agent
         text = agent.SYSTEM_PROMPT if hasattr(agent, "SYSTEM_PROMPT") else Path(agent.__file__).read_text()
         self.assertIn("never add confirm or any other argument to it", text)
+        self.assertIn("Do not read the device detail", text)
