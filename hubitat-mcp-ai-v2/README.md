@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Current code candidate: `2.0.0-alpha.197`. Block/unblock speed: on a per-device internet-control switch (internetAccess attribute plus its own IP and MAC, and the command declared by the device) plain `off` now counts as block and `on` as allow, with the same no-card fast path as blockInternet/allowInternet. Prompt now tells the model to call the block command instead of replying with prose only.
+Current code candidate: `2.0.0-alpha.198`. Fix for alpha.197 live capture where `on` on a Block switch still showed an approval card: the light-batch offer ran after the internet-block offer and cleared its single-use proof. The light-batch offer is now skipped for a call that already qualified as an internet block/allow. Verified by replaying the live capture through the agent: no card, verified_internet_block.
 
 Per-alpha history (alpha.8 to alpha.171) is in [docs/HOMEBRAIN-V2-ALPHA-HISTORY.md](../docs/HOMEBRAIN-V2-ALPHA-HISTORY.md).
 

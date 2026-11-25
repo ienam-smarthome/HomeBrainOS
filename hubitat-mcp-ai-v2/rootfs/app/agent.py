@@ -3014,6 +3014,7 @@ class Agent:
                                 args, block_for_round)
                         if (isinstance(approval_owner, Interaction)
                                 and approval_owner.auto_approve_lights
+                                and block_for_round is None
                                 and name == "hub_call_device_command"
                                 and not prepare_action
                                 and {"hub_get_device", "hub_list_devices"} <= native_catalog_names

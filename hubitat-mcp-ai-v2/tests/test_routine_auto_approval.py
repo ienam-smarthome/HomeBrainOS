@@ -1077,7 +1077,8 @@ class InternetSwitchOnOffTests(unittest.IsolatedAsyncioTestCase):
             tool("hub_get_device", deviceId="7001"),
             tool("hub_call_device_command", deviceId="7001", command="off"),
         ])
-        gate = Interaction(require_native_write_approval=True, auto_approve_internet_block=True)
+        gate = Interaction(require_native_write_approval=True, auto_approve_lights=True,\
+                           auto_approve_internet_block=True)
         result = await model.answer("block Fictional Gadget", [], hub, 60, before_call=gate.before_call)
         self.assertIsNone(gate.pending)
         self.assertEqual(gate.routine_auto_approval_class, "verified_internet_block")
