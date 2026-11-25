@@ -793,6 +793,36 @@ def partial_coverage_note(receipts: list[dict]) -> str | None:
     return " ".join(notes) if notes else None
 
 
+_MEMORY_WORDS = re.compile(r"\b(memory|ram)\b", re.IGNORECASE)
+_NEGATION = re.compile(r"\b(not|no|nor|never|cannot|can't|doesn't|does not|isn't|aren't|without)\b",
+                       re.IGNORECASE)
+_MEMORY_SOURCES = ("hub_get_memory_history", "hub_get_metrics")
+
+
+def field_meaning_prose_note(answer: str, receipts: list[dict]) -> str | None:
+    """Footnote when prose ties memory/RAM to a table the client marked as not memory.
+
+    Structural trigger: a successful receipt carries a client field-meaning note
+    (declared tool, returned field names). The check reads the MODEL's answer, never
+    the question: a sentence naming memory/RAM with no negation is flagged. It adds
+    the fact only; it never edits or removes the model's text.
+    """
+    if not answer or not any(r.get("field_meaning_fields") for r in receipts):
+        return None
+    flagged = [s for s in re.split(r"(?<=[.!?;])\s+|\n+", answer)
+               if _MEMORY_WORDS.search(s) and not _NEGATION.search(s)
+               and "stateSize" in s]
+    if not flagged:
+        return None
+    fields = sorted({f for r in receipts for f in (r.get("field_meaning_fields") or [])})
+    read = any(r.get("success") and r.get("name") in _MEMORY_SOURCES for r in receipts)
+    return ("Field note: " + ", ".join(f"`{f}`" for f in fields)
+            + " in the returned table are stored-state bytes or runtime measures; none is RAM or "
+            "memory use, so the memory wording above is not supported by that table. "
+            + ("Memory figures read this request come from " + "/".join(_MEMORY_SOURCES) + "."
+               if read else "No per-device memory source was read in this request."))
+
+
 def unrun_tool_note(answer: str, receipts: list[dict], tool_names) -> str | None:
     """Footnote naming catalog tools the answer mentions but never successfully ran.
 

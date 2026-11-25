@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "rootfs" / "app"))
 
-from receipt_compute import ComputeError, TOOL_NAME, compute, partial_coverage_note, rows_hint  # noqa: E402
+from receipt_compute import ComputeError, TOOL_NAME, compute, field_meaning_prose_note, partial_coverage_note, rows_hint  # noqa: E402
 from investigation_review import is_read_only_review_tool  # noqa: E402
 
 
@@ -413,3 +413,28 @@ class SourceOrderedCoverage(unittest.TestCase):
         self.assertNotIn("remaining rows were not read", note)
         other = dict(compute, arguments={"receipt_index": 1, "operation": "sort", "field": "id"})
         self.assertIn("remaining rows were not read", partial_coverage_note([read, other]))
+
+
+class FieldMeaningProseNote(unittest.TestCase):
+    RECEIPTS = [{"name": "hub_get_logs", "success": True,
+                 "field_meaning_fields": ["pct", "stateSize", "total"]}]
+
+    def test_flags_unnegated_memory_claim_about_state_size(self):
+        answer = ("The view does not give direct RAM usage; it reports stateSize, which "
+                  "therefore correlates with memory consumption.")
+        note = field_meaning_prose_note(answer, self.RECEIPTS)
+        self.assertIn("`stateSize`", note)
+        self.assertIn("none is RAM or memory use", note)
+        self.assertIn("No per-device memory source was read", note)
+
+    def test_quiet_when_prose_already_negates_or_no_field_note(self):
+        ok = "stateSize is bytes of stored state, not memory use."
+        self.assertIsNone(field_meaning_prose_note(ok, self.RECEIPTS))
+        bad = "stateSize is the memory each device uses."
+        self.assertIsNone(field_meaning_prose_note(bad, [{"name": "hub_get_logs", "success": True}]))
+        self.assertIsNone(field_meaning_prose_note("Memory is fine.", self.RECEIPTS))
+
+    def test_names_memory_source_when_it_was_read(self):
+        receipts = self.RECEIPTS + [{"name": "hub_get_metrics", "success": True}]
+        note = field_meaning_prose_note("stateSize shows memory per device.", receipts)
+        self.assertIn("hub_get_memory_history/hub_get_metrics", note)
