@@ -183,3 +183,8 @@ answers and its round-time cost.
 - Prompt: prefer the tool's own sort/limit parameters for rankings; describe source-ordered rows as leading rows of the hub's ordering.
 - UI/status: model phase shows "AI model round N · M step(s) done"; tool phase shows "Waiting on <tool>".
 - Not verified live: whether the hub always sorts before paging.
+
+## alpha.173
+
+- UI only: `has-reported` class on System Health snapshot tiles with state readings and a count above zero (outside Needs attention) colours the number with `--hb-accent`.
+- UI only: `is-offline` class turns the Reported offline count and left edge red when the count is above zero with state readings.

@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-**Current code candidate: alpha.172 (25 November 2026).** The alpha.171 capture showed a hub-sorted ranking (`sortBy:"stateSize"`) being reported as an arbitrary partial sample. Coverage now recognises rows the source returned already ordered by the sort field the call named and says so ("leading rows of the hub's own `stateSize` sort"), while stating that sort-before-paging was not independently verified; unsorted or mismatched reads keep the plain partial wording. The prompt prefers a tool's own sort/limit parameters for rankings. The live status line now names the round and completed steps ("AI model round 3 · 2 step(s) done") and the tool being waited on. Local validation: pytest, unittest, UI node test, browser smoke, golden suite, screenshots, add-on validation.
+**Current code candidate: alpha.173 (25 November 2026).** System Health "Currently reported" counts (lights ON, motion, heating, other ON switches) now show in the accent blue when state readings exist and the count is above zero, instead of the same grey as empty tiles; zero or unavailable counts stay muted "Reported offline" turns red (number and edge) whenever it is above zero, and the other "Needs attention" tiles keep their amber. Colour is presentation only and does not change any count. Local validation: pytest, UI node test, browser smoke, golden suite, screenshots, add-on validation.
 
 Per-alpha history (alpha.8 to alpha.171) is in [docs/HOMEBRAIN-V2-ALPHA-HISTORY.md](../docs/HOMEBRAIN-V2-ALPHA-HISTORY.md).
 
