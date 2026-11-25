@@ -574,7 +574,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.164";
+const UI_VERSION="2.0.0-alpha.165";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let activeAskController=null, askGeneration=0;
@@ -795,7 +795,7 @@ async function checkNetworkStatus(){
   for(const c of d.checks||[]){
    const li=document.createElement('li');li.className=c.ok?'ok':'down';
    const n=document.createElement('span');n.textContent=c.name;
-   const r=document.createElement('span');r.textContent=c.ok?(c.ms!=null?c.ms+' ms':'ok'):'no response';
+   const r=document.createElement('span');r.textContent=c.ok?(c.ms!=null?c.ms+' ms':'ok'):(c.method&&c.method.startsWith('no answer')?c.method:'no response');
    li.append(n,r);list.append(li);
   }
   byId('networkScope').textContent=(d.router_configured?'':'Set network_router_host in the add-on options to include your router. ')+(d.scope||'');

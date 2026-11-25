@@ -267,7 +267,7 @@ class FrozenEvaluationTests(unittest.IsolatedAsyncioTestCase):
         for gone in ('id="evaluationTab"', 'id="evalConsent"', "api/evaluation/replay",
                      'href="acceptance"', "AI Evaluation", "Acceptance study"):
             self.assertNotIn(gone, ui)
-        self.assertIn('const UI_VERSION="2.0.0-alpha.164"', ui)
+        self.assertIn('const UI_VERSION="2.0.0-alpha.165"', ui)
 
 
 if __name__ == "__main__":

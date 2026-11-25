@@ -195,6 +195,17 @@ class RowsHint(unittest.TestCase):
         self.assertEqual(out["rows_in_list"], 12)
 
 
+class SortRowsGetKbColumn(unittest.TestCase):
+    def test_sorted_rows_carry_decimal_kb_for_byte_fields(self):
+        rows = [{"name": "a", "stateSize": 79818}, {"name": "b", "stateSize": 37754}]
+        rec = {"name": "hub_get_logs", "success": True, "result_kind": "tool_result",
+               "response": json.dumps({"entries": rows})}
+        out = compute([rec], {"operation": "sort", "field": "stateSize", "descending": True,
+                              "rows_path": "entries"})
+        self.assertEqual(out["rows"][0]["client_stateSize_KB_decimal"], 79.818)
+        self.assertNotIn("client_stateSize_KB_decimal", rows[0])
+
+
 class PartialCoverageNote(unittest.TestCase):
     def receipts(self, partial=True):
         src = {"name": "hub_get_logs", "success": True, "result_kind": "tool_result",

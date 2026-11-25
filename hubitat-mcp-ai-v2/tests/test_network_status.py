@@ -4,7 +4,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "rootfs", "app"))
-from network_status import network_status, _host_port  # noqa: E402
+from network_status import network_status, _host_port, clean_host  # noqa: E402
 
 
 def run(coro):
@@ -47,6 +47,20 @@ class NetworkStatus(unittest.TestCase):
         out = run(network_status("http://10.0.0.9:8080/x", "", **fakes({"1.1.1.1"})))
         self.assertIn("Hubitat hub not reachable", out["summary"])
         self.assertEqual(out["level"], "bad")
+
+    def test_router_down_with_internet_up_is_a_warning_naming_the_attempts(self):
+        out = run(network_status("", "192.168.1.1", **fakes({"1.1.1.1", "8.8.8.8"})))
+        self.assertEqual(out["level"], "warn")
+        self.assertIn("router address did not answer", out["summary"])
+        router = next(c for c in out["checks"] if c["name"] == "Router")
+        self.assertIn("tcp 80/443/53/22", router["method"])
+
+    def test_router_value_is_cleaned(self):
+        self.assertEqual(clean_host("http://192.168.1.1/"), "192.168.1.1")
+        self.assertEqual(clean_host(" 192.168.1.1:8080 "), "192.168.1.1")
+        self.assertEqual(clean_host(""), "")
+        out = run(network_status("", "http://192.168.1.1/", **fakes({"1.1.1.1", "192.168.1.1"})))
+        self.assertTrue(next(c for c in out["checks"] if c["name"] == "Router")["ok"])
 
     def test_host_port_parsing(self):
         self.assertEqual(_host_port("https://hub.local/mcp"), ("hub.local", 443))

@@ -277,6 +277,13 @@ def compute(receipts: list[dict], args: dict) -> dict:
                                   "KiB_binary": round(value / 1024, 6)}
         if converted:
             local["unit_conversions_from_bytes"] = converted
+    if isinstance(local, dict) and isinstance(field, str) and isinstance(local.get("rows"), list) \
+            and (field.lower() == "statesize" or field.lower().endswith("bytes")):
+        key = f"client_{field}_KB_decimal"
+        local["rows"] = [dict(r, **{key: round(r[field] / 1000, 3)})
+                         if isinstance(r, dict) and isinstance(r.get(field), (int, float))
+                         and not isinstance(r.get(field), bool) else r
+                         for r in local["rows"]]
     if isinstance(local, dict) and isinstance(field, str) and field.lower().endswith("kb"):
         converted = {}
         for key in ("result", "min", "max"):

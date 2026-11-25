@@ -17,7 +17,7 @@ Run `python scripts/answer_quality_scorecard.py` for an honest `not_measured` ba
 | Component | Version | Status | Purpose |
 | --- | --- | --- | --- |
 | [Hubitat MCP AI](hubitat-mcp-ai/README.md) | 0.18.460 | Maintained | Capability-grounded semantic smart-home agent with AI intent planning, deterministic verified execution, bounded history, and grounded synthesis |
-| [Hubitat MCP AI v2 Preview](hubitat-mcp-ai-v2/README.md) | 2.0.0-alpha.164 | Experimental; network status check, mobile composer fix, partial-coverage footnote; not installed; acceptance pending | Clean model-led native MCP assistant for investigation, control and administration within connected server permissions |
+| [Hubitat MCP AI v2 Preview](hubitat-mcp-ai-v2/README.md) | 2.0.0-alpha.165 | Experimental; router check clarified, decimal KB column on sorted byte rows; not installed; acceptance pending | Clean model-led native MCP assistant for investigation, control and administration within connected server permissions |
 
 V1 is the maintained installation path. V2 remains an experimental candidate,
 not a promoted replacement. Alpha155 package CI and installed prospective
