@@ -331,6 +331,11 @@ def batch_light_authorization(candidates: list[dict], receipts: list[dict], *,
 
 
 INTERNET_BLOCK_COMMANDS = frozenset({"blockInternet", "allowInternet"})
+# On a per-device internet-control switch (internetAccess attribute plus its own IP and MAC) the
+# plain switch commands are the same two actions: off blocks, on allows.
+INTERNET_SWITCH_COMMANDS = INTERNET_BLOCK_COMMANDS | {"on", "off"}
+_EXPECTED_INTERNET_ACCESS = {"blockInternet": "blocked", "off": "blocked",
+                             "allowInternet": "allowed", "on": "allowed"}
 
 
 def _attr_value(detail: dict, name: str):
@@ -349,7 +354,7 @@ def internet_block_candidate(args: dict, receipts: list[dict]) -> dict | None:
     all-devices switch never qualifies). Labels and user prose are never consulted.
     """
     if (not isinstance(args, dict) or set(args) != {"deviceId", "command"}
-            or args.get("command") not in INTERNET_BLOCK_COMMANDS
+            or args.get("command") not in INTERNET_SWITCH_COMMANDS
             or type(args.get("deviceId")) not in (str, int)):
         return None
     identifier = str(args["deviceId"]).strip()
@@ -399,7 +404,7 @@ def internet_block_answer(candidate: dict, receipts: list[dict]) -> str | None:
     reported = None
     if isinstance(state, dict) and isinstance(state.get("internetAccess"), dict):
         reported = state["internetAccess"].get("value")
-    expected = "blocked" if candidate["command"] == "blockInternet" else "allowed"
+    expected = _EXPECTED_INTERNET_ACCESS[candidate["command"]]
     label = re.sub(r"([\\\x60*_{}\[\]()#+!|>])", r"\\\1", candidate["label"])
     verb = "block" if expected == "blocked" else "allow"
     if reported == expected:
