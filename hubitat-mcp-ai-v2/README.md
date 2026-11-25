@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Current code candidate: `2.0.0-alpha.185`. Filtered device lists now carry a `client_filter_scope` note built from the call's own arguments (a `changedSince`/state/label filter means `total`/`count` describe the filtered set, not the whole inventory), and a held-back ranking no longer adds a misleading partial-coverage footnote to an answer based on the later sorted read.
+Current code candidate: `2.0.0-alpha.186`. Fixes a lost-answer bug: when the model replied to the internal compute check with only an acknowledgement ("my draft stands as written") and computed nothing, that acknowledgement replaced the real answer (seen on two question-set answers). The original draft is now kept in that case.
 
 Per-alpha history (alpha.8 to alpha.171) is in [docs/HOMEBRAIN-V2-ALPHA-HISTORY.md](../docs/HOMEBRAIN-V2-ALPHA-HISTORY.md).
 
