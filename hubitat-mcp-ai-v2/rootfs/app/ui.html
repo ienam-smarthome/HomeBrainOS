@@ -624,7 +624,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.171";
+const UI_VERSION="2.0.0-alpha.172";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let activeAskController=null, askGeneration=0;
@@ -1126,7 +1126,7 @@ async function pollActivity(){
   if(phase==='queued')byId('requestSummary').textContent='Queued for model access — you can start another Ask or Speak.';
   else if(phase==='catalog')byId('requestSummary').textContent='Checking connected MCP catalog…';
   else if(phase==='model')byId('requestSummary').textContent='Working · '+String(d.phase.detail||'AI model inference')+'…';
-  else if(phase==='native_call')byId('requestSummary').textContent='Waiting for a native MCP tool response…';
+  else if(phase==='native_call')byId('requestSummary').textContent='Working · '+String(d.phase.detail||'waiting for a native MCP tool')+'…';
   else if(phase==='awaiting_approval')byId('requestSummary').textContent='Approval required — review the card above or start a new chat.';
   else if(phase==='approved')byId('requestSummary').textContent='Approved; checking native submission…';
   byId('activityCard').hidden=!(d.current||d.pending);

@@ -500,7 +500,7 @@ def _field_names(rows: list) -> list[str]:
     return list(seen)[:_HINT_MAX_FIELDS]
 
 
-def rows_hint(result: Any, receipt_index: int) -> dict | None:
+def rows_hint(result: Any, receipt_index: int, args: dict | None = None) -> dict | None:
     """Structural pointer for a native result holding many rows.
 
     Based only on the SHAPE of the returned source (a list of objects), never on
@@ -528,8 +528,48 @@ def rows_hint(result: Any, receipt_index: int) -> dict | None:
     }
     coverage = _row_coverage(result, path, len(rows))
     if coverage is not None:
+        ordered = _ordered_by_source(rows, args)
+        if ordered is not None:
+            coverage["ordered_by_source"] = ordered
+            if coverage.get("partial"):
+                coverage["use"] = (
+                    f"The call asked the source to sort by `{ordered['field']}` "
+                    f"({ordered['argument']} argument) and the rows came back "
+                    f"{ordered['direction']} by that field, so these are the leading rows of "
+                    "the source's own ordering, not an arbitrary subset. Say that they are the "
+                    "source-ordered leading rows out of M, and that whether the source applied "
+                    "the sort before paging was not independently verified. To read more, call "
+                    "the same tool again with the next_cursor exactly as returned.")
         hint["coverage"] = coverage
     return hint
+
+
+_SORT_ARGS = ("sortBy", "sort_by", "orderBy", "order_by")
+
+
+def _ordered_by_source(rows: list, args: dict | None) -> dict | None:
+    """The sort field the call named, when the returned rows really follow it."""
+    if not isinstance(args, dict):
+        return None
+    for key in _SORT_ARGS:
+        raw = args.get(key)
+        if not isinstance(raw, str) or not raw.strip():
+            continue
+        field = raw.strip().split(":")[0].split()[0]
+        values = []
+        for row in rows:
+            value = row.get(field) if isinstance(row, dict) else None
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                return None
+            values.append(value)
+        if len(values) < 2:
+            return None
+        if all(a >= b for a, b in zip(values, values[1:])):
+            return {"field": field, "argument": key, "direction": "descending"}
+        if all(a <= b for a, b in zip(values, values[1:])):
+            return {"field": field, "argument": key, "direction": "ascending"}
+        return None
+    return None
 
 
 _PAGING_KEYS = {"cursor", "offset", "page", "pageToken"}
@@ -705,7 +745,19 @@ def partial_coverage_note(receipts: list[dict]) -> str | None:
             last_cursor = covs[-1].get("next_cursor")
             partial = ((total is not None and returned < total) or bool(last_cursor)
                        if len(covs) > 1 else bool(covs[0].get("partial")))
-            if partial:
+            ordered = covs[0].get("ordered_by_source")
+            if (partial and len(covs) == 1 and isinstance(ordered, dict)
+                    and args.get("field") == ordered.get("field")
+                    and args.get("operation") in ("sort", "min", "max")):
+                text = (f"Coverage: the hub returned {returned}"
+                        + (f" of {total}" if total is not None else "")
+                        + f" rows already ordered {ordered['direction']} by its own "
+                        f"`{ordered['field']}` sort, so these are the leading rows of that "
+                        "ordering, not an arbitrary subset; that the hub sorted before paging "
+                        "was not independently verified.")
+                if text not in notes:
+                    notes.append(text)
+            elif partial:
                 text = (f"Coverage: figures above come from {returned}"
                         + (f" of {total}" if total is not None else "")
                         + f" rows returned by {sources[0].get('name')}; the remaining rows were not read.")

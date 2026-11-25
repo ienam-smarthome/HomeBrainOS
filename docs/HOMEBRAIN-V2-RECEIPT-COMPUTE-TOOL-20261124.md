@@ -175,3 +175,11 @@ answers and its round-time cost.
 - Footnote: failed paging attempts are reported ("Paging: N attempt(s)...") and the source mode prints as text, not a Python list.
 - UI: network status runs when System Health opens and every 60 s while that tab and the page are visible. Check network still runs it now.
 - Not verified on a live hub: that the hub accepts `mode:"devices", limit:0, cursor:"50"`.
+
+## alpha.172
+
+- Evidence (alpha.171 capture, private): a `sortBy:"stateSize"` read returned rows already in descending order, yet the answer called them a partial snapshot where larger entries might exist, and the footnote said the remaining rows were not read.
+- `rows_hint(result, index, args)` now adds `coverage.ordered_by_source` when the call named a sort argument and the returned numeric field is monotone; the footnote then reads "already ordered descending by its own `<field>` sort" and says sort-before-paging was not independently verified. Structural only (arguments and returned values), no user-text matching.
+- Prompt: prefer the tool's own sort/limit parameters for rankings; describe source-ordered rows as leading rows of the hub's ordering.
+- UI/status: model phase shows "AI model round N · M step(s) done"; tool phase shows "Waiting on <tool>".
+- Not verified live: whether the hub always sorts before paging.
