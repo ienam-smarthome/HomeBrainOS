@@ -985,6 +985,9 @@ class BridgeLightHub:
             d["capabilities"] = ["Actuator", "Light", "Switch", "SwitchLevel"]
             d["name"] = "Dimmer"
             return mcp_result(d)
+        if name == "hub_call_device_command" and "commands" not in args:
+            return mcp_result({"success": True, "device": self.LABELS[str(args["deviceId"])],
+                               "command": args["command"], "parameters": None})
         if name == "hub_call_device_command":
             cmds = args["commands"]
             return mcp_result({"success": True, "count": len(cmds), "sentCount": len(cmds), "failedCount": 0,
@@ -1205,6 +1208,34 @@ class ClientReadsBlockEvidenceTests(unittest.IsolatedAsyncioTestCase):
             await task
         except BaseException:
             pass
+
+
+class BootstrapParentReadOnceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_single_bridge_light_reads_its_parent_once(self):
+        from test_routine_action_fastpath import ScriptedAgent, mcp_result
+
+        class Hub(BridgeLightHub):
+            LABELS = {"6001": "Hallway Light 1", "6002": "Hallway Light 2"}
+
+            async def call(self, name, args):
+                if name == "hub_list_devices" and args.get("labelFilter") == "hallway light 1":
+                    self.calls.append((name, deepcopy(args)))
+                    return mcp_result({"devices": [{
+                        "id": "6001", "label": "Hallway Light 1", "name": "LWA018", "room": "Hallway",
+                        "driver": "Generic Component Dimmer", "protocol": "virtual",
+                        "parentDeviceId": "6000", "disabled": False, "deviceNetworkId": "M1-15",
+                        "currentStates": {"switch": "off", "level": "30"}}],
+                        "count": 1, "total": 1, "labelFilter": "hallway light 1"})
+                return await super().call(name, args)
+
+        hub = Hub()
+        model = ScriptedAgent([tool("hub_call_device_command", deviceId=6001, command="on")])
+        gate = Interaction(require_native_write_approval=True, auto_approve_lights=True)
+        await model.answer("turn on hallway light 1", [], hub, 60, before_call=gate.before_call,
+                           enable_routine_bootstrap=True)
+        self.assertIsNone(gate.pending)
+        self.assertEqual(gate.routine_auto_approval_class, "verified_light_batch")
+        self.assertEqual(len([c for c in hub.calls if c == ("hub_get_device", {"deviceId": "6000"})]), 1)
 
 
 class PromptGuidanceTests(unittest.TestCase):

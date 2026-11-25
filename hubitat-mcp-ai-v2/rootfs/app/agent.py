@@ -3019,7 +3019,10 @@ class Agent:
                                 parent_id = component_parent_id(
                                     routine_for_round, receipts
                                 ) if approval_owner.auto_approve_lights else None
-                                if parent_id is not None:
+                                if parent_id is not None and verified_physical_bridge_parent(
+                                        routine_for_round, receipts):
+                                    routine_component_parent_read_status = "physical_bridge_verified"
+                                elif parent_id is not None:
                                     if ({"hub_get_device", "hub_list_devices"}
                                             <= native_catalog_names
                                             and deadline - time.monotonic() > 5):
