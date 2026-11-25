@@ -205,3 +205,8 @@ answers and its round-time cost.
 - `compact_tool_result` orders `client_*` keys first (order only). Prompt: compute before drafting.
 - Not changed: the nudge itself; a model that ignores the new rule still pays the extra rounds. Same capture: the model skipped `sortBy` and ranked only the first unsorted page (rank 10 was wrong versus the hub's own ordering); a compute-time warning for rankings over unsorted partial sources is the next candidate.
 - Memory-wording footnote: curly apostrophe normalised; proxy/correlat*/indication/approximat*/closest clauses mentioning memory/RAM are flagged.
+
+## alpha.177
+
+- Evidence (alpha.175 apps capture, private): 4 rounds, ranked apps over the first 50 of 189 unsorted rows; the field-note footnote fired and read correctly.
+- `partial_ranking_warning(source_receipt, compute_args, catalog)`: structural (receipt coverage and args, compute op/field, live schema parameter names). Warns; never auto-reruns or blocks. A model that ignores it still produces a partial-disclosed answer.

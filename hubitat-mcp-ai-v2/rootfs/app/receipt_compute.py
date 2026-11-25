@@ -698,10 +698,10 @@ def field_meaning_note(tool_name: str, result: Any) -> dict | None:
         "rows_path": path,
         "meanings": {
             "total": "runtime in milliseconds for the sampled window (not memory)",
-            "grandTotal": "runtime in milliseconds summed over all devices (not memory)",
-            "pct": "this row's share of that total device runtime (not a share of memory)",
+            "grandTotal": "runtime in milliseconds summed over all rows in the table (not memory)",
+            "pct": "this row's share of that total runtime (not a share of memory)",
             "pctTotal": "this row's share of the whole hub uptime (not memory)",
-            "stateSize": "bytes of stored device state (the only size-like field here)",
+            "stateSize": "bytes of stored state for this device or app (the only size-like field here)",
             "average": "average runtime per call in milliseconds",
             "count": "number of runtime samples",
         },
@@ -821,7 +821,42 @@ def field_meaning_prose_note(answer: str, receipts: list[dict]) -> str | None:
             + " in the returned table are stored-state bytes or runtime measures; none is RAM or "
             "memory use, so the memory wording above is not supported by that table. "
             + ("Memory figures read this request come from " + "/".join(_MEMORY_SOURCES) + "."
-               if read else "No per-device memory source was read in this request."))
+               if read else "No memory source was read in this request."))
+
+
+def partial_ranking_warning(source: dict, compute_args: dict, catalog: list) -> dict | None:
+    """Warn when a ranking ran over an unsorted partial page the source could have sorted.
+
+    Structural: the source receipt's recorded coverage and arguments, the compute
+    call's declared operation/field, and the live tool schema's parameter names.
+    It never reads the question; it only tells the model what the source offers.
+    """
+    if not isinstance(source, dict) or compute_args.get("operation") not in ("sort", "min", "max"):
+        return None
+    cov = source.get("row_coverage")
+    if not isinstance(cov, dict) or not cov.get("partial") or cov.get("ordered_by_source"):
+        return None
+    args = source.get("arguments") if isinstance(source.get("arguments"), dict) else {}
+    if any(k in args for k in _SORT_ARGS):
+        return None
+    tool = next((c for c in catalog or [] if isinstance(c, dict) and c.get("name") == source.get("name")), None)
+    props = ((tool or {}).get("inputSchema") or {}).get("properties")
+    key = next((k for k in _SORT_ARGS if isinstance(props, dict) and k in props), None)
+    if key is None:
+        return None
+    field = compute_args.get("field")
+    return {
+        "source": "client note from this request's receipts and the live tool schema; not hub data",
+        "rows_read": cov.get("rows_returned"), "source_reported_total": cov.get("source_reported_total"),
+        "sort_parameter_offered": key,
+        "use": (f"This {compute_args.get('operation')} covers only the first {cov.get('rows_returned')} "
+                f"rows of {cov.get('source_reported_total')} in the source's default order, so it is not a "
+                f"ranking of the whole source. {source.get('name')} offers a `{key}` parameter: re-read it once "
+                f"with the same arguments plus {key}"
+                + (f"=\"{field}\"" if isinstance(field, str) else "")
+                + " (and a small limit if offered), and rank from those rows. If that read fails, say "
+                "the ranking covers only the first rows."),
+    }
 
 
 def unrun_tool_note(answer: str, receipts: list[dict], tool_names) -> str | None:

@@ -108,7 +108,7 @@ from device_monitor import TOOL_NAME as MONITOR_TOOL, TOOL_DEFINITION as MONITOR
 from monitor_evidence import monitor_evidence_scope
 from retrieval_coverage import FileReadCoverage, file_chunk_scope, event_attribute_scope
 from receipt_compute import (
-    field_meaning_prose_note, partial_coverage_note, unrun_tool_note, unit_conversion_note,
+    field_meaning_prose_note, partial_coverage_note, partial_ranking_warning, unrun_tool_note, unit_conversion_note,
     issued_cursors, cursor_continuation,
     TOOL_NAME as COMPUTE_TOOL, TOOL_DEFINITION as COMPUTE_TOOL_DEFINITION,
     ComputeError, compute as compute_receipt, field_meaning_note, rows_hint,
@@ -3033,6 +3033,12 @@ class Agent:
                             }
                             if payload.get("same_source_receipts_not_included"):
                                 record["same_source_receipts_not_included"] = payload["same_source_receipts_not_included"]
+                            ranking_warning = partial_ranking_warning(
+                                receipts[used - 1] if isinstance(used, int) and 1 <= used <= len(receipts) else {},
+                                args, catalog)
+                            if ranking_warning is not None:
+                                record["partial_ranking_warning"] = True
+                                result = {**result, "client_partial_ranking_warning": ranking_warning}
                         record["operation_executed"] = False
                         record["read_only"] = True
                         model_result = result
