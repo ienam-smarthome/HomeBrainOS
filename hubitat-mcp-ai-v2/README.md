@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-**Current code candidate: alpha.173 (25 November 2026).** System Health "Currently reported" counts (lights ON, motion, heating, other ON switches) now show in the accent blue when state readings exist and the count is above zero, instead of the same grey as empty tiles; zero or unavailable counts stay muted "Reported offline" turns red (number and edge) whenever it is above zero, and the other "Needs attention" tiles keep their amber. Colour is presentation only and does not change any count. Local validation: pytest, UI node test, browser smoke, golden suite, screenshots, add-on validation.
+**Current code candidate: alpha.174 (25 November 2026).** Fixes desktop light-theme System Health colours: the attention banner and the Network status card kept dark backgrounds under dark text (unreadable), amber counts were pale on white, and the heading sat on a stray white band. Light theme now has readable banner/card surfaces and darker amber (attention), red (Reported offline) and green (Currently reported) counts; the dark theme shows Currently reported counts in green. Presentation only; no counts or logic changed. Local validation: pytest, UI node test, browser smoke, golden suite, screenshot contrast checks, add-on validation.
 
 Per-alpha history (alpha.8 to alpha.171) is in [docs/HOMEBRAIN-V2-ALPHA-HISTORY.md](../docs/HOMEBRAIN-V2-ALPHA-HISTORY.md).
 

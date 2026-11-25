@@ -188,3 +188,8 @@ answers and its round-time cost.
 
 - UI only: `has-reported` class on System Health snapshot tiles with state readings and a count above zero (outside Needs attention) colours the number with `--hb-accent`.
 - UI only: `is-offline` class turns the Reported offline count and left edge red when the count is above zero with state readings.
+
+## alpha.174
+
+- UI only: light-theme overrides for System Health banner, network card, attention/offline/reported count colours; Currently reported counts are green in both themes.
+- alpha.173 capture (private): sortBy read of 20 rows plus compute; footnote used the new source-ordered wording; answer still called stateSize a proxy that 'correlates with memory consumption' (unsupported); the prompt rule on not equating stateSize with memory needs tightening (not in this alpha).
