@@ -973,3 +973,33 @@ def filter_scope_note(name: str, args: dict) -> dict | None:
             "meaning": "total, count and hasMore in this result describe only the devices that match "
                        "these filters, not the whole inventory. Do not report that number as how many "
                        "devices exist."}
+
+
+DETAILED_DEFAULT_LIMIT = 40
+
+
+def normalize_list_devices_args(name: str, args: dict, catalog: list) -> tuple[dict, dict | None]:
+    """Keep hub_list_devices calls inside what the hub accepts, using only the call and live schema.
+
+    The hub rejects attributeNames with format 'detailed' and refuses responses over ~99.5 KB.
+    So: attributeNames with detailed becomes summary (same attributes, smaller rows), and a
+    detailed read with no limit gets a bounded page. Every change is reported to the model.
+    """
+    if name != "hub_list_devices" or not isinstance(args, dict):
+        return args, None
+    tool = next((c for c in catalog or [] if isinstance(c, dict) and c.get("name") == name), None)
+    props = ((tool or {}).get("inputSchema") or {}).get("properties")
+    if not isinstance(props, dict) or "format" not in props:
+        return args, None
+    out, changes = dict(args), []
+    if out.get("format") == "detailed":
+        if out.get("attributeNames"):
+            out["format"] = "summary"
+            changes.append("format detailed -> summary (the hub accepts attributeNames only with summary or context)")
+        elif "limit" in props and "limit" not in out and not out.get("deviceIds"):
+            out["limit"] = DETAILED_DEFAULT_LIMIT
+            changes.append(f"limit {DETAILED_DEFAULT_LIMIT} added (an unbounded detailed read exceeds the hub's response cap)")
+    if not changes:
+        return args, None
+    return out, {"source": "client note from this call's arguments and the live tool schema; not hub data",
+                 "changes": changes, "use": "Page with offset/cursor if more rows are needed."}

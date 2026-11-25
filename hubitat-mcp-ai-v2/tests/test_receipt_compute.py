@@ -524,3 +524,24 @@ class FilterScopeAndHeldBackCoverage(unittest.TestCase):
              "arguments": {"receipt_index": 1, "operation": "sort", "field": "stateSize"}},
         ]
         self.assertIsNone(partial_coverage_note(receipts))
+
+
+class ListDevicesArgNormalisation(unittest.TestCase):
+    CAT = [{"name": "hub_list_devices", "inputSchema": {"properties": {"format": {}, "limit": {}, "attributeNames": {}}}}]
+
+    def test_attribute_names_with_detailed_becomes_summary(self):
+        from receipt_compute import normalize_list_devices_args
+        out, note = normalize_list_devices_args(
+            "hub_list_devices", {"format": "detailed", "attributeNames": ["battery"]}, self.CAT)
+        self.assertEqual(out["format"], "summary")
+        self.assertEqual(out["attributeNames"], ["battery"])
+        self.assertIn("summary", note["changes"][0])
+
+    def test_unbounded_detailed_gets_a_limit_and_other_calls_are_untouched(self):
+        from receipt_compute import normalize_list_devices_args
+        out, note = normalize_list_devices_args("hub_list_devices", {"format": "detailed"}, self.CAT)
+        self.assertEqual(out["limit"], 40)
+        same, none = normalize_list_devices_args("hub_list_devices", {"format": "summary"}, self.CAT)
+        self.assertIsNone(none)
+        self.assertEqual(same, {"format": "summary"})
+        self.assertEqual(normalize_list_devices_args("hub_get_logs", {"format": "detailed"}, self.CAT)[1], None)
