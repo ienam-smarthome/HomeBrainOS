@@ -438,3 +438,20 @@ class FieldMeaningProseNote(unittest.TestCase):
         receipts = self.RECEIPTS + [{"name": "hub_get_metrics", "success": True}]
         note = field_meaning_prose_note("stateSize shows memory per device.", receipts)
         self.assertIn("hub_get_memory_history/hub_get_metrics", note)
+
+
+class AnnotationOrderAndCapturedProse(unittest.TestCase):
+    def test_client_annotations_come_first_in_model_json(self):
+        from agent import compact_tool_result
+        body = compact_tool_result({"content": [{"text": "x" * 50}],
+                                    "client_row_compute_hint": {"receipt_index": 1},
+                                    "_meta": {}})
+        self.assertLess(body.index("client_row_compute_hint"), body.index('"content"'))
+        self.assertEqual(json.loads(body)["content"][0]["text"], "x" * 50)
+
+    def test_alpha175_capture_sentence_is_now_flagged(self):
+        answer = ("While it isn’t a direct measurement of RAM, it is the primary size-like "
+                  "metric and therefore provides a reliable indication of which devices are "
+                  "occupying the most memory resources.")
+        receipts = [{"name": "hub_get_logs", "success": True, "field_meaning_fields": ["stateSize"]}]
+        self.assertIn("none is RAM or memory use", field_meaning_prose_note(answer, receipts))

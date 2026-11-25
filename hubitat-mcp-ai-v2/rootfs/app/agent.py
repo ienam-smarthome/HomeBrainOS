@@ -271,6 +271,7 @@ stored power/energy/health attribute; only that attribute's dated native
 event or separately timestamped measurement supports a measurement time.
 Convert KB to MB by dividing by 1,000 (decimal) unless the user asks for MiB;
 never label a divide-by-1,024 figure as MB.
+When a row result carries client_row_compute_hint and the answer needs a count, ranking, total or gap, your very next message must be the homebrain_compute_receipt call, not a drafted answer; write the answer once, after the computed output.
 For a ranking ("most", "largest", "top N"), first use the source tool's own sort or limit parameters when its schema offers them (for example a sortBy argument with a small limit); the rows then come back already ordered, and the first N rows are the answer without paging through everything. When coverage says the rows are source-ordered, describe them as the leading rows of the hub's own ordering, not as an arbitrary partial sample.
 Never say a stored-state or runtime field (stateSize, pct, total) correlates with, approximates or is a proxy for memory or RAM; state what it measures and that per-device memory is not provided.
 Never say or imply a tool was run unless this request has a successful receipt for it. A table of numbers must come from receipts; if a figure was not read, say it was not read and offer to read it.
@@ -671,6 +672,12 @@ def arguments_of(call: dict) -> dict:
 
 
 def compact_tool_result(value: dict, max_chars: int = 90000) -> str:
+    # Client annotations (compute hint, coverage, field meanings) go first: a long
+    # source body otherwise buries them at the end where the model skips them.
+    # Order only; no key is added, removed or changed.
+    if isinstance(value, dict) and any(str(k).startswith("client_") for k in value):
+        value = {**{k: v for k, v in value.items() if str(k).startswith("client_")},
+                 **{k: v for k, v in value.items() if not str(k).startswith("client_")}}
     content = json.dumps(redact(value), ensure_ascii=False, default=str)
     if len(content) <= max_chars:
         return content

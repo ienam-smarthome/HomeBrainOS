@@ -198,3 +198,10 @@ answers and its round-time cost.
 
 - `field_meaning_prose_note(answer, receipts)` (receipt_compute.py), appended beside the coverage note. Trigger is structural (a receipt recorded `field_meaning_fields`); it inspects the model's answer clauses, not the question. Heuristic: clause contains memory/RAM and `stateSize` with no negation word.
 - Limits: a heuristic on model wording; may miss paraphrases or flag a correct clause lacking a negation word.
+
+## alpha.176
+
+- Evidence (alpha.175 capture, private): rounds were read (2.4 s), draft answer (5.7 s, 1,647 output tokens), compute after COMPUTE_NUDGE (3.1 s), final answer (2.8 s). The draft round is the avoidable one.
+- `compact_tool_result` orders `client_*` keys first (order only). Prompt: compute before drafting.
+- Not changed: the nudge itself; a model that ignores the new rule still pays the extra rounds. Same capture: the model skipped `sortBy` and ranked only the first unsorted page (rank 10 was wrong versus the hub's own ordering); a compute-time warning for rankings over unsorted partial sources is the next candidate.
+- Memory-wording footnote: curly apostrophe normalised; proxy/correlat*/indication/approximat*/closest clauses mentioning memory/RAM are flagged.
