@@ -166,17 +166,27 @@ class PartialRankingWarningThroughAgentLoop(unittest.IsolatedAsyncioTestCase):
             {"content": "", "tool_calls": [call("homebrain_compute_receipt", {
                 "operation": "sort", "receipt_index": 1, "field": "stateSize",
                 "rows_path": "content.0.text.modes.apps.entries", "descending": True, "limit": 3})]},
+            {"content": "", "tool_calls": [call("homebrain_compute_receipt", {
+                "operation": "sort", "receipt_index": 1, "field": "stateSize",
+                "rows_path": "content.0.text.modes.apps.entries", "descending": True, "limit": 3})]},
             {"content": "Done.", "tool_calls": []},
         ])
         try:
             reply = await agent.answer("rank the apps", [], hub, 60)
         finally:
             await agent.close()
-        compute_msg = json.loads(agent.tool_messages[-1][-1]["content"])
-        warning = compute_msg["client_partial_ranking_warning"]
+        held = [m for batch in agent.tool_messages for m in batch if "ranking_computed" in m["content"]]
+        first = json.loads(held[0]["content"])
+        self.assertFalse(first["ranking_computed"])
+        warning = first["client_partial_ranking_warning"]
         self.assertEqual(warning["sort_parameter_offered"], "sortBy")
         self.assertIn("first 12 rows of 40", warning["use"])
-        self.assertTrue(reply["tool_calls"][1].get("partial_ranking_warning"))
+        self.assertTrue(reply["tool_calls"][1].get("ranking_held_back"))
+        # A second attempt on the same receipt is not held back again (no loop) and keeps the warning.
+        second = json.loads(agent.tool_messages[-1][-1]["content"])
+        self.assertIn("client_partial_ranking_warning", second)
+        self.assertNotIn("ranking_computed", second)
+        self.assertFalse(reply["tool_calls"][2].get("ranking_held_back"))
 
 
 if __name__ == "__main__":

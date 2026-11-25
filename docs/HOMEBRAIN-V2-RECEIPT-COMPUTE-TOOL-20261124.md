@@ -229,3 +229,7 @@ answers and its round-time cost.
 ## Alpha.183: question-set follow-ups
 
 The 25 Nov question-set run passed 4/10, every failure on rounds. Changes: the compute-nudge round now runs only when the model's own draft states a count, ranking, total or measurement (`draft_states_aggregate`, applied to the draft, not the user's text); a prompt rule asks for independent reads in the same turn; `rows_path` accepts a path missing the `modes` segment and the error lists the keys present; `temperature_unit_note` footnotes a °C/°F label that no receipt states (the heating answer labelled °C values as °F); and the prompt forbids unsupported causes ("just finished boiling"). Live effect on rounds is not yet measured.
+
+## Alpha.184: hold back partial rankings
+
+In the alpha.183 run the ranking warning appeared on Q1 and Q2 but the model ignored it and answered "top N" from an unsorted first page (Q2 listed apps that were not the largest). The first sort/min/max compute over a partial, unsorted page whose source offers a sort parameter now returns `ranking_computed: false` plus the warning; the second attempt on the same receipt is computed as before, so there is no loop. Derived only from receipt coverage, the compute call's declared field and the live schema. Live effect not yet measured.

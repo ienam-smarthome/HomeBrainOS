@@ -273,6 +273,9 @@ Convert KB to MB by dividing by 1,000 (decimal) unless the user asks for MiB;
 never label a divide-by-1,024 figure as MB.
 When a row result carries client_row_compute_hint and the answer needs a count, ranking, total or gap, your very next message must be the homebrain_compute_receipt call, not a drafted answer; write the answer once, after the computed output.
 For a ranking ("most", "largest", "top N"), first use the source tool's own sort or limit parameters when its schema offers them (for example a sortBy argument with a small limit); the rows then come back already ordered, and the first N rows are the answer without paging through everything. When coverage says the rows are source-ordered, describe them as the leading rows of the hub's own ordering, not as an arbitrary partial sample.
+Receipts record the exact arguments of every call; before saying a filter or argument was not applied, check the call's arguments.
+For a "which are on", "which have" or "which are low" list over many devices, never request format "detailed" for all devices; use summary with attributeNames or filters.
+A summary device list has no capability data, so it cannot show that a device is or is not a light; use capabilityFilter or a label/room filter, or say that capability was not checked.
 When a question needs several independent reads (for example contact sensors and water sensors, or devices and apps), request all of them together in one turn rather than one per turn.
 Write a temperature unit (°C or °F) only if a tool result states it; otherwise write "degrees" and say the hub does not report the unit.
 Report observed values only. Do not state causes or intentions behind a change (for example "just finished boiling", "arriving", "arrived") unless a tool result states them.
@@ -1027,6 +1030,7 @@ class Agent:
         ]
         receipts: list[dict] = []
         rounds = 0
+        ranking_refused: set = set()
         model_round_metrics: list[dict] = []
         leaf_schema_discoveries = 0
         source_review_invoked = False
@@ -3045,7 +3049,17 @@ class Agent:
                                 args, catalog)
                             if ranking_warning is not None:
                                 record["partial_ranking_warning"] = True
-                                result = {**result, "client_partial_ranking_warning": ranking_warning}
+                                if used not in ranking_refused:
+                                    # First time only: hold the ranking back and make the model
+                                    # re-read with the source's own sort. A second attempt on the
+                                    # same receipt goes through with the warning, so this cannot loop.
+                                    ranking_refused.add(used)
+                                    record["ranking_held_back"] = True
+                                    result = {"client_partial_ranking_warning": ranking_warning,
+                                              "ranking_computed": False,
+                                              "local_computation": None}
+                                else:
+                                    result = {**result, "client_partial_ranking_warning": ranking_warning}
                         record["operation_executed"] = False
                         record["read_only"] = True
                         model_result = result

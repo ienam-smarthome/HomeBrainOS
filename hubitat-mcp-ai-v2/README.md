@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Current code candidate: `2.0.0-alpha.183`. Fewer model rounds and fewer wrong details from the question-set report: the compute-check round is skipped when the draft is a plain list with no count/ranking/measurement, the prompt asks for independent reads in one turn, `rows_path` tolerates a missing `modes` segment and lists the available keys on error, temperature units (°C/°F) are footnoted when no tool result states them, and the prompt forbids stating causes the data does not give.
+Current code candidate: `2.0.0-alpha.184`. Rankings over a partial, unsorted page are now held back once: the first `sort/min/max` compute on such a source returns no ranking and tells the model to re-read with the source's own sort (a second attempt goes through with the warning, so it cannot loop). Prompt rules added: check call arguments before claiming a filter was not applied, never request `format: detailed` for all devices, and a summary list cannot show a device is or is not a light.
 
 Per-alpha history (alpha.8 to alpha.171) is in [docs/HOMEBRAIN-V2-ALPHA-HISTORY.md](../docs/HOMEBRAIN-V2-ALPHA-HISTORY.md).
 
