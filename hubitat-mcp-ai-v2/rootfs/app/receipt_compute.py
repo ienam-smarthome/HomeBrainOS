@@ -115,7 +115,12 @@ def _walk(value: Any, path: list[str]) -> Any:
                 raise ComputeError(f"rows_path segment {key!r} is not a valid list index") from None
         elif isinstance(current, dict):
             if key not in current:
-                raise ComputeError(f"rows_path segment {key!r} not found in receipt")
+                nested = _decode(current.get("modes")) if isinstance(current.get("modes"), (dict, str)) else None
+                if isinstance(nested, dict) and key in nested:
+                    current = nested[key]  # tolerate content.0.text.apps.entries for modes.apps.entries
+                    continue
+                known = ", ".join(sorted(str(k) for k in current)[:12])
+                raise ComputeError(f"rows_path segment {key!r} not found in receipt; keys here: {known}")
             current = current[key]
         else:
             raise ComputeError(f"rows_path segment {key!r} cannot descend into a scalar")
@@ -910,3 +915,38 @@ def unit_conversion_note(result: Any) -> dict | None:
     return {"source": "client conversion of returned KB fields; not hub data",
             "fields": found,
             "use": "Quote MB as the decimal figure (KB divided by 1,000) unless the person asked for MiB."}
+
+
+_AGGREGATE_WORDS = re.compile(
+    r"\b(total|sum|average|mean|median|most|least|highest|lowest|top|largest|smallest|"
+    r"rank(?:ed|ing)?|count|in total|combined|maximum|minimum|oldest|newest|longest|shortest)\b", re.I)
+_LARGE_NUMBER = re.compile(r"(?<![\w.-])\d{1,3}(?:,\d{3})+(?![\w-])|(?<![\w.-])\d+(?:\.\d+)?\s?(?:%|MB|KB|GB|W|kWh|bytes|h|hours|min)\b")
+_ROW_COUNT = re.compile(r"\b\d+\s+(?:of\s+\d+\s+)?(?:devices|apps|rows|entries|sensors|lights|batteries|items)\b", re.I)
+
+
+def draft_states_aggregate(text: str) -> bool:
+    """True when the model's own draft appears to state a count, ranking, total or measurement.
+
+    Applies to the model's draft, never the user's text. A plain list of names and states needs no
+    compute-receipt round, so the extra nudge round is skipped for it.
+    """
+    body = re.sub(r"`[^`]*`", "", text or "")
+    return bool(_AGGREGATE_WORDS.search(body) or _ROW_COUNT.search(body) or _LARGE_NUMBER.search(body))
+
+
+_UNIT_MARK = {"C": re.compile(r"°\s?C\b|celsius|\"unit\"\s*:\s*\"°?C\"", re.I),
+              "F": re.compile(r"°\s?F\b|fahrenheit|\"unit\"\s*:\s*\"°?F\"", re.I)}
+
+
+def temperature_unit_note(answer: str, receipts: list) -> str:
+    """Footnote when the answer names a temperature unit that no tool result states."""
+    said = [u for u in ("C", "F") if re.search(rf"°\s?{u}\b", answer or "")]
+    if not said:
+        return ""
+    stored = " ".join(str(r.get("response") or "") for r in receipts if isinstance(r, dict))
+    unsupported = [u for u in said if not _UNIT_MARK[u].search(stored)]
+    if not unsupported:
+        return ""
+    return ("Unit note: no tool result this request states a temperature unit, so the "
+            f"{'/'.join('°' + u for u in unsupported)} label above is not read from the hub; "
+            "treat the numbers as degrees in the hub's configured scale.")

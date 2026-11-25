@@ -207,11 +207,19 @@ class ComputeNudge(unittest.IsolatedAsyncioTestCase):
     async def test_nudge_is_sent_only_once(self):
         agent, reply = await self.run_script([
             {"content": "", "tool_calls": [call("hub_list_devices", {})]},
-            {"content": "A draft with no figures.", "tool_calls": []},
-            {"content": "A draft with no figures.", "tool_calls": []},
+            {"content": "A draft: the total is 12 devices.", "tool_calls": []},
+            {"content": "A draft: the total is 12 devices.", "tool_calls": []},
         ])
         self.assertEqual(agent.script, [])
         self.assertIn("draft", reply["answer"])
+
+    async def test_plain_list_draft_skips_the_nudge_round(self):
+        agent, reply = await self.run_script([
+            {"content": "", "tool_calls": [call("hub_list_devices", {})]},
+            {"content": "Front door: closed. Fridge door: closed.", "tool_calls": []},
+        ])
+        self.assertEqual(agent.script, [])
+        self.assertIn("Front door", reply["answer"])
 
 
 class FieldMeaningRule(unittest.TestCase):

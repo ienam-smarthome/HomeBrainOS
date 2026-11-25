@@ -108,7 +108,7 @@ from device_monitor import TOOL_NAME as MONITOR_TOOL, TOOL_DEFINITION as MONITOR
 from monitor_evidence import monitor_evidence_scope
 from retrieval_coverage import FileReadCoverage, file_chunk_scope, event_attribute_scope
 from receipt_compute import (
-    field_meaning_prose_note, partial_coverage_note, partial_ranking_warning, unrun_tool_note, unit_conversion_note,
+    draft_states_aggregate, field_meaning_prose_note, partial_coverage_note, temperature_unit_note, partial_ranking_warning, unrun_tool_note, unit_conversion_note,
     issued_cursors, cursor_continuation,
     TOOL_NAME as COMPUTE_TOOL, TOOL_DEFINITION as COMPUTE_TOOL_DEFINITION,
     ComputeError, compute as compute_receipt, field_meaning_note, rows_hint,
@@ -273,6 +273,9 @@ Convert KB to MB by dividing by 1,000 (decimal) unless the user asks for MiB;
 never label a divide-by-1,024 figure as MB.
 When a row result carries client_row_compute_hint and the answer needs a count, ranking, total or gap, your very next message must be the homebrain_compute_receipt call, not a drafted answer; write the answer once, after the computed output.
 For a ranking ("most", "largest", "top N"), first use the source tool's own sort or limit parameters when its schema offers them (for example a sortBy argument with a small limit); the rows then come back already ordered, and the first N rows are the answer without paging through everything. When coverage says the rows are source-ordered, describe them as the leading rows of the hub's own ordering, not as an arbitrary partial sample.
+When a question needs several independent reads (for example contact sensors and water sensors, or devices and apps), request all of them together in one turn rather than one per turn.
+Write a temperature unit (°C or °F) only if a tool result states it; otherwise write "degrees" and say the hub does not report the unit.
+Report observed values only. Do not state causes or intentions behind a change (for example "just finished boiling", "arriving", "arrived") unless a tool result states them.
 Never say a stored-state or runtime field (stateSize, pct, total) correlates with, approximates or is a proxy for memory or RAM; state what it measures and that per-device memory is not provided.
 Never say or imply a tool was run unless this request has a successful receipt for it. A table of numbers must come from receipts; if a figure was not read, say it was not read and offer to read it.
 When a row result's client_row_compute_hint.coverage.partial is true, any ranking, count or maximum you give covers only the returned rows: say "N of M rows". List every row the compute result ranked above the ones you mention, in the computed order. A table of apps is not a table of devices: choose the source whose rows are the thing asked about, or say it is the closest available one.
@@ -1415,6 +1418,9 @@ class Agent:
                 field_note = field_meaning_prose_note(verified_answer, receipts)
                 if field_note:
                     verified_answer = f"{verified_answer}\n\n{field_note}"
+                unit_prose_note = temperature_unit_note(verified_answer, receipts)
+                if unit_prose_note:
+                    verified_answer = f"{verified_answer}\n\n{unit_prose_note}"
                 unrun_note = unrun_tool_note(verified_answer, receipts, native_catalog_names)
                 if unrun_note:
                     verified_answer = f"{verified_answer}\n\n{unrun_note}"
@@ -2041,6 +2047,7 @@ class Agent:
                 return completed_answer(text, "not_invoked")
 
             if (enable_compute_nudge and not calls and text and row_list_receipt_seen
+                    and draft_states_aggregate(text)
                     and not compute_nudge_sent
                     and not any(r.get("result_kind") == "local_compute" for r in receipts)
                     and deadline - time.monotonic() > 25):

@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Current code candidate: `2.0.0-alpha.182`. Optional network alerts: a background watcher sends a Home Assistant mobile push when the internet (5 min) or the hub (8 min, allowing for a reboot) stays unreachable, with one recovery message and retry of undelivered alerts; light-theme logo mark is lighter and higher contrast.
+Current code candidate: `2.0.0-alpha.183`. Fewer model rounds and fewer wrong details from the question-set report: the compute-check round is skipped when the draft is a plain list with no count/ranking/measurement, the prompt asks for independent reads in one turn, `rows_path` tolerates a missing `modes` segment and lists the available keys on error, temperature units (°C/°F) are footnoted when no tool result states them, and the prompt forbids stating causes the data does not give.
 
 Per-alpha history (alpha.8 to alpha.171) is in [docs/HOMEBRAIN-V2-ALPHA-HISTORY.md](../docs/HOMEBRAIN-V2-ALPHA-HISTORY.md).
 
