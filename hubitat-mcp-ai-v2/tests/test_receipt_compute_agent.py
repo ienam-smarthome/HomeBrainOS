@@ -136,13 +136,47 @@ class FieldMeaningNote(unittest.TestCase):
         note = field_meaning_note("hub_get_logs", self.logs_result())
         self.assertIsNotNone(note)
         self.assertIn("not memory", note["meanings"]["total"])
-        self.assertIn("share of that total device runtime", note["meanings"]["pct"])
+        self.assertIn("share of that total runtime", note["meanings"]["pct"])
         self.assertIn("bytes", note["meanings"]["stateSize"])
 
     def test_other_tools_and_shapes_get_no_note(self):
         from receipt_compute import field_meaning_note
         self.assertIsNone(field_meaning_note("hub_list_devices", self.logs_result()))
         self.assertIsNone(field_meaning_note("hub_get_logs", {"content": []}))
+
+
+class PartialRankingWarningThroughAgentLoop(unittest.IsolatedAsyncioTestCase):
+    async def test_compute_over_unsorted_partial_page_tells_model_to_use_sortby(self):
+        rows = [{"id": str(i), "name": f"a{i}", "stateSize": 100 - i} for i in range(12)]
+
+        class LogsHub(Hub):
+            def __init__(self):
+                super().__init__()
+                self.catalog = [{"name": "hub_get_logs", "inputSchema": {
+                    "type": "object", "properties": {"mode": {}, "limit": {}, "sortBy": {}}}}]
+
+            async def call(self, name, args):
+                self.calls.append((name, args))
+                body = {"modes": {"apps": {"total": 40, "entries": rows, "nextCursor": "12"}}}
+                return {"content": [{"type": "text", "text": json.dumps(body)}]}
+
+        hub = LogsHub()
+        agent = Scripted([
+            {"content": "", "tool_calls": [call("hub_get_logs", {"mode": ["apps"], "limit": 0})]},
+            {"content": "", "tool_calls": [call("homebrain_compute_receipt", {
+                "operation": "sort", "receipt_index": 1, "field": "stateSize",
+                "rows_path": "content.0.text.modes.apps.entries", "descending": True, "limit": 3})]},
+            {"content": "Done.", "tool_calls": []},
+        ])
+        try:
+            reply = await agent.answer("rank the apps", [], hub, 60)
+        finally:
+            await agent.close()
+        compute_msg = json.loads(agent.tool_messages[-1][-1]["content"])
+        warning = compute_msg["client_partial_ranking_warning"]
+        self.assertEqual(warning["sort_parameter_offered"], "sortBy")
+        self.assertIn("first 12 rows of 40", warning["use"])
+        self.assertTrue(reply["tool_calls"][1].get("partial_ranking_warning"))
 
 
 if __name__ == "__main__":

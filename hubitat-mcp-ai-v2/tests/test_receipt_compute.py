@@ -425,7 +425,7 @@ class FieldMeaningProseNote(unittest.TestCase):
         note = field_meaning_prose_note(answer, self.RECEIPTS)
         self.assertIn("`stateSize`", note)
         self.assertIn("none is RAM or memory use", note)
-        self.assertIn("No per-device memory source was read", note)
+        self.assertIn("No memory source was read", note)
 
     def test_quiet_when_prose_already_negates_or_no_field_note(self):
         ok = "stateSize is bytes of stored state, not memory use."
@@ -455,3 +455,25 @@ class AnnotationOrderAndCapturedProse(unittest.TestCase):
                   "occupying the most memory resources.")
         receipts = [{"name": "hub_get_logs", "success": True, "field_meaning_fields": ["stateSize"]}]
         self.assertIn("none is RAM or memory use", field_meaning_prose_note(answer, receipts))
+
+
+class PartialRankingWarning(unittest.TestCase):
+    CATALOG = [{"name": "hub_get_logs", "inputSchema": {"properties": {"mode": {}, "limit": {}, "sortBy": {}}}}]
+    SOURCE = {"name": "hub_get_logs", "arguments": {"mode": ["apps"], "limit": 0},
+              "row_coverage": {"rows_returned": 50, "source_reported_total": 189, "partial": True}}
+
+    def test_warns_when_sort_offered_but_unused(self):
+        from receipt_compute import partial_ranking_warning
+        warn = partial_ranking_warning(self.SOURCE, {"operation": "sort", "field": "stateSize"}, self.CATALOG)
+        self.assertEqual(warn["sort_parameter_offered"], "sortBy")
+        self.assertIn('sortBy="stateSize"', warn["use"])
+        self.assertIn("first 50 rows of 189", warn["use"])
+
+    def test_quiet_when_sorted_complete_unoffered_or_not_a_ranking(self):
+        from receipt_compute import partial_ranking_warning
+        sorted_src = dict(self.SOURCE, arguments={"sortBy": "stateSize"})
+        self.assertIsNone(partial_ranking_warning(sorted_src, {"operation": "sort"}, self.CATALOG))
+        full = dict(self.SOURCE, row_coverage={"rows_returned": 50, "partial": False})
+        self.assertIsNone(partial_ranking_warning(full, {"operation": "sort"}, self.CATALOG))
+        self.assertIsNone(partial_ranking_warning(self.SOURCE, {"operation": "sort"}, [{"name": "hub_get_logs", "inputSchema": {"properties": {"mode": {}}}}]))
+        self.assertIsNone(partial_ranking_warning(self.SOURCE, {"operation": "count"}, self.CATALOG))
