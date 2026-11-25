@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 
 from routine_action_fastpath import _normal, _original
-from routine_component_light import verified_physical_bridge_parent
+from routine_component_light import component_parent_id, verified_physical_bridge_parent
 
 # These are device-capability declarations, not inferred side-effect proofs.
 # Never assume generic "Switch" alone establishes a benign operation.
@@ -176,3 +176,106 @@ def matches_original_native_write(candidate: dict, name: str, args: dict) -> boo
         and args.get("parameters") in (None, [])
         and args.get("waitFor") == candidate.get("wait_for")
     )
+
+
+MAX_BATCH_TARGETS = 8
+
+
+def batch_light_candidates(args: dict, receipts: list[dict]) -> list[dict] | None:
+    """Structured on/off batch (commands list) -> per-device candidates, else None.
+
+    Reads only the call arguments and original inventory receipts. Any extra key, parameter,
+    duplicate id, non-on/off command or id missing from a successful inventory read fails closed.
+    """
+    if (not isinstance(args, dict) or set(args) != {"commands"}
+            or not isinstance(args["commands"], list)
+            or not 2 <= len(args["commands"]) <= MAX_BATCH_TARGETS):
+        return None
+    labels: dict[str, str] = {}
+    for row in receipts:
+        if isinstance(row, dict) and row.get("name") == "hub_list_devices" and row.get("success") is True:
+            doc = _original(row)
+            for item in (doc or {}).get("devices") or []:
+                if isinstance(item, dict) and str(item.get("id", "")).strip() \
+                        and isinstance(item.get("label"), str) and item["label"].strip():
+                    labels[str(item["id"]).strip()] = item["label"]
+    out, seen = [], set()
+    for item in args["commands"]:
+        if (not isinstance(item, dict) or set(item) != {"command", "deviceId"}
+                or item["command"] not in ("on", "off")
+                or type(item["deviceId"]) not in (str, int)):
+            return None
+        identifier = str(item["deviceId"]).strip()
+        if (not identifier.isascii() or not identifier.isdigit() or len(identifier) > 12
+                or identifier in seen or identifier not in labels):
+            return None
+        seen.add(identifier)
+        out.append({"device_id": identifier, "label": labels[identifier], "command": item["command"]})
+    return out
+
+
+async def read_batch_light_evidence(mcp, candidates: list[dict], receipts: list[dict], *,
+                                    budget_seconds: float = 6.0) -> list[dict]:
+    """Bounded native READS only: one detail per target plus each distinct bridge parent once."""
+    import asyncio
+    import time
+    from routine_component_light import (_original_read_receipt, component_parent_id,
+                                         read_component_parent_evidence)
+    from mcp import MCPError
+    start = time.monotonic()
+    collected: list[dict] = []
+    working = list(receipts)
+    for cand in candidates:
+        have = [r for r in working if isinstance(r, dict) and r.get("name") == "hub_get_device"
+                and str((r.get("arguments") or {}).get("deviceId", "")).strip() == cand["device_id"]]
+        if have:
+            continue
+        remaining = budget_seconds - (time.monotonic() - start)
+        if remaining <= 0.5:
+            return collected
+        args = {"deviceId": cand["device_id"]}
+        begin = time.monotonic()
+        try:
+            raw = await asyncio.wait_for(mcp.call("hub_get_device", args), timeout=remaining)
+            record = _original_read_receipt("hub_get_device", args, raw,
+                                            round((time.monotonic() - begin) * 1000))
+        except (MCPError, asyncio.TimeoutError, ValueError) as exc:
+            record = _original_read_receipt("hub_get_device", args, None,
+                                            round((time.monotonic() - begin) * 1000), error=str(exc))
+        collected.append(record)
+        working.append(record)
+    parents: list[str] = []
+    for cand in candidates:
+        scoped = [r for r in working if not (isinstance(r, dict) and r.get("name") == "hub_get_device"
+                  and str((r.get("arguments") or {}).get("deviceId", "")).strip() != cand["device_id"])]
+        parent = component_parent_id(cand, scoped)
+        if parent and parent not in parents:
+            parents.append(parent)
+    for parent in parents:
+        remaining = budget_seconds - (time.monotonic() - start)
+        if remaining <= 0.5:
+            break
+        collected.extend(await read_component_parent_evidence(mcp, parent, budget_seconds=min(4.0, remaining)))
+    return collected
+
+
+def batch_light_authorization(candidates: list[dict], receipts: list[dict], *,
+                              safe_switch_ids: frozenset[str] = frozenset()) -> bool:
+    """True only when EVERY target passes the single-device policy on its own evidence."""
+    for cand in candidates:
+        scoped = []
+        parent_ids = set()
+        details = [r for r in receipts if isinstance(r, dict) and r.get("name") == "hub_get_device"]
+        own = [r for r in details if str((r.get("arguments") or {}).get("deviceId", "")).strip() == cand["device_id"]]
+        if len(own) != 1:
+            return False
+        parent = component_parent_id(cand, [r for r in receipts if r not in details] + own)
+        keep = {id(own[0])}
+        if parent:
+            parent_rows = [r for r in details if str((r.get("arguments") or {}).get("deviceId", "")).strip() == parent]
+            keep.update(id(r) for r in parent_rows)
+        scoped = [r for r in receipts if r not in details or id(r) in keep]
+        if source_verified_auto_approval_class(cand, scoped, auto_lights=True,
+                                               safe_switch_ids=safe_switch_ids) is None:
+            return False
+    return True

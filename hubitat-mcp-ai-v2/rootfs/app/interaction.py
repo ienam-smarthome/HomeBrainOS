@@ -12,6 +12,7 @@ from action_proposal_review import is_native_action_proposal
 from native_action_contract import verified_device_details, numeric_minutes, timing_kind
 from routine_approval_policy import (
     source_verified_auto_approval_class, matches_original_native_write,
+    batch_light_authorization,
 )
 
 
@@ -180,6 +181,20 @@ class Interaction:
         }
         return True
 
+    def offer_batch_routine_authorization(self, args: dict, candidates: list[dict],
+                                          receipts: list[dict]) -> bool:
+        """Single-use authorization for one structured on/off batch whose every target passed
+        the single-device policy on fresh original reads. Bound to the exact arguments."""
+        self._routine_proof = None
+        if (self._cancelled or self.native_write_submission_started
+                or not self.require_native_write_approval or not self.auto_approve_lights):
+            return False
+        if not batch_light_authorization(candidates, receipts,
+                                         safe_switch_ids=self.trusted_safe_switch_ids):
+            return False
+        self._routine_proof = {"batch_args": copy.deepcopy(args), "class": "verified_light_batch"}
+        return True
+
     def status(self) -> dict:
         return {"current": self.current, "pending": self.pending,
                 "phase": self.phase, "cancelled": self._cancelled}
@@ -209,9 +224,12 @@ class Interaction:
                 and not explicit_confirmation
                 and not self.routine_auto_approval_used
                 and isinstance(proof, dict)
-                and matches_original_native_write(
-                    proof["candidate"], name, arguments
-                )):
+                and ((proof.get("batch_args") is not None
+                      and name == "hub_call_device_command"
+                      and proof["batch_args"] == arguments)
+                     or (proof.get("candidate") is not None
+                         and matches_original_native_write(
+                             proof["candidate"], name, arguments)))):
             self.routine_auto_approval_used = True
             self.routine_auto_approval_class = proof["class"]
             self.set_phase(

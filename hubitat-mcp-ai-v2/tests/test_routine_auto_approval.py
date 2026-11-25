@@ -609,3 +609,77 @@ class ComponentBridgeLiveShapeTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BatchLightPolicyTests(unittest.TestCase):
+    def _receipts(self, rows):
+        out = [previous_receipt("hub_list_devices", {"format": "summary"}, {
+            "devices": [{"id": i, "label": label, "driver": "Matter Generic Dimmer",
+                         "protocol": "matter", "disabled": False,
+                         "currentStates": {"switch": "off"}} for i, label, _ in rows],
+            "count": len(rows), "total": len(rows)})]
+        for i, label, caps in rows:
+            d = device(label=label, switch="off")
+            d["capabilities"] = list(caps)
+            d["name"] = "Dimmer"
+            d["id"] = i
+            out.append(previous_receipt("hub_get_device", {"deviceId": i}, d))
+        return out
+
+    def test_batch_of_plain_lights_is_authorised(self):
+        from routine_approval_policy import batch_light_authorization, batch_light_candidates
+        rows = [("L1", "Fictional Hall Lamp", ["Switch", "Light", "SwitchLevel"]),
+                ("L2", "Fictional Study Lamp", ["Switch", "Light", "SwitchLevel"])]
+        receipts = self._receipts(rows)
+        args = {"commands": [{"command": "on", "deviceId": "L1"}, {"command": "on", "deviceId": "L2"}]}
+        # ids must be numeric; use numeric fictional ids
+        rows = [("5001", rows[0][1], rows[0][2]), ("5002", rows[1][1], rows[1][2])]
+        receipts = self._receipts(rows)
+        args = {"commands": [{"command": "on", "deviceId": "5001"}, {"command": "on", "deviceId": "5002"}]}
+        cands = batch_light_candidates(args, receipts)
+        self.assertEqual(len(cands), 2)
+        self.assertTrue(batch_light_authorization(cands, receipts))
+
+    def test_one_sensitive_target_or_extra_key_blocks_the_whole_batch(self):
+        from routine_approval_policy import batch_light_authorization, batch_light_candidates
+        rows = [("5001", "Fictional Hall Lamp", ["Switch", "Light", "SwitchLevel"]),
+                ("5002", "Fictional Heater Socket", ["Switch"])]
+        receipts = self._receipts(rows)
+        args = {"commands": [{"command": "on", "deviceId": "5001"}, {"command": "on", "deviceId": "5002"}]}
+        cands = batch_light_candidates(args, receipts)
+        self.assertFalse(batch_light_authorization(cands, receipts))
+        bad = {"commands": [{"command": "setLevel", "deviceId": "5001"}, {"command": "on", "deviceId": "5002"}]}
+        self.assertIsNone(batch_light_candidates(bad, receipts))
+        extra = {"commands": [{"command": "on", "deviceId": "5001"}, {"command": "on", "deviceId": "5002"}], "waitFor": {}}
+        self.assertIsNone(batch_light_candidates(extra, receipts))
+
+
+class BatchProofConsumptionTests(unittest.IsolatedAsyncioTestCase):
+    async def _gate_with_proof(self):
+        helper = BatchLightPolicyTests()
+        rows = [("5001", "Fictional Hall Lamp", ["Switch", "Light", "SwitchLevel"]),
+                ("5002", "Fictional Study Lamp", ["Switch", "Light", "SwitchLevel"])]
+        receipts = helper._receipts(rows)
+        args = {"commands": [{"command": "on", "deviceId": "5001"}, {"command": "on", "deviceId": "5002"}]}
+        from routine_approval_policy import batch_light_candidates
+        gate = Interaction(require_native_write_approval=True, auto_approve_lights=True)
+        self.assertTrue(gate.offer_batch_routine_authorization(
+            args, batch_light_candidates(args, receipts), receipts))
+        return gate, args
+
+    async def test_exact_batch_is_auto_approved_once(self):
+        gate, args = await self._gate_with_proof()
+        await gate.before_call("hub_call_device_command", dict(args), "")
+        self.assertTrue(gate.routine_auto_approval_used)
+        self.assertEqual(gate.routine_auto_approval_class, "verified_light_batch")
+
+    async def test_changed_batch_still_needs_a_card(self):
+        gate, args = await self._gate_with_proof()
+        changed = {"commands": args["commands"][:1] + [{"command": "off", "deviceId": "5002"}]}
+        task = asyncio.ensure_future(gate.before_call("hub_call_device_command", changed, ""))
+        await asyncio.sleep(0.05)
+        self.assertFalse(gate.routine_auto_approval_used)
+        self.assertIsNotNone(gate.pending)
+        gate.decide(gate.pending["id"], False)
+        with self.assertRaises(MCPError):
+            await task
