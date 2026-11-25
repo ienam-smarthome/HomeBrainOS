@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Current code candidate: `2.0.0-alpha.202`. Live alpha.201 captures: block 10.6 s, unblock 8.7 s, light on 5.7 s, light off 8.3 s, all without a card. Light on/off read the Matter bridge parent twice (four extra native reads, about 3 s) because the dispatch step re-read a parent the draft step had already verified. It now skips the read when the parent is already verified.
+Current code candidate: `2.0.0-alpha.203`. Live alpha.202 captures: light on 5.6 s, light off 4.3 s (bridge parent now read once), unblock 8.8 s, block 18.9 s, bathroom lights on 13.7 s and off 8.9 s, all without a card. Two search misses explain the slow and inconsistent runs: "nest mini" cannot match the hyphenated switch label, so the model listed all 67 switches; and "turn off bathroom lights" searched by the word "bathroom" and missed the Shower Light, whose label has no room name, while "turn on" listed everything and caught it. The prompt now tells the model to search a room by roomFilter plus the Light capability and to retry a hyphenated label once.
 
 Per-alpha history (alpha.8 to alpha.171) is in [docs/HOMEBRAIN-V2-ALPHA-HISTORY.md](../docs/HOMEBRAIN-V2-ALPHA-HISTORY.md).
 

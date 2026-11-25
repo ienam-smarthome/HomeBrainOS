@@ -730,3 +730,5 @@ Current code candidate: `2.0.0-alpha.200`. Fix for alpha.199 live captures: the 
 
 
 Current code candidate: `2.0.0-alpha.201`. Faster block/unblock: when the model sends a plain block, allow, on or off command for a device it has only listed, the client now reads that device's detail itself (one native read) instead of costing the model a round, then applies the same checks as before. Prompt tells the model to search once, then send the command, without reading details or asking first.
+
+Current code candidate: `2.0.0-alpha.202`. Live alpha.201 captures: block 10.6 s, unblock 8.7 s, light on 5.7 s, light off 8.3 s, all without a card. Light on/off read the Matter bridge parent twice (four extra native reads, about 3 s) because the dispatch step re-read a parent the draft step had already verified. It now skips the read when the parent is already verified.
