@@ -237,3 +237,7 @@ In the alpha.183 run the ranking warning appeared on Q1 and Q2 but the model ign
 ## Alpha.185: filter scope and held-back coverage
 
 The alpha.184 run fixed the Q1/Q2 rankings but (a) the footnote still said "50 of 293 rows" because the held-back compute counted as a computation, and (b) for "What changed in the last hour?" the model twice read the filtered `total` (96) as the inventory size and claimed `changedSince` had not been applied. Held-back computes are now ignored by `partial_coverage_note`; `filter_scope_note` adds `client_filter_scope` to `hub_list_devices` results whose call carried a filter. Both derive only from receipts and call arguments. Live effect not yet measured.
+
+## Alpha.186: nudge acknowledgement no longer replaces the answer
+
+In the alpha.185 run two answers (devices-by-memory, hub restarted) were the model's reply to the internal compute check ("My draft answer stands as written…"), not the table or uptime answer. When the reply to the check makes no tool call and no local computation exists, the draft that triggered the check is now published instead. Structural (loop state only); no user or draft wording is matched beyond the existing aggregate gate.

@@ -411,3 +411,18 @@ class CursorContinuationThroughAgentLoop(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(hub.calls), 2)  # cursor '7' was never issued: refused locally
         self.assertIn("Paging: 1 attempt(s) to read further pages of hub_get_logs", reply["answer"])
         self.assertIn("(mode devices)", reply["answer"])
+
+
+class NudgeAcknowledgementKeepsDraft(unittest.IsolatedAsyncioTestCase):
+    async def test_acknowledgement_does_not_replace_the_draft(self):
+        agent = Scripted([
+            {"content": "", "tool_calls": [call("hub_list_devices", {})]},
+            {"content": "The top device is Alpha with 12 MB in total.", "tool_calls": []},
+            {"content": "My draft stands as written; no change needed.", "tool_calls": []},
+        ])
+        try:
+            reply = await agent.answer("what is biggest?", [], Hub(), 90)
+        finally:
+            await agent.close()
+        self.assertIn("Alpha", reply["answer"])
+        self.assertNotIn("stands as written", reply["answer"])

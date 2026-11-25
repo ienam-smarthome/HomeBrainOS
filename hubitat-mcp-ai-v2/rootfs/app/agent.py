@@ -1696,6 +1696,7 @@ class Agent:
 
         row_list_receipt_seen = False
         compute_nudge_sent = False
+        nudged_draft: str | None = None
         while True:
             if hasattr(mcp, "cached_leaf_schemas"):
                 tools = model_tools(catalog, mcp.cached_leaf_schemas())
@@ -2059,9 +2060,17 @@ class Agent:
                 # and no local computation ran. One bounded chance to replace
                 # any figure derived by inspection with an exact computation.
                 compute_nudge_sent = True
+                nudged_draft = text
                 messages.append({"role": "assistant", "content": text})
                 messages.append({"role": "user", "content": COMPUTE_NUDGE})
                 continue
+
+            if (not calls and nudged_draft is not None and text
+                    and not any(r.get("result_kind") == "local_compute" for r in receipts)):
+                # The model answered the internal check without computing anything (for example
+                # "my draft stands as written"). That reply is an acknowledgement, not the answer:
+                # keep the draft the user was meant to see.
+                text = nudged_draft
 
             if not calls:
                 # A source-sufficiency/audit round can consume the remaining
