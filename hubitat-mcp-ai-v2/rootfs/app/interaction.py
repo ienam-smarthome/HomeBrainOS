@@ -199,8 +199,10 @@ class Interaction:
 
     def offer_internet_block_authorization(self, args: dict, candidate: dict | None) -> bool:
         """Single-use authorization for one verified per-device block/allow command, bound to exact args."""
+        if candidate is None:
+            return False  # Leave any other verified proof (single light, batch) untouched.
         self._routine_proof = None
-        if (candidate is None or self._cancelled or self.native_write_submission_started
+        if (self._cancelled or self.native_write_submission_started
                 or not self.require_native_write_approval or not self.auto_approve_internet_block):
             return False
         self._routine_proof = {"internet_args": copy.deepcopy(args), "class": "verified_internet_block"}

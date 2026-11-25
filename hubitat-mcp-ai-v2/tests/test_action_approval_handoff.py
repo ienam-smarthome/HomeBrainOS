@@ -314,11 +314,14 @@ class ApprovalRecoveryLifecycleTests(unittest.IsolatedAsyncioTestCase):
                 await asyncio.gather(task, return_exceptions=True)
             await model.close()
         self.assertTrue(result["success"])
-        self.assertEqual(result["rounds"], 7)
+        # The unsent draft reaches the approval card either by reinstatement (its device id came
+        # from a listing read) or by the approval handoff; reinstating saves one model round.
+        self.assertIn(result["rounds"], (6, 7))
         self.assertEqual(result["prewrite_unsent_proposals"][0]["name"],
                          "hub_call_device_command")
         self.assertTrue(result["source_review_invoked"])
-        self.assertTrue(result["action_approval_handoff_invoked"])
+        self.assertTrue(result["action_approval_handoff_invoked"]
+                        or result["prewrite_proposal_reinstated"])
         self.assertEqual(
             result["action_semantics_verification"]["status"],
             "source_derived_native_acceptance")

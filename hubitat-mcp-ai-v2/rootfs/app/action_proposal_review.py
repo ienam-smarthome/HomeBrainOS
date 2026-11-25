@@ -160,6 +160,11 @@ def _proposed_device_ids(calls) -> set[str]:
     return found
 
 
+# Reads that list targets (inventory or room membership); a single-device detail read does not
+# show the model picked its target from a listing.
+_TARGET_LISTING_TOOLS = frozenset({"hub_list_devices", "hub_get_room"})
+
+
 def reinstate_reviewed_proposal(original_calls, receipts):
     """Return the original proposal when every targeted device id appears in a successful read.
 
@@ -171,7 +176,9 @@ def reinstate_reviewed_proposal(original_calls, receipts):
     if not ids:
         return None
     seen = " ".join(str(r.get("response") or "") for r in receipts
-                    if isinstance(r, dict) and r.get("success") is True and r.get("read_only"))
+                    if isinstance(r, dict) and r.get("success") is True
+                    and not r.get("possible_native_action")
+                    and (r.get("read_only") or r.get("name") in _TARGET_LISTING_TOOLS))
     if all(re.search(r'(?<![0-9])' + re.escape(i) + r'(?![0-9])', seen) for i in ids):
         return list(original_calls)
     return None

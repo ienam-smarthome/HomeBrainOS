@@ -199,6 +199,13 @@ def batch_light_candidates(args: dict, receipts: list[dict]) -> list[dict] | Non
                 if isinstance(item, dict) and str(item.get("id", "")).strip() \
                         and isinstance(item.get("label"), str) and item["label"].strip():
                     labels[str(item["id"]).strip()] = item["label"]
+    for row in receipts:
+        if isinstance(row, dict) and row.get("name") == "hub_get_room" and row.get("success") is True:
+            for item in (_original(row) or {}).get("devices") or []:
+                if (isinstance(item, dict) and item.get("accessible") is not False
+                        and str(item.get("id", "")).strip() and isinstance(item.get("label"), str)
+                        and item["label"].strip()):
+                    labels.setdefault(str(item["id"]).strip(), item["label"])
     out, seen = [], set()
     for item in args["commands"]:
         if (not isinstance(item, dict) or set(item) != {"command", "deviceId"}
@@ -241,6 +248,23 @@ async def read_batch_light_evidence(mcp, candidates: list[dict], receipts: list[
                                             round((time.monotonic() - begin) * 1000))
         except (MCPError, asyncio.TimeoutError, ValueError) as exc:
             record = _original_read_receipt("hub_get_device", args, None,
+                                            round((time.monotonic() - begin) * 1000), error=str(exc))
+        collected.append(record)
+        working.append(record)
+    listed = {str(i.get("id", "")).strip() for r in working if isinstance(r, dict)
+              and r.get("name") == "hub_list_devices" and r.get("success") is True
+              for i in ((_original(r) or {}).get("devices") or []) if isinstance(i, dict)}
+    missing = [c["device_id"] for c in candidates if c["device_id"] not in listed]
+    remaining = budget_seconds - (time.monotonic() - start)
+    if missing and remaining > 0.5:
+        args = {"deviceIds": missing}
+        begin = time.monotonic()
+        try:
+            raw = await asyncio.wait_for(mcp.call("hub_list_devices", args), timeout=remaining)
+            record = _original_read_receipt("hub_list_devices", args, raw,
+                                            round((time.monotonic() - begin) * 1000))
+        except (MCPError, asyncio.TimeoutError, ValueError) as exc:
+            record = _original_read_receipt("hub_list_devices", args, None,
                                             round((time.monotonic() - begin) * 1000), error=str(exc))
         collected.append(record)
         working.append(record)

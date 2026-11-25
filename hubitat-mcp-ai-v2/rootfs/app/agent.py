@@ -281,7 +281,7 @@ For a ranking ("most", "largest", "top N"), first use the source tool's own sort
 Receipts record the exact arguments of every call; before saying a filter or argument was not applied, check the call's arguments.
 For a "which are on", "which have" or "which are low" list over many devices, never request format "detailed" for all devices; use summary with attributeNames or filters.
 A summary device list has no capability data, so it cannot show that a device is or is not a light; use capabilityFilter or a label/room filter, or say that capability was not checked.
-Before searching for a device, split the request into room, device type and qualifier (number, plural or all). Search with roomFilter and capabilityFilter where they fit, and use labelFilter only for a name the user gave. labelFilter matches label text literally, so if it finds nothing, retry with a different structured filter before reading the whole inventory; never narrow to a single common word. A singular request with several candidates needs a question or an explicit list for approval, a plural or "all" request targets every match, and the answer names every device acted on.
+Before searching for a device, split the request into room, device type and qualifier (number, plural or all). Search with roomFilter and capabilityFilter where they fit, and use labelFilter only for a name the user gave. labelFilter matches label text literally, so if it finds nothing, retry with a different structured filter before reading the whole inventory; never narrow to a single common word. A singular request with several candidates needs a question or an explicit list for approval, a plural or "all" request targets every match, and the answer names every device acted on. roomFilter needs the room's exact name including spaces ("Living Room", not "Livingroom"); when a result says roomFilterMatchedKnownRoom is false, call hub_list_rooms once and use the real name. A device that declares blockInternet and allowInternet is blocked and unblocked with those commands, never with on/off.
 Before creating any rule, read the target device and use its own advertised commands when they do the job (for example Block Internet, Allow Internet, Block In Minutes, Allow For Minutes); for a wall-clock time, compute the minutes with homebrain_read_clock and use the device's timed command.
 capabilityFilter takes Hubitat capability names without spaces, for example ContactSensor, WaterSensor, Switch, SwitchLevel, Thermostat, Battery, MotionSensor; do not guess variants.
 A device list shows current state, not what happened. Do not say a device was switched on, activated or triggered from current state, lastActivity or a changedSince list; say it is on now and was active since the time given.
@@ -1097,6 +1097,7 @@ class Agent:
         action_follow_through_invoked = False
         action_approval_handoff_invoked = False
         prewrite_model_review_invoked = False
+        prewrite_review_due = False
         block_for_round = None
         routine_prewrite_review_skipped = False
         routine_terminal_fastpath_used = False
@@ -1902,7 +1903,8 @@ class Agent:
             text = str(message.get("content") or "").strip()
             if not isinstance(calls, list):
                 calls = []
-            if (prewrite_model_review_invoked and not calls and not prewrite_reinstated
+            review_response_now, prewrite_review_due = prewrite_review_due, False
+            if (review_response_now and not calls and not prewrite_reinstated
                     and prewrite_original_calls and before_call is not None):
                 reinstated = reinstate_reviewed_proposal(prewrite_original_calls, receipts)
                 if reinstated:
@@ -2030,6 +2032,7 @@ class Agent:
                         })
                 if proposed_writes:
                     prewrite_model_review_invoked = True
+                    prewrite_review_due = True
                     # Store only sanitised UNEXECUTED proposals in private
                     # Technical JSON; they never become native tool receipts.
                     prewrite_unsent_proposals = proposed_writes[:6]
@@ -2986,10 +2989,10 @@ class Agent:
                                 )
                         if (isinstance(approval_owner, Interaction)
                                 and name == "hub_call_device_command"
-                                and block_for_round is not None
-                                and not source_review_invoked):
+                                and not prepare_action):
+                            block_for_round = internet_block_candidate(args, receipts)
                             approval_owner.offer_internet_block_authorization(
-                                args, internet_block_candidate(args, receipts))
+                                args, block_for_round)
                         if (isinstance(approval_owner, Interaction)
                                 and approval_owner.auto_approve_lights
                                 and name == "hub_call_device_command"
@@ -3227,6 +3230,13 @@ class Agent:
                             scope_note = filter_scope_note(name, args)
                             if scope_note is not None:
                                 model_result["client_filter_scope"] = scope_note
+                            if (name == "hub_list_devices" and "roomFilter" in args
+                                    and re.search(r'roomFilterMatchedKnownRoom\\*"\s*:\s*false',
+                                                  json.dumps(result, default=str))):
+                                model_result["client_room_hint"] = {
+                                    "source": "client note from this result; not hub data",
+                                    "meaning": "No room has this exact name. Call hub_list_rooms once and "
+                                               "retry with the real room name (spacing matters)."}
                         if tool_error and name == "hub_list_devices":
                             note = inventory_failure_recovery_note(args)
                             if note is not None:
