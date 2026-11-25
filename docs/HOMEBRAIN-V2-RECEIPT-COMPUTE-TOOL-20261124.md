@@ -220,3 +220,8 @@ answers and its round-time cost.
 
 - Evidence (hub log screenshot, private): app 4151 logged `MCP response too large: ~108,683 bytes (limit 99,500)` about 15 times between 07:37 and 09:52. Most likely source is the System Health snapshot (`hub_list_devices` with no arguments); not proven from the log alone.
 - `home_overview._read_device_pages`: schema-gated paging (limit/offset/hasMore as already used by bounded_source_projection). Model-issued broad `hub_list_devices` reads can still hit the cap; the agent reports that as a tool error.
+
+## alpha.180
+
+- Question set report copy: `copyText` helper, then file download fallback. UI-only.
+- First live run (screenshot only, no report text): Q1 still 4 rounds with a ranking warning; Q4/Q8/Q10 flagged on rounds or tool error. Details need the copied report.

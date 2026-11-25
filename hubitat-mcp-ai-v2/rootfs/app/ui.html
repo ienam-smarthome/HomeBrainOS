@@ -661,7 +661,7 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-vi
 
 </main>
 <script>
-const UI_VERSION="2.0.0-alpha.179";
+const UI_VERSION="2.0.0-alpha.180";
 const byId=id=>document.getElementById(id);
 let messages=[], payload=null, visual=null, hoverX=null, activeRequest=null, pendingApproval=null;
 let activeAskController=null, askGeneration=0;
@@ -2809,8 +2809,12 @@ async function copyQuestionSetReport(){
   qsResults.filter(r=>r.score.pass).length+' of '+qsResults.length+' passed measurable checks; total '+(total/1000).toFixed(0)+' s.\n'+
   'Score each answer for grounding, completeness, calibration and usefulness (0/1/2); list unsupported claims and one general improvement.\n\n';
  const text=head+JSON.stringify({ui_version:UI_VERSION,results:qsResults},null,2);
- try{await navigator.clipboard.writeText(text);byId('qsStatus').textContent='Report copied (private).';}
- catch(e){byId('qsStatus').textContent='Copy failed: '+e.message;}
+ if(await copyText(text)){byId('qsStatus').textContent='Report copied (private).';return;}
+ // Clipboard blocked (plain-HTTP/ingress page): save the same report as a file instead.
+ const url=URL.createObjectURL(new Blob([text],{type:'text/plain'})),link=document.createElement('a');
+ link.href=url;link.download='homebrain-question-set-'+UI_VERSION+'.txt';document.body.appendChild(link);link.click();link.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),1000);
+ byId('qsStatus').textContent='Clipboard is blocked here, so the private report was downloaded as a file instead. Open it and paste the text into your review chat.';
 }
 
 loadStatus().then(ready=>{
