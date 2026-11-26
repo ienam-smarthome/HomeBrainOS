@@ -255,6 +255,7 @@ class CloudAgent(Agent):
     async def answer(self, *args, **kwargs) -> dict:
         # Existing agent chooses native MCP reads/writes and enforces approvals.
         result = await super().answer(*args, **kwargs)
+        result["prompt_profile"] = getattr(self, "prompt_profile", "upstream")
         result["model_route"] = {
             "provider": "cloud",
             "attempted_provider": self.provider,

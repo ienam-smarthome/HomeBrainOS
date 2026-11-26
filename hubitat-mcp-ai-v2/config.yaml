@@ -1,5 +1,5 @@
 name: "Hubitat MCP AI v2 (Preview)"
-version: "2.0.0-alpha.203"
+version: "2.0.0-alpha.204"
 slug: hubitat_mcp_ai_v2
 description: "Clean, model-led Hubitat MCP assistant with external diagnostics recorder"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
@@ -43,6 +43,8 @@ options:
   # Empty = other switches still require approval.
   routine_auto_approve_safe_switch_ids: ""
   routine_auto_approve_internet_block: true
+  # upstream = the Hubitat server skill + short client contract; legacy = previous long prompt.
+  prompt_profile: "upstream"
   hub_timezone: "Europe/London"
   external_hub_diagnostics_enabled: false
   external_hub_diagnostics_probe_seconds: 30
@@ -81,6 +83,7 @@ schema:
   routine_auto_approve_lights: bool
   routine_auto_approve_safe_switch_ids: str?
   routine_auto_approve_internet_block: bool
+  prompt_profile: list(upstream|legacy)
   hub_timezone: str
   external_hub_diagnostics_enabled: bool
   external_hub_diagnostics_hub_url: str?

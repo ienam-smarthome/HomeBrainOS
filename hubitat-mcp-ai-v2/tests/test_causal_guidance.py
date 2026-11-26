@@ -90,6 +90,7 @@ class CausalReasoningGuidanceTests(unittest.TestCase):
                 return tool_data
 
         class ScenarioAgent(Agent):
+            prompt_profile = "legacy"  # these tests assert the legacy system-prompt wording
             def __init__(self):
                 self.messages = []
             async def round(self, messages, tools, remaining):
@@ -130,6 +131,7 @@ class CausalReasoningGuidanceTests(unittest.TestCase):
                 raise AssertionError("No model tool selection expected")
 
         class PositiveAgent(Agent):
+            prompt_profile = "legacy"  # these tests assert the legacy system-prompt wording
             def __init__(self):
                 pass  # A fixed synthetic responder never connects to Ollama.
             async def round(self, messages, tools, remaining):
@@ -155,6 +157,7 @@ class CausalReasoningGuidanceTests(unittest.TestCase):
                 self.calls.append((name, args))
                 raise AssertionError("Unexpected tool request")
         class OneRound(Agent):
+            prompt_profile = "legacy"  # these tests assert the legacy system-prompt wording
             def __init__(self):
                 self.rounds_seen = []
             async def round(self, messages, tools, remaining):
@@ -207,6 +210,7 @@ class CausalReasoningGuidanceTests(unittest.TestCase):
                 return {"content": [{"type": "text", "text": json.dumps(payload)}]}
 
         class SelectingAgent(Agent):
+            prompt_profile = "legacy"  # these tests assert the legacy system-prompt wording
             def __init__(self):
                 self.round_messages = []
             async def round(self, messages, tools, remaining):

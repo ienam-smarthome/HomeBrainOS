@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Current code candidate: `2.0.0-alpha.203`. Live alpha.202 captures: light on 5.6 s, light off 4.3 s (bridge parent now read once), unblock 8.8 s, block 18.9 s, bathroom lights on 13.7 s and off 8.9 s, all without a card. Two search misses explain the slow and inconsistent runs: "nest mini" cannot match the hyphenated switch label, so the model listed all 67 switches; and "turn off bathroom lights" searched by the word "bathroom" and missed the Shower Light, whose label has no room name, while "turn on" listed everything and caught it. The prompt now tells the model to search a room by roomFilter plus the Light capability and to retry a hyphenated label once.
+Current code candidate: `2.0.0-alpha.204`. Upstream-first prompt: the model now gets the Hubitat MCP server's own skill and safety guide plus a short client contract (about 8k tokens, down from about 24k). The causal, measurement and presentation references load on demand through a new read-only `homebrain_read_skill` tool. New add-on option `prompt_profile` (`upstream` default, `legacy` restores the previous prompt); the profile used is recorded in Technical JSON. Bundled safety guide refreshed to the newer upstream copy.
 
 Per-alpha history (alpha.8 to alpha.171) is in [docs/HOMEBRAIN-V2-ALPHA-HISTORY.md](../docs/HOMEBRAIN-V2-ALPHA-HISTORY.md).
 

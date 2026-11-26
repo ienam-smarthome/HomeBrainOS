@@ -64,6 +64,7 @@ DEFAULTS: dict[str, Any] = {
     "routine_auto_approve_lights": True,
     "routine_auto_approve_safe_switch_ids": "",
     "routine_auto_approve_internet_block": True,
+    "prompt_profile": "upstream",
     "hub_timezone": "Europe/London",
     "external_hub_diagnostics_enabled": False,
     "external_hub_diagnostics_hub_url": "",
@@ -172,6 +173,7 @@ async def lifecycle(app: FastAPI):
             cpu_cores=int(options["external_hub_diagnostics_cpu_cores"]),
         )
         app.state.model.hub_timezone = str(options["hub_timezone"])
+        app.state.model.prompt_profile = str(options.get("prompt_profile", "upstream"))
     except ValueError as exc:
         app.state.configuration_error = str(exc)
     # Model key/config must not disable independent read-only System Health.
@@ -290,7 +292,7 @@ async def lifecycle(app: FastAPI):
             await app.state.model.close()
 
 
-app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.203", lifespan=lifecycle)
+app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.204", lifespan=lifecycle)
 app.include_router(benchmark_router)
 app.include_router(autonomous_router)
 app.include_router(reasoning_router)
