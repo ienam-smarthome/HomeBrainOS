@@ -65,6 +65,8 @@ class ProfileContentTests(unittest.TestCase):
         self.assertIn((SKILL_DIR / "safety-guide.md").read_text(), text)
         self.assertIn("Client integration (added by this add-on", text)
         self.assertIn("pass waitFor", text)
+        self.assertIn("labelFilter matches device labels only", text)
+        self.assertIn("roomFilter and capabilityFilter", text)
         self.assertNotIn(LEGACY_ONLY_TEXT, text)
         # Evidence references are on demand, not always-on.
         for filename in ("causal-investigations.md", "measurement-fidelity.md", "answer-presentation.md"):
