@@ -20,6 +20,7 @@ from action_lifecycle import (
 )
 from routine_action_fastpath import (
     routine_candidate, accepted_routine_answer, verification_target,
+    call_shape, is_single_command_shape,
 )
 from routine_action_bootstrap import prepare_routine_source
 from routine_post_write_readback import (
@@ -1193,6 +1194,7 @@ class Agent:
         full_path_messages: list[dict] | None = None
         full_tools_before_narrowing: list[dict] | None = None
         single_command_fallthrough: str | None = None
+        single_command_rejected_call: dict[str, Any] | None = None
         prewrite_unsent_proposals: list[dict[str, Any]] = []
         prewrite_original_calls: list = []
         prewrite_reinstated = False
@@ -1721,6 +1723,7 @@ class Agent:
                     "source_bootstrap_read_count": routine_source_bootstrap_read_count,
                     "model_led_single_command_mode": routine_source_bootstrap_active,
                     "single_command_fallthrough": single_command_fallthrough,
+                    "single_command_rejected_call": single_command_rejected_call,
                     "terminal_native_acceptance_used": routine_terminal_fastpath_used,
                     "prewrite_model_review_skipped": routine_prewrite_review_skipped,
                     "detail_verification_status": routine_detail_verification_status,
@@ -2002,15 +2005,30 @@ class Agent:
                 if reinstated:
                     calls = reinstated
                     prewrite_reinstated = True
-            if (routine_source_bootstrap_active and not calls
+            focused_call_not_eligible = bool(
+                routine_source_bootstrap_active and calls
+                and not is_single_command_shape(question, calls)
+            )
+            if (routine_source_bootstrap_active
+                    and (not calls or focused_call_not_eligible)
                     and single_command_fallthrough is None
                     and full_path_messages is not None
                     and deadline - time.monotonic() > 20):
-                # The focused one-tool round produced no tool call. Do not end the
-                # request with nothing sent: continue once on the normal path with
-                # the original instructions, all tools and the receipts already read.
+                # The focused one-tool round produced no tool call, or a call whose
+                # SHAPE the single-command matcher does not accept (extra
+                # arguments, a batch list, an unexpected waitFor). A well-formed
+                # call for the wrong target is not retried; it stays a hard stop
+                # below. Nothing from that round
+                # has executed. Do not end the request with nothing sent:
+                # continue once on the normal path with the original
+                # instructions, all tools and the receipts already read.
                 # Every write on that path still passes the same approval policy.
-                single_command_fallthrough = "no_tool_call"
+                single_command_fallthrough = (
+                    "call_not_eligible" if focused_call_not_eligible
+                    else "no_tool_call"
+                )
+                if focused_call_not_eligible:
+                    single_command_rejected_call = call_shape(calls)
                 routine_source_bootstrap_active = False
                 messages = full_path_messages
                 continue
