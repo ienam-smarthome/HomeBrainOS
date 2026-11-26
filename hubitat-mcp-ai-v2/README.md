@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Current code candidate: `2.0.0-alpha.206`. Upstream-profile client contract now states how the tool works for group requests: labelFilter matches labels only, so a room or group request is scoped with roomFilter and capabilityFilter (or listed and filtered by room) and the answer names the devices acted on. Reason: in the alpha.204 "turn off bathroom lights" capture the model filtered by the word "bathroom" and missed Shower Light. No client logic reads the question.
+Current code candidate: `2.0.0-alpha.207`. Upstream-profile client contract now states how the tool works for group requests: labelFilter matches labels only, so a room or group request is scoped with roomFilter and capabilityFilter (or listed and filtered by room) and the answer names the devices acted on. Reason: in the alpha.204 "turn off bathroom lights" capture the model filtered by the word "bathroom" and missed Shower Light. No client logic reads the question.
 
 Per-alpha history (alpha.8 to alpha.171) is in [docs/HOMEBRAIN-V2-ALPHA-HISTORY.md](../docs/HOMEBRAIN-V2-ALPHA-HISTORY.md).
 

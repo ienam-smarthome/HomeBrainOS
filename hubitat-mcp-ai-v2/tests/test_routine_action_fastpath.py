@@ -795,3 +795,31 @@ class SingleCommandFallthroughTests(unittest.IsolatedAsyncioTestCase):
             tool("hub_call_device_command", deviceId="LAB-LAMP-1", command="off")])
         self.assertEqual(model.rounds_seen, 1)
         self.assertIsNone(result["routine_action_fastpath"]["single_command_fallthrough"])
+
+
+class SingleCommandRejectedCallFallthroughTests(unittest.IsolatedAsyncioTestCase):
+    """A focused-mode call the strict matcher rejects must not end with nothing sent."""
+
+    _run = SingleCommandFallthroughTests._run
+
+    async def test_rejected_call_shape_continues_on_the_normal_path(self):
+        hub, model, pending, result = await self._run([
+            tool("hub_call_device_command", deviceId="LAB-LAMP-1", command="off",
+                 waitFor={"attribute": "switch", "expectedValue": "off", "timeoutMs": 20000}),
+            tool("hub_call_device_command", deviceId="LAB-LAMP-1", command="off"),
+        ])
+        record = result["routine_action_fastpath"]
+        self.assertEqual(record["single_command_fallthrough"], "call_not_eligible")
+        self.assertEqual(record["single_command_rejected_call"]["name"], "hub_call_device_command")
+        self.assertEqual(record["single_command_rejected_call"]["argument_keys"],
+                         ["command", "deviceId", "waitFor"])
+        self.assertIsNotNone(pending, "the fall-through write still needs a real approval")
+        self.assertEqual([n for n, _ in hub.calls].count("hub_call_device_command"), 1)
+
+    async def test_rejected_call_never_executes_on_the_focused_round(self):
+        hub, model, pending, result = await self._run(
+            [tool("hub_call_device_command", commands=[{"deviceId": "LAB-LAMP-1", "command": "off"}])]
+            + [{"content": "Nothing to do."}] * 6)
+        self.assertEqual(result["routine_action_fastpath"]["single_command_fallthrough"], "call_not_eligible")
+        self.assertIsNone(pending)
+        self.assertNotIn("hub_call_device_command", [n for n, _ in hub.calls])

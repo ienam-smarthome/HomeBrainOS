@@ -81,6 +81,24 @@ def _arguments(call: dict) -> tuple[str, dict] | None:
     return name, args
 
 
+def is_single_command_shape(question: str, calls: list[dict]) -> bool:
+    """True when the calls are one well-formed on/off command for the request.
+
+    Says nothing about whether the target matches the verified source; that is
+    routine_candidate's job and a mismatch there is a hard stop, not a retry.
+    """
+    return _selected(question, calls, approval_available=True) is not None
+
+
+def call_shape(calls: list[dict]) -> dict:
+    """Names and argument keys of a model call set, never argument values."""
+    parsed = _arguments(calls[0]) if len(calls) == 1 else None
+    return {
+        "call_count": len(calls),
+        "name": parsed[0] if parsed else None,
+        "argument_keys": sorted(parsed[1]) if parsed else [],
+    }
+
 
 # An optional client-side read is *verification* of a model-selected target,
 # never a client-selected writer or an authority to skip approval.
