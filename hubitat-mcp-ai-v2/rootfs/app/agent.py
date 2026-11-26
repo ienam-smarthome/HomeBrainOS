@@ -450,7 +450,14 @@ COMPUTE_NUDGE = (
     "no homebrain_compute_receipt call was made. If your draft states any count, range, "
     "average, ranking, total or time gap over those rows, call homebrain_compute_receipt "
     "now (receipt_indexes for paged results) and use its exact output. If it states no "
-    "such figure, reply with your draft answer unchanged."
+    "such figure, reply with your draft answer unchanged. Either way your next text reply "
+    "must be the complete answer the person will read, never a confirmation about a draft."
+)
+
+COMPLETE_ANSWER_AFTER_COMPUTE = (
+    "Internal check (not from the user): your last reply was only an acknowledgement. The "
+    "person sees nothing but your final reply. Write the complete answer now, using the exact "
+    "computed figures where you have them."
 )
 
 
@@ -1397,8 +1404,14 @@ class Agent:
                 native_write_selected=current_write_attempted(),
                 ui_approval_available=before_call is not None,
             )
+            unprepared_replaced_text: str | None = None
             if before_call is not None:
-                verified_answer = unprepared_answer(lifecycle, verified_answer)
+                replaced_by_lifecycle = unprepared_answer(lifecycle, verified_answer)
+                if replaced_by_lifecycle != verified_answer:
+                    # Telemetry only: the replaced prose never reaches the person, so keep a
+                    # bounded copy to see what the model said instead of acting.
+                    unprepared_replaced_text = (verified_answer or "")[:600]
+                verified_answer = replaced_by_lifecycle
             # The model's own tool-free final claim audit is not enforcement.
             # For a READ-ONLY historical causal question, fail closed only on
             # categorical denial / event-specific internal cause claims with
@@ -1681,6 +1694,7 @@ class Agent:
                     else "not_established"
                 ),
                 "action_lifecycle": lifecycle,
+                "unprepared_replaced_text": unprepared_replaced_text,
                 "action_preparation_requested": bool(prepare_action),
                 "routine_native_authorization": {
                     "policy": "single_current_ask_source_verified",
@@ -1825,6 +1839,7 @@ class Agent:
         row_list_receipt_seen = False
         compute_nudge_sent = False
         nudged_draft: str | None = None
+        completion_retry_sent = False
         while True:
             if hasattr(mcp, "cached_leaf_schemas"):
                 tools = model_tools(catalog, mcp.cached_leaf_schemas())
@@ -2263,6 +2278,21 @@ class Agent:
                 messages.append({"role": "assistant", "content": text})
                 messages.append({"role": "user", "content": COMPUTE_NUDGE})
                 continue
+
+            if (not calls and nudged_draft is not None and text
+                    and any(r.get("result_kind") == "local_compute" for r in receipts)
+                    and len(text) * 2 < len(nudged_draft)):
+                # Structural, not wording-based: after the bounded computation the
+                # model replied with something far shorter than the draft it had
+                # written (an acknowledgement, not an answer). One bounded retry for
+                # the full answer; if that is still short, publish the draft.
+                if not completion_retry_sent and deadline - time.monotonic() > 15:
+                    completion_retry_sent = True
+                    messages.append({"role": "assistant", "content": text})
+                    messages.append({"role": "user", "content": COMPLETE_ANSWER_AFTER_COMPUTE})
+                    continue
+                if completion_retry_sent:
+                    text = nudged_draft
 
             if (not calls and nudged_draft is not None and text
                     and not any(r.get("result_kind") == "local_compute" for r in receipts)):

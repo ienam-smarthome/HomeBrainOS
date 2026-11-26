@@ -105,6 +105,56 @@ class ComputeInsideAgentLoop(unittest.IsolatedAsyncioTestCase):
         self.assertIn("No successful native data read", rec["error"])
 
 
+class AcknowledgementAfterComputeNeverReplacesTheAnswer(unittest.IsolatedAsyncioTestCase):
+    """Captured alpha.206: the person saw only "My draft stands as written."."""
+
+    DRAFT = ("There are 13 devices returned:\n" + "\n".join(f"- S{i}: battery {b}"
+             for i, b in enumerate([80, 85, 90, 94, 94, 80, 79, 95])) + "\n- N0 to N4 report no battery")
+
+    def _script(self, after_compute):
+        return [
+            {"content": "", "tool_calls": [call("hub_list_devices", {})]},
+            {"content": self.DRAFT, "tool_calls": []},
+            {"content": "", "tool_calls": [call("homebrain_compute_receipt", {"operation": "count"})]},
+            *after_compute,
+        ]
+
+    async def test_one_retry_asks_for_the_full_answer(self):
+        agent = Scripted(self._script([
+            {"content": "Confirmed: 13 devices returned. My draft stands as written.", "tool_calls": []},
+            {"content": self.DRAFT + "\n\nCounted exactly: 13.", "tool_calls": []},
+        ]))
+        try:
+            reply = await agent.answer("list my devices", [], Hub(), 60)
+        finally:
+            await agent.close()
+        self.assertIn("S0: battery 80", reply["answer"])
+        self.assertNotIn("draft stands", reply["answer"])
+
+    async def test_a_second_acknowledgement_publishes_the_draft(self):
+        agent = Scripted(self._script([
+            {"content": "Confirmed. Draft stands.", "tool_calls": []},
+            {"content": "Still confirmed.", "tool_calls": []},
+        ]))
+        try:
+            reply = await agent.answer("list my devices", [], Hub(), 60)
+        finally:
+            await agent.close()
+        self.assertIn("S0: battery 80", reply["answer"])
+        self.assertNotIn("Still confirmed", reply["answer"])
+
+    async def test_a_full_answer_after_compute_is_untouched(self):
+        agent = Scripted(self._script([
+            {"content": self.DRAFT + "\n\nCounted exactly: 13.", "tool_calls": []},
+        ]))
+        try:
+            reply = await agent.answer("list my devices", [], Hub(), 60)
+        finally:
+            await agent.close()
+        self.assertTrue(reply["answer"].endswith("Counted exactly: 13."))
+        self.assertEqual(len(agent.script), 0)
+
+
 class RepeatedReadGuard(unittest.IsolatedAsyncioTestCase):
     async def test_identical_read_is_not_repeated(self):
         hub = Hub()
