@@ -655,6 +655,51 @@ class BatchLightPolicyTests(unittest.TestCase):
         self.assertIsNone(batch_light_candidates(extra, receipts))
 
 
+class BatchFromContextListingTests(unittest.TestCase):
+    """format="context" listings carry a text summary, not device rows; labels still come from them."""
+
+    SUMMARY = ("Mode: Afternoon\nDevices: 3 of 3\n"
+               "- Fictional Hall Lamp (5001, Hallway) - Actuator, Refresh, ChangeLevel, SwitchLevel, Light, Switch; switch=on, level=50\n"
+               "- Fictional Study Lamp (5002, Study) - Actuator, Refresh, ChangeLevel, SwitchLevel, Light, Switch; switch=on, level=50\n"
+               "- Fictional Hall Meter (5003, Hallway) - RelativeHumidityMeasurement, Sensor; humidity=45")
+
+    def _receipts(self):
+        helper = BatchLightPolicyTests()
+        rows = [("5001", "Fictional Hall Lamp", ["Switch", "Light", "SwitchLevel"]),
+                ("5002", "Fictional Study Lamp", ["Switch", "Light", "SwitchLevel"])]
+        detail_and_inventory = helper._receipts(rows)
+        context = previous_receipt("hub_list_devices", {"labelFilter": "Fictional", "format": "context"}, {
+            "mode": "Afternoon", "summary": self.SUMMARY, "count": 3, "total": 3,
+            "labelFilter": "Fictional", "offset": 0, "limit": 50, "hasMore": False})
+        return context, detail_and_inventory
+
+    def test_context_listing_alone_supplies_labels_for_a_batch(self):
+        from routine_approval_policy import batch_light_candidates
+        context, _ = self._receipts()
+        args = {"commands": [{"command": "off", "deviceId": "5001"}, {"command": "off", "deviceId": "5002"}]}
+        cands = batch_light_candidates(args, [context])
+        self.assertEqual([(c["device_id"], c["label"]) for c in cands],
+                         [("5001", "Fictional Hall Lamp"), ("5002", "Fictional Study Lamp")])
+
+    def test_id_absent_from_context_listing_still_fails_closed(self):
+        from routine_approval_policy import batch_light_candidates
+        context, _ = self._receipts()
+        args = {"commands": [{"command": "off", "deviceId": "5001"}, {"command": "off", "deviceId": "5999"}]}
+        self.assertIsNone(batch_light_candidates(args, [context]))
+
+    def test_context_labels_do_not_replace_the_per_device_policy(self):
+        from routine_approval_policy import batch_light_authorization, batch_light_candidates
+        context, detail = self._receipts()
+        # A sensor listed in the same context summary must not become authorised by being listed.
+        args = {"commands": [{"command": "off", "deviceId": "5001"}, {"command": "off", "deviceId": "5003"}]}
+        cands = batch_light_candidates(args, [context])
+        self.assertIsNotNone(cands)
+        self.assertFalse(batch_light_authorization(cands, [context] + detail))
+        ok = {"commands": [{"command": "off", "deviceId": "5001"}, {"command": "off", "deviceId": "5002"}]}
+        cands = batch_light_candidates(ok, [context] + detail)
+        self.assertTrue(batch_light_authorization(cands, [context] + detail))
+
+
 class BatchProofConsumptionTests(unittest.IsolatedAsyncioTestCase):
     async def _gate_with_proof(self):
         helper = BatchLightPolicyTests()

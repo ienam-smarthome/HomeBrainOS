@@ -1189,6 +1189,9 @@ class Agent:
         routine_component_parent_read_count = 0
         routine_bootstrap_verified_at: float | None = None
         empty_retry_sent = False
+        full_path_messages: list[dict] | None = None
+        full_tools_before_narrowing: list[dict] | None = None
+        single_command_fallthrough: str | None = None
         prewrite_unsent_proposals: list[dict[str, Any]] = []
         prewrite_original_calls: list = []
         prewrite_reinstated = False
@@ -1261,6 +1264,7 @@ class Agent:
                     "advertised_native_writer": "hub_call_device_command",
                     "physical_outcome_verified": False,
                 }
+                full_path_messages = messages
                 messages = [
                     {"role": "system", "content": (
                         "You are handling ONE ordinary immediate native ON/OFF "
@@ -1715,6 +1719,7 @@ class Agent:
                     "source_bootstrap_status": routine_source_bootstrap_status,
                     "source_bootstrap_read_count": routine_source_bootstrap_read_count,
                     "model_led_single_command_mode": routine_source_bootstrap_active,
+                    "single_command_fallthrough": single_command_fallthrough,
                     "terminal_native_acceptance_used": routine_terminal_fastpath_used,
                     "prewrite_model_review_skipped": routine_prewrite_review_skipped,
                     "detail_verification_status": routine_detail_verification_status,
@@ -1832,11 +1837,15 @@ class Agent:
                 # The model chooses whether to issue the offered real writer.
                 # Other domains were not requested, and a preverified simple
                 # operation must not branch into broad model-led searches.
+                full_tools_before_narrowing = tools
                 tools = [
                     item for item in tools
                     if (item.get("function") or {}).get("name")
                     == "hub_call_device_command"
                 ]
+            elif full_tools_before_narrowing is not None:
+                tools = full_tools_before_narrowing
+                full_tools_before_narrowing = None
             # Once the extra model review starts, expose only read-only
             # tool definitions. Never widen an explicitly read-only request
             # just because the model chose to investigate further.
@@ -1992,6 +2001,18 @@ class Agent:
                 if reinstated:
                     calls = reinstated
                     prewrite_reinstated = True
+            if (routine_source_bootstrap_active and not calls
+                    and single_command_fallthrough is None
+                    and full_path_messages is not None
+                    and deadline - time.monotonic() > 20):
+                # The focused one-tool round produced no tool call. Do not end the
+                # request with nothing sent: continue once on the normal path with
+                # the original instructions, all tools and the receipts already read.
+                # Every write on that path still passes the same approval policy.
+                single_command_fallthrough = "no_tool_call"
+                routine_source_bootstrap_active = False
+                messages = full_path_messages
+                continue
             if routine_source_bootstrap_active:
                 if not calls:
                     return completed_answer(
