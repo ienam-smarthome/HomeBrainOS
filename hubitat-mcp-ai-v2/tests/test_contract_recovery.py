@@ -40,6 +40,7 @@ class ContractRecoveryTests(unittest.TestCase):
                                     "text": json.dumps({"events": [{"value": "idle"}]})}]}
 
         class SyntheticModel(Agent):
+            prompt_profile = "legacy"  # these tests assert the legacy system-prompt wording
             def __init__(self):
                 self.received = []
             async def round(self, messages, tools, remaining):
@@ -113,6 +114,7 @@ class ContractRecoveryTests(unittest.TestCase):
                 return {"content": [{"type": "text", "text": '{"checked":true}'}]}
 
         class GatewayModel(Agent):
+            prompt_profile = "legacy"  # these tests assert the legacy system-prompt wording
             def __init__(self):
                 self.round_index = 0
             async def round(self, messages, tools, remaining):
@@ -160,6 +162,7 @@ class ContractRecoveryTests(unittest.TestCase):
                 return {"content": [{"type": "text", "text": "write executed"}]}
 
         class Model(Agent):
+            prompt_profile = "legacy"  # these tests assert the legacy system-prompt wording
             def __init__(self):
                 self.count = 0
             async def round(self, messages, tools, remaining):

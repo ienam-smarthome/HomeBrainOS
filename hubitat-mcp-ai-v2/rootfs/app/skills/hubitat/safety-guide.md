@@ -101,6 +101,15 @@ ALL destructive write tools (`confirm`+backup tier) require these steps in order
 - For libraries (`type="library"`): Check that no apps or drivers reference the library via `#include namespace.LibraryName` before deleting -- deletion breaks any code that still includes it
 - Deletion is permanent; restore the source via `hub_update_app` / `hub_update_driver` / `hub_update_library` with the backup source
 
+#### hub_install_bundle / hub_delete_bundle
+- `hub_install_bundle` unpacks the .zip into Apps/Drivers/Libraries Code the way HPM does and returns the new bundle's `bundleId`; confirm the URL with the user first
+- A failed install can still leave part of the bundle's code in Code; it comes back in `codeAdded`. Tell the user before retrying. With no reply from the hub the install may still have completed: check `hub_list_bundles` before deleting any of that code
+- `hub_delete_bundle` takes the `bundleId` from `hub_list_bundles`; an id the hub does not have is refused with nothing deleted
+- Without `deleteCode` only the bundle goes; the apps, drivers and libraries it delivered stay in Code
+- `deleteCode=true` backs up each item the hub stored for the bundle (its `codeIds`) first (any failed backup, or backups that would exceed the backup storage budget, deletes nothing; backups already written stay, listed in `backupFiles`), then deletes the bundle with its code. The hub keeps code still in use (an installed app, a device on the driver, code that `#include`s the library) and lists it in `codeKept`; tell the user what was kept and why
+- If the bundle lists code that is no longer in Code, nothing is deleted and the ids come back in `missingCode`; delete the bundle without `deleteCode` and then each remaining item with `hub_delete_item`
+- If the delete is not confirmed (`success:false`), read `bundleExists`, `codeDeleted` and `codeKept` before retrying: the hub can delete part of the code before it reports failure
+
 #### hub_delete_room
 - Devices become unassigned (not deleted)
 - List affected devices to the user before proceeding
@@ -162,9 +171,9 @@ Defaults: 30 executions within 60 seconds. Configurable in app settings.
 ## File Manager Safety
 
 - `hub_write_file` auto-backs up existing file before overwriting
-- `hub_delete_file` auto-backs up file before deletion
+- `hub_delete_file` takes a backup copy first when possible; a file that is itself a backup (`_backup_`, `mcp-backup-`, `mcp-rm-backup-`, `mcp-prerestore-` names) gets none. If the hub's load limiter refuses the backup download, the delete returns `success: false` and deletes nothing; retry in a moment. Otherwise, if the copy cannot be written or the content cannot be read, the delete still runs with a `warning`
 - Both require the Write master ON + confirm + a recent backup
-- File names must match `^[A-Za-z0-9][A-Za-z0-9._-]*$` (no spaces, no leading period)
+- File names must match `^[A-Za-z0-9_-][A-Za-z0-9._-]*$` (no spaces, no leading period)
 - Files persist on hub even if MCP is uninstalled
 
 ---

@@ -208,6 +208,7 @@ class ConfigSourceMapTests(unittest.TestCase):
                 return child if args.get("page") == "subPage" else root
 
         class Model(Agent):
+            prompt_profile = "legacy"  # these tests assert the legacy system-prompt wording
             def __init__(self):
                 self.prompts = []
             async def round(self, messages, tools, remaining):
@@ -254,6 +255,7 @@ class ConfigSourceMapTests(unittest.TestCase):
             async def call(self, name, args):
                 raise AssertionError("Unexpected read/action")
         class Direct(Agent):
+            prompt_profile = "legacy"  # these tests assert the legacy system-prompt wording
             def __init__(self):
                 pass  # A synthetic fixed-response model has no API client.
             async def round(self, messages, tools, remaining):

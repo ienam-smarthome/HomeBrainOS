@@ -89,6 +89,7 @@ def function_call(name, args):
 
 
 class ScriptedAgent(Agent):
+    prompt_profile = "legacy"  # these tests assert the legacy system-prompt wording
     def __init__(self, scripted):
         super().__init__("http://127.0.0.1:11434", "fixture", "", 15)
         self.scripted = list(scripted)
