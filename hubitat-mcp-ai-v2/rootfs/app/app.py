@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from fastapi import FastAPI, HTTPException, Request
@@ -65,6 +65,7 @@ DEFAULTS: dict[str, Any] = {
     "routine_auto_approve_safe_switch_ids": "",
     "routine_auto_approve_internet_block": True,
     "prompt_profile": "upstream",
+    "loop_profile": "full",
     "hub_timezone": "Europe/London",
     "external_hub_diagnostics_enabled": False,
     "external_hub_diagnostics_hub_url": "",
@@ -174,6 +175,7 @@ async def lifecycle(app: FastAPI):
         )
         app.state.model.hub_timezone = str(options["hub_timezone"])
         app.state.model.prompt_profile = str(options.get("prompt_profile", "upstream"))
+        app.state.model.loop_profile = str(options.get("loop_profile", "full"))
     except ValueError as exc:
         app.state.configuration_error = str(exc)
     # Model key/config must not disable independent read-only System Health.
@@ -292,7 +294,7 @@ async def lifecycle(app: FastAPI):
             await app.state.model.close()
 
 
-app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.209", lifespan=lifecycle)
+app = FastAPI(title="Hubitat MCP AI v2", version="2.0.0-alpha.210", lifespan=lifecycle)
 app.include_router(benchmark_router)
 app.include_router(autonomous_router)
 app.include_router(reasoning_router)
@@ -320,6 +322,9 @@ class AskRequest(BaseModel):
     conversation_id: UUID | None = None
     question: str = Field(min_length=1, max_length=10000)
     prepare_action: bool = False  # explicitly selected new retry; NOT write consent
+    loop_profile: Literal["full", "plain"] | None = None  # this request only; add-on option otherwise
+    # Can only make a request stricter: every native write waits for an approval card.
+    disable_auto_approval: bool = False
     history: list[dict] = Field(default_factory=list, max_length=20)
 
 
@@ -335,6 +340,8 @@ async def status():
     return {
         "version": app.version,
         "mode": "native-model-led-mcp",
+        "loop_profile": str(options.get("loop_profile", "full")),
+        "ask_options": ["loop_profile", "disable_auto_approval"],
         "configured": bool(mcp and app.state.model and
                            not app.state.configuration_error),
         "configuration_error": app.state.configuration_error,
@@ -605,14 +612,15 @@ async def ask(request: AskRequest, http_request: Request):
     # Every native write still goes through the per-request gate. The original
     # Ask may replace a second click ONLY for a single fresh source-verified
     # benign routine writer, never for broad or sensitive native operations.
+    auto_allowed = not request.disable_auto_approval
     interaction = Interaction(
         require_native_write_approval=True,
-        auto_approve_lights=app.state.options.get(
+        auto_approve_lights=auto_allowed and app.state.options.get(
             "routine_auto_approve_lights") is True,
         trusted_safe_switch_ids=trusted_switch_ids(
             str(app.state.options.get("routine_auto_approve_safe_switch_ids", ""))
-        ),
-        auto_approve_internet_block=app.state.options.get(
+        ) if auto_allowed else frozenset(),
+        auto_approve_internet_block=auto_allowed and app.state.options.get(
             "routine_auto_approve_internet_block") is True,
     )
     app.state.interactions[request_id] = interaction
@@ -656,6 +664,7 @@ async def ask(request: AskRequest, http_request: Request):
                         "enable_routine_post_write_readback": True}
                        if isinstance(app.state.model, Agent) else {}),
                     **({"prepare_action": True} if request.prepare_action else {}),
+                    **({"loop_profile": request.loop_profile} if request.loop_profile else {}),
                 )
                 result["prior_sources_indexed"] = indexed
                 result["prior_evidence_reads"] = sum(
