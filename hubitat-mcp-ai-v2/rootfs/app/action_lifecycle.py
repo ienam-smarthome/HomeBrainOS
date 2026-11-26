@@ -28,6 +28,7 @@ def inspect_action_lifecycle(
     native_write_submitted: bool,
     native_write_selected: bool,
     ui_approval_available: bool,
+    already_in_state: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Mark actual call/acceptance separately from a valid model reply.
 
@@ -69,6 +70,19 @@ def inspect_action_lifecycle(
                 "physical or network effect. Review receipts and any "
                 "separate readback before asserting one."
             ),
+        }
+    if already_in_state:
+        # The client declined to resend a command because this request's own read already
+        # showed the requested state. Nothing was sent and nothing is pending.
+        return {
+            "status": "already_in_requested_state",
+            "native_write_submitted": False,
+            "native_write_accepted": False,
+            "approval_pending": False,
+            "already_in_state": already_in_state[:3],
+            "note": ("No command was sent because the hub's state read in this request already "
+                     "matched the requested state. That read is the hub's stored state, not a "
+                     "physical check."),
         }
     if native_write_selected:
         # Could have been explicitly declined, rejected by the contract, or

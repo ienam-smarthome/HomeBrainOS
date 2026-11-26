@@ -14,6 +14,7 @@ from typing import Any
 from action_intent_guard import native_automation_writer
 from one_off_rule_policy import is_native_rule_read
 from investigation_review import is_read_only_review_tool
+from routine_action_fastpath import _context_devices, _original, _source_state
 
 
 PREWRITE_PROPOSAL_PROMPT = """Pre-dispatch action evidence review. The actions
@@ -209,3 +210,100 @@ def repeat_write_refusal(name: str, args, receipts, catalog) -> str | None:
                     "sent again. Confirm the result with a read (for example hub_list_devices "
                     "with deviceIds and waitFor) and answer from that read.")
     return None
+
+
+def _single_switch_command(name: str, args) -> tuple[str, str] | None:
+    """(deviceId, on|off) for one plain on/off device command, else None. Arguments only."""
+    if not isinstance(args, dict):
+        return None
+    inner = args
+    if name != "hub_call_device_command":
+        if not isinstance(args.get("tool"), str) or args["tool"] != "hub_call_device_command":
+            return None
+        inner = args.get("args")
+        if not isinstance(inner, dict):
+            return None
+    command = inner.get("command")
+    device = inner.get("deviceId")
+    if command not in ("on", "off") or "commands" in inner or inner.get("parameters"):
+        return None
+    if isinstance(device, int) and not isinstance(device, bool):
+        device = str(device)
+    if not isinstance(device, str) or not device:
+        return None
+    return device, command
+
+
+def _read_switch_states(row: dict) -> dict[str, tuple[str, str | None]]:
+    """deviceId -> (switch state, lastActivity) from one original device-read receipt."""
+    document = _original(row)
+    if not isinstance(document, dict):
+        return {}
+    found: dict[str, tuple[str, str | None]] = {}
+    devices = document.get("devices")
+    if isinstance(devices, list):
+        for device in devices:
+            if isinstance(device, dict) and device.get("id") is not None:
+                state = _source_state(device)
+                if state:
+                    found[str(device["id"])] = (state, device.get("lastActivity"))
+    else:
+        for device in _context_devices(document) or []:
+            if device.get("switch") in ("on", "off"):
+                found[device["id"]] = (device["switch"], None)
+    return found
+
+
+def already_in_state_refusal(name: str, args, receipts) -> tuple[str, dict] | None:
+    """Refuse one plain on/off command when this request's own read shows that state.
+
+    Uses the selected tool, its structured arguments and original successful read receipts of
+    this request only. Never reads the user's wording. An accepted write to the same device
+    after the read makes the earlier read stale, so it no longer counts. Refused once per
+    device and command per request: an identical resend is the model's deliberate choice
+    (for example the person said the device is not physically in that state) and still goes
+    through the normal approval gate.
+    """
+    wanted = _single_switch_command(name, args)
+    if wanted is None:
+        return None
+    device_id, command = wanted
+    observed: tuple[str, str | None] | None = None
+    for row in receipts:
+        if not isinstance(row, dict):
+            continue
+        row_args = row.get("arguments")
+        if row.get("success") is True and row.get("possible_native_action"):
+            written = _single_switch_command(str(row.get("name")), row_args)
+            inner = row_args.get("args") if isinstance(row_args, dict) and isinstance(
+                row_args.get("args"), dict) else row_args
+            if (written is None and isinstance(inner, dict)
+                    and str(inner.get("deviceId")) == device_id):
+                observed = None  # some other write touched it: the read is stale
+            elif written is not None and written[0] == device_id:
+                observed = None
+            continue
+        if str(row.get("error") or "").startswith(ALREADY_IN_STATE_ERROR_MARK) and _single_switch_command(
+                str(row.get("name")), row_args) == wanted:
+            return None  # already refused once for this device and command
+        states = _read_switch_states(row)
+        if device_id in states:
+            observed = states[device_id]
+    if observed is None or observed[0] != command:
+        return None
+    state, last_activity = observed
+    info = {"device_id": device_id, "command": command, "observed_switch": state,
+            "last_activity": last_activity}
+    message = (
+        ALREADY_IN_STATE_ERROR_MARK + " NOT sent. A read earlier in this request already shows "
+        f"device {device_id} with switch={state}"
+        + (f" (last activity {last_activity})" if last_activity else "")
+        + f", which is the state '{command}' asks for. Tell the person it is already {state} "
+        "according to the hub and that no command was needed. Do not claim a change. Resend "
+        "the same command only if the person's message says the device is not physically in "
+        "that state."
+    )
+    return message, info
+
+
+ALREADY_IN_STATE_ERROR_MARK = "Command not sent: already in requested state."

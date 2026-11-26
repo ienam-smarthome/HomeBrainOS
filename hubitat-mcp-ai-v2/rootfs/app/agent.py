@@ -42,7 +42,7 @@ from one_off_rule_policy import (
 )
 from action_proposal_review import (
     PREWRITE_PROPOSAL_PROMPT, is_native_action_proposal, reinstate_reviewed_proposal,
-    repeat_write_refusal,
+    repeat_write_refusal, already_in_state_refusal,
     is_persistent_construct, has_current_native_evidence,
 )
 from control_surface_recovery import (
@@ -1403,6 +1403,7 @@ class Agent:
                 ),
                 native_write_selected=current_write_attempted(),
                 ui_approval_available=before_call is not None,
+                already_in_state=already_in_state_refusals,
             )
             unprepared_replaced_text: str | None = None
             if before_call is not None:
@@ -1840,6 +1841,7 @@ class Agent:
         compute_nudge_sent = False
         nudged_draft: str | None = None
         completion_retry_sent = False
+        already_in_state_refusals: list[dict[str, Any]] = []
         while True:
             if hasattr(mcp, "cached_leaf_schemas"):
                 tools = model_tools(catalog, mcp.cached_leaf_schemas())
@@ -2183,7 +2185,11 @@ class Agent:
                     selected = proposed.get("function") or {}
                     selected_name = str(selected.get("name") or "")
                     selected_args = arguments_of(proposed)
-                    if is_native_action_proposal(selected_name, selected_args, catalog):
+                    if (is_native_action_proposal(selected_name, selected_args, catalog)
+                            and already_in_state_refusal(
+                                selected_name, selected_args, receipts) is None):
+                        # A command this request's own read shows is already satisfied
+                        # is refused at dispatch; it needs no review round first.
                         proposed_writes.append({
                             "name": selected_name,
                             "arguments": redact(selected_args),
@@ -3099,6 +3105,10 @@ class Agent:
                     repeat_problem = repeat_write_refusal(name, args, receipts, catalog)
                     if repeat_problem:
                         raise MCPError(repeat_problem)
+                    in_state = already_in_state_refusal(name, args, receipts)
+                    if in_state is not None:
+                        already_in_state_refusals.append(in_state[1])
+                        raise MCPError(in_state[0])
                     # The selected native writer/leaf, never raw prompt words,
                     # establishes the need for a separate UI approval.
                     automation_approval_required = (
