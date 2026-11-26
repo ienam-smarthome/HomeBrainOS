@@ -434,6 +434,14 @@ _SKILL_UPSTREAM_PROFILE += (
 
 PROMPT_PROFILES = {"upstream": _SKILL_UPSTREAM_PROFILE, "legacy": _SKILL}
 DEFAULT_PROMPT_PROFILE = "upstream"
+# Which control layers sit around the model's tool loop. "full" keeps every layer.
+# "plain" is the tool loop plus the hard gates only (write approval and its configured
+# auto-approval policy, catalog and schema checks, repeat, already-in-state, one-off and
+# current-evidence write denials, redaction, deadline): no extra model rounds, no templated
+# early answer, and the model's prose is not replaced.
+LOOP_PROFILES = ("full", "plain")
+DEFAULT_LOOP_PROFILE = "full"
+PLAIN_NO_COMMAND_NOTE = "Client note: no device command was sent in this request."
 
 
 _PRIOR_TOOL = "homebrain_read_prior_evidence"
@@ -866,6 +874,7 @@ class ModelEndpointUnavailable(RuntimeError):
 
 class Agent:
     prompt_profile = DEFAULT_PROMPT_PROFILE
+    loop_profile = DEFAULT_LOOP_PROFILE
 
     def _home_context_block(self) -> str:
         try:
@@ -1013,8 +1022,18 @@ class Agent:
         prepare_action: bool = False,
         enable_routine_bootstrap: bool = False,
         enable_routine_post_write_readback: bool = False,
+        loop_profile: str | None = None,
     ) -> dict[str, Any]:
         started = time.monotonic()
+        loop_profile_in_use = loop_profile or getattr(self, "loop_profile", DEFAULT_LOOP_PROFILE)
+        if loop_profile_in_use not in LOOP_PROFILES:
+            loop_profile_in_use = DEFAULT_LOOP_PROFILE
+        plain_loop = loop_profile_in_use == "plain"
+        if plain_loop:
+            enable_source_review = enable_final_claim_audit = False
+            enable_compute_nudge = enable_causal_follow_through = False
+            enable_action_proposal_review = False
+            enable_routine_bootstrap = enable_routine_post_write_readback = False
         approval_owner = getattr(before_call, "__self__", None)
         interaction_status = approval_owner if isinstance(approval_owner, Interaction) else None
         if interaction_status is not None:
@@ -1133,7 +1152,7 @@ class Agent:
             "reuse old evidence, or bypass approval. If the requested "
             "condition already holds, report it without a needless write. "
             "Answer the result concisely and do not claim physical outcome."
-        ) if prepare_action and is_explicit_device_imperative(question) else ""
+        ) if prepare_action and (plain_loop or is_explicit_device_imperative(question)) else ""
         messages: list[dict] = [
             {"role": "system", "content": PROMPT_PROFILES[prompt_profile_in_use] + "\n\n" + source_context
              + preparation_guidance + self._home_context_block()},
@@ -1332,7 +1351,8 @@ class Agent:
             # alter model/native write, approval or scheduling paths. Output
             # claims remain explicitly scoped to the returned source rows.
             source_projection_status = "not_used"
-            if (not native_action_receipts_seen and not current_write_attempted()
+            if (not plain_loop
+                    and not native_action_receipts_seen and not current_write_attempted()
                     and not is_explicit_device_imperative(question)
                     and fallback_status == "not_used"):
                 projected = bounded_numeric_inventory_answer(question, receipts)
@@ -1361,7 +1381,9 @@ class Agent:
             # chronology rather than an unverified model enumeration. This is
             # an output-only contract: no new tool/model pass, native write or
             # mutation of original receipts. Never mask any action outcome.
-            if native_action_receipts_seen:
+            if plain_loop:
+                verification = {"status": "not_run_plain_loop", "answer": answer}
+            elif native_action_receipts_seen:
                 verification = {"status": "not_applicable_to_action",
                                 "answer": answer}
             else:
@@ -1373,6 +1395,8 @@ class Agent:
             # receipts; a peer or truncated result cannot fill that gap.
             # Output-only: no additional native read, write or model pass.
             transition_verification = (
+                {"status": "not_run_plain_loop", "answer": verified_answer}
+                if plain_loop else
                 {"status": "not_applicable_to_action", "answer": verified_answer}
                 if native_action_receipts_seen else
                 verify_recent_transition(
@@ -1389,7 +1413,7 @@ class Agent:
             # Never change the model-selected operation or its approval.
             action_contract = source_derived_timing_answer(
                 question, verified_answer, receipts
-            ) if native_action_receipts_seen else {
+            ) if native_action_receipts_seen and not plain_loop else {
                 "status": "not_applicable", "answer": verified_answer
             }
             verified_answer = action_contract.get("answer", verified_answer)
@@ -1406,7 +1430,13 @@ class Agent:
                 already_in_state=already_in_state_refusals,
             )
             unprepared_replaced_text: str | None = None
-            if before_call is not None:
+            if plain_loop:
+                # Keep the model's prose. State the one fact the receipts establish so a
+                # reply cannot read as if a command went out.
+                if (before_call is not None and verified_answer
+                        and lifecycle.get("status") == "not_prepared"):
+                    verified_answer = f"{verified_answer}\n\n{PLAIN_NO_COMMAND_NOTE}"
+            elif before_call is not None:
                 replaced_by_lifecycle = unprepared_answer(lifecycle, verified_answer)
                 if replaced_by_lifecycle != verified_answer:
                     # Telemetry only: the replaced prose never reaches the person, so keep a
@@ -1420,7 +1450,8 @@ class Agent:
             # draft. Preserve already-returned positive state observations and
             # mark publication explicitly PARTIAL; this is not causal proof.
             causal_claim_check = {"status": "not_applicable", "reason": None}
-            if (not native_action_receipts_seen and not current_write_attempted()
+            if (not plain_loop
+                    and not native_action_receipts_seen and not current_write_attempted()
                     and not is_explicit_device_imperative(question)
                     and review_kind(question) == "causal"
                     and fallback_status == "not_used"):
@@ -1441,7 +1472,7 @@ class Agent:
                     fallback_status = "causal_claim_publication_floor"
                     audit_status = "source_only_partial_after_claim_verification"
             historical_claim_check = {"status": "not_applicable", "reason": None}
-            if (not native_action_receipts_seen and not current_write_attempted()
+            if (not plain_loop and not native_action_receipts_seen and not current_write_attempted()
                     and not is_explicit_device_imperative(question)
                     and fallback_status == "not_used"):
                 reason, scope_summary = historical_publication_check(
@@ -1459,7 +1490,7 @@ class Agent:
                     fallback_status = "historical_claim_publication_floor"
                     audit_status = "source_only_partial_after_claim_verification"
             sequence_check = {"status": "not_applicable", "reason": None}
-            if (not native_action_receipts_seen and not current_write_attempted()
+            if (not plain_loop and not native_action_receipts_seen and not current_write_attempted()
                     and not is_explicit_device_imperative(question)
                     and fallback_status == "not_used"):
                 sequence_check = source_sequence_publication_check(
@@ -1485,7 +1516,8 @@ class Agent:
                 "status": "not_applicable", "reason": None,
                 "answer": verified_answer,
             }
-            if (not native_action_receipts_seen and not current_write_attempted()
+            if (not plain_loop
+                    and not native_action_receipts_seen and not current_write_attempted()
                     and not is_explicit_device_imperative(question)
                     and fallback_status in ("not_used", "historical_claim_publication_floor")):
                 memory_check = verify_memory_window_publication(
@@ -1514,7 +1546,7 @@ class Agent:
                 if key != "answer"
             }
             temporal_projection_meta = {"status": "not_applicable"}
-            if (not native_action_receipts_seen and not current_write_attempted()
+            if (not plain_loop and not native_action_receipts_seen and not current_write_attempted()
                     and not is_explicit_device_imperative(question)
                     and fallback_status in (
                         "not_used", "event_sequence_publication_floor",
@@ -1548,7 +1580,12 @@ class Agent:
                 key: value for key, value in transition_verification.items()
                 if key != "answer"
             }
-            if verified_answer:
+            if verified_answer and plain_loop:
+                # Only the write-truth footnote: hub acceptance is not a physical effect.
+                outcome_note = action_outcome_note(verified_answer, receipts)
+                if outcome_note:
+                    verified_answer = f"{verified_answer}\n\n{outcome_note}"
+            elif verified_answer:
                 coverage_note = partial_coverage_note(receipts)
                 if coverage_note:
                     verified_answer = f"{verified_answer}\n\n{coverage_note}"
@@ -1572,6 +1609,7 @@ class Agent:
             )
             return {
                 "success": bool(verified_answer), "prior_receipts_used": prior_receipts,
+                "loop_profile": loop_profile_in_use,
                 "answer": verified_answer or "The model returned an empty answer.",
                 "structured_history_verification": verification_meta,
                 "temporal_transition_verification": transition_meta,
@@ -1821,7 +1859,7 @@ class Agent:
             inspectable native device-event observations instead. Never hide a
             requested/attempted native write or change safety authorisation.
             """
-            if (native_action_receipts_seen or current_write_attempted()
+            if (plain_loop or native_action_receipts_seen or current_write_attempted()
                     or review_kind(question) not in (
                         "causal", "historical_measurement", "source_verification"
                     ) or is_explicit_device_imperative(question)):
@@ -1882,7 +1920,7 @@ class Agent:
             # Never launch a new native call or extra model pass. Avoid actions,
             # mixed tool paths and cases with no successful native source.
             finish_reserve = min(75.0, max(35.0, float(deadline_seconds) * 0.25))
-            if (not deadline_finalization_invoked
+            if (not plain_loop and not deadline_finalization_invoked
                     and not final_claim_audit_invoked
                     and deadline_seconds >= 120
                     and 0 < remaining <= finish_reserve
@@ -1927,6 +1965,7 @@ class Agent:
                                + ("\n\n" + notice if notice else "")),
                     **(evidence if notice else {}),
                     "error": "deadline", "prior_receipts_used": prior_receipts,
+                    "loop_profile": loop_profile_in_use,
                     "leaf_schema_discoveries": leaf_schema_discoveries,
                     "tool_calls": receipts,
                     "rounds": rounds,
@@ -1977,6 +2016,7 @@ class Agent:
                                + ("\n\n" + notice if notice else "")),
                     **(evidence if notice else {}),
                     "error": "model", "model_error_kind": model_error_kind(exc),
+                    "loop_profile": loop_profile_in_use,
                     "tool_calls": receipts, "rounds": rounds,
                     "model_round_metrics": model_round_metrics,
                     "prior_receipts_used": prior_receipts,
@@ -2136,10 +2176,11 @@ class Agent:
             routine_for_round = routine_candidate(
                 question, calls, receipts,
                 approval_available=before_call is not None,
-            ) if not source_review_invoked else None
+            ) if not (plain_loop or source_review_invoked) else None
             block_for_round = None
             light_write_ready = False
-            if (calls and before_call is not None and not source_review_invoked
+            if (not plain_loop
+                    and calls and before_call is not None and not source_review_invoked
                     and not prewrite_model_review_invoked and len(calls) == 1):
                 only = calls[0].get("function") if isinstance(calls[0], dict) else None
                 if isinstance(only, dict) and only.get("name") == "hub_call_device_command":
@@ -2307,7 +2348,7 @@ class Agent:
                 # keep the draft the user was meant to see.
                 text = nudged_draft
 
-            if (not calls and not text and not empty_retry_sent
+            if (not plain_loop and not calls and not text and not empty_retry_sent
                     and not source_review_invoked and not final_claim_audit_invoked
                     and not native_action_receipts_seen and not current_write_attempted()
                     and not is_explicit_device_imperative(question)
@@ -2349,7 +2390,7 @@ class Agent:
                 # Reuse one bounded model opportunity to select an advertised
                 # native writer from fresh device details. All real writes still
                 # pass the prewrite checkpoint + same-request UI approval.
-                if should_recover_action_approval_handoff(
+                if not plain_loop and should_recover_action_approval_handoff(
                     question, text, receipts,
                     available_tools=native_catalog_names,
                     already_prompted=action_approval_handoff_invoked,
@@ -3075,8 +3116,10 @@ class Agent:
                     # solely from an old chat or an unsent plan. This is a
                     # minimal current-request evidence floor, not a model
                     # substitute for matching the real target/effect/timing.
-                    if (enable_action_proposal_review
-                            and prewrite_model_review_invoked
+                    # "full" applies this after its pre-write review of a live UI write.
+                    if (((plain_loop and before_call is not None)
+                            or (enable_action_proposal_review
+                                and prewrite_model_review_invoked))
                             and is_persistent_construct(name, args)
                             and not has_current_native_evidence(receipts)):
                         prewrite_no_fresh_evidence_rejections += 1
@@ -3212,7 +3255,10 @@ class Agent:
                                 native_approval_wait_ms += (
                                     time.monotonic() - approval_started
                                 ) * 1000
-                    elif needs_confirmation(args) or automation_approval_required:
+                    elif needs_confirmation(args) or automation_approval_required or (
+                            # No review phase fences later writes in "plain", so with no
+                            # approval gate attached it sends no native write at all.
+                            plain_loop and is_native_action_proposal(name, args, catalog)):
                         raise MCPError(
                             "Explicit user confirmation is required; "
                             "native automation write was NOT submitted"
@@ -3352,7 +3398,7 @@ class Agent:
                                 args, catalog)
                             if ranking_warning is not None:
                                 record["partial_ranking_warning"] = True
-                                if used not in ranking_refused:
+                                if used not in ranking_refused and not plain_loop:
                                     # First time only: hold the ranking back and make the model
                                     # re-read with the source's own sort. A second attempt on the
                                     # same receipt goes through with the warning, so this cannot loop.
@@ -3664,7 +3710,7 @@ class Agent:
                 # never the original receipt or an actionable device detail.
                 record["response"] = content
                 model_context_content = content
-                if (record.get("success") is True
+                if (not plain_loop and record.get("success") is True
                         and name == "hub_get_memory_history"
                         and not native_action_receipts_seen):
                     index = memory_history_window_index(
@@ -3678,7 +3724,7 @@ class Agent:
                             }, ensure_ascii=False)
                             + "\n" + model_context_content
                         )
-                if (record.get("success") is True
+                if (not plain_loop and record.get("success") is True
                         and name == "hub_list_devices"
                         and review_kind(question) == "causal"
                         and not current_write_attempted()):
@@ -3699,7 +3745,8 @@ class Agent:
             # observe Hubitat's subsequent reported state. It never retries a
             # writer, consumes an additional model round, equates a write
             # snapshot with a read, or claims physical/causal verification.
-            if (block_for_round is not None and name == "hub_call_device_command"
+            if (not plain_loop
+                    and block_for_round is not None and name == "hub_call_device_command"
                     and getattr(before_call, "__self__", None) is not None
                     and getattr(getattr(before_call, "__self__"), "routine_auto_approval_class", None)
                     == "verified_internet_block"):
@@ -3707,7 +3754,8 @@ class Agent:
                 if block_answer is not None:
                     routine_terminal_fastpath_used = True
                     return completed_answer(block_answer, "not_applicable_to_routine_action")
-            if (batch_dispatch_args is not None and name == "hub_call_device_command"
+            if (not plain_loop
+                    and batch_dispatch_args is not None and name == "hub_call_device_command"
                     and getattr(getattr(before_call, "__self__", None),
                                 "routine_auto_approval_class", None) == "verified_light_batch"):
                 light_answer = batch_light_answer(

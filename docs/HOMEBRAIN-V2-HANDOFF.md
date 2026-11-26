@@ -1,4 +1,4 @@
-# HomeBrain V2: handoff notes (26 Nov 2026, add-on 2.0.0-alpha.209)
+# HomeBrain V2: handoff notes (26 Nov 2026, add-on 2.0.0-alpha.210)
 
 Read this first in a new chat, then `CLAUDE.md`, then `docs/HOMEBRAIN-V2-ALPHA-HISTORY.md` (tail).
 
@@ -30,7 +30,7 @@ Prefer structural changes (fewer layers, better tool surface, measured model cho
 - Standing authorization: merge only when all 10 CI checks are green (check run count must be 10;
   3 means the PR is conflicted or workflows did not run).
 - Before every commit: `python scripts/validate_addon.py`, `python -m pytest -q` from `hubitat-mcp-ai-v2/`
-  (1039 tests). `analyze_imports.py` reports 15 pre-existing orphan modules (offline evaluation code).
+  (1059 tests). `analyze_imports.py` reports 15 pre-existing orphan modules (offline evaluation code).
 - Version bump touches: README.md, hubitat-mcp-ai-v2/README.md, config.yaml, rootfs/app/ui.html,
   rootfs/app/app.py, tests test_command_first_ui, test_claim_delta_review, test_frozen_evaluation_mobile,
   test_v2, test_model_routing, test_ollama_cloud, and an entry appended to the alpha history doc.
@@ -42,10 +42,13 @@ Prefer structural changes (fewer layers, better tool surface, measured model cho
 
 - Sheet (Claude's answers, behaviours to copy, untested areas):
   https://claude.ai/artifact/NA3uBVfV4Bb3t1JtRwYskT
-- `scripts/run_test_sheet.py --base-url http://<ha>:<port> --out sheet.json` runs the six read-only
-  questions (1, 3, 4, 5, 6, 7; add `--bathroom-time HH:MM` for 8) in fresh conversations and prints
-  wall time, rounds, native calls, failures, peak prompt tokens and the answer head per question.
-  Write questions (lights, blocks, Q2, Q9) still need the in-app approval card.
+- `scripts/run_test_sheet.py --base-url http://<ha>:<port> --profile both --out sheet.json` runs
+  questions 1 to 7 (add `--bathroom-time HH:MM` for 8) in fresh conversations, each in `full` then `plain`,
+  and prints profile, wall time, rounds, native calls, failures, peak prompt tokens, declined cards and the
+  answer head. Needs alpha.210 or later (it checks before asking anything). It turns auto-approval off and
+  declines every card, so nothing is sent; question 2's proposed command is in `cards_declined`.
+  `<port>` is the add-on's direct port (off by default, no Home Assistant login): switch it off afterwards.
+  Question 9 and other real writes still run in the app.
 
 ## Results on alpha.206 (first full comparison)
 
@@ -84,10 +87,9 @@ compute nudge, prewrite review and the routine fast path each add rounds, rewrit
 answer, and each has produced a bug (alpha.208's acknowledgement, "No action queued" replacing an answer).
 Claude itself is a plain tool loop with permission gates.
 
-1. Add a `loop_profile` option like `prompt_profile`: `full` (today) and `plain` (tool loop + hard gates only:
-   write approval/confirmation, repeat and in-state guards, redaction, deadline). No source review, audit,
-   nudge, prewrite review or fast path in `plain`. Run the sheet on both and keep only layers that measurably
-   improve answers. Telemetry already records which layers fired.
+1. Built in alpha.210: `loop_profile` = `full` (default) or `plain` (see "The plain profile" below). Next:
+   run the sheet on both and keep only the layers that measurably improve answers. Telemetry records which
+   layers fired. One run per question on a live home is noisy, so repeat any close result.
 2. Model and tool-surface A/B on the sheet: nemotron-3-super vs a stronger model; gateway vs flat tools;
    `hub_list_devices` `format: context`/`fields`/`attributeNames` guidance. Peak prompt tokens (35k-90k) and
    rounds per answer are the speed levers.
@@ -95,6 +97,27 @@ Claude itself is a plain tool loop with permission gates.
 4. Retire question-reading code (`_SIMPLE`, `is_explicit_device_imperative`) by deciding from the selected
    call and the receipts, per CLAUDE.md rule 2.
 5. Extend the runner with write cases once approvals can be driven from the API (`/api/activity/{id}/confirm`).
+
+## The plain profile
+
+Keeps: approval cards and the configured auto-approval policy (verified lights, internet block), catalog,
+leaf-schema and argument checks, identical-read and detailed-inventory refusals, repeat-write and
+already-in-state guards, one-off rule and current-evidence automation denials, cursor and argument repair,
+the notes attached to tool results, redaction, deadline. It also sends no native write when no approval
+gate is attached.
+
+Drops: every extra model round (reviews, audit, follow-throughs, nudges, recoveries, empty-reply retry,
+deadline finalisation), the single-command fast path and post-write readback, templated early answers, the
+partial-ranking hold-back (the warning stays), question-based context compaction, and all answer rewrites
+and footnotes except the physical-effect note and the "no device command was sent" line.
+
+Trade-offs to watch when comparing:
+- `full`'s single-command fast path stops a model that picks a different device from the one it verified.
+  In `plain` the auto-approval policy alone decides, and it does not match the target to the wording, so a
+  wrong ordinary light can be sent without a card (also true of `full` outside that fast path).
+- No check of "why" and history claims before publication. Judge these answers by hand.
+- A single verified light write in `plain` goes through the batch light policy.
+- The "no command" line still uses the question-text classifier that `full` uses (item 4 below).
 
 ## Open items
 
