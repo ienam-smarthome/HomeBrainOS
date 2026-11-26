@@ -1,6 +1,6 @@
 # Hubitat MCP AI v2 — native MCP client
 
-Current code candidate: `2.0.0-alpha.204`. Upstream-first prompt: the model now gets the Hubitat MCP server's own skill and safety guide plus a short client contract (about 8k tokens, down from about 24k). The causal, measurement and presentation references load on demand through a new read-only `homebrain_read_skill` tool. New add-on option `prompt_profile` (`upstream` default, `legacy` restores the previous prompt); the profile used is recorded in Technical JSON. Bundled safety guide refreshed to the newer upstream copy.
+Current code candidate: `2.0.0-alpha.205`. Live alpha.204 captures (upstream prompt, 8k tokens): block 10.0 s, unblock 8.7 s, bathroom on 15.5 s, but hallway on sent nothing and bathroom off needed an approval card (36 s) and missed Shower Light. Two structural fixes: (1) a batch light write drafted after a `format: "context"` listing now qualifies (labels come from the context summary; per-device policy and evidence reads unchanged), so it no longer falls back to a card and review rounds; (2) if the focused single-command round selects no tool, the request now continues once on the normal path with all tools instead of ending with nothing sent (`single_command_fallthrough` recorded). Room-wide device coverage is a model behaviour and is not changed here.
 
 Per-alpha history (alpha.8 to alpha.171) is in [docs/HOMEBRAIN-V2-ALPHA-HISTORY.md](../docs/HOMEBRAIN-V2-ALPHA-HISTORY.md).
 

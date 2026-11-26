@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import re
 
-from routine_action_fastpath import _normal, _original
+from routine_action_fastpath import _context_devices, _normal, _original
 from routine_component_light import component_parent_id, verified_physical_bridge_parent
 
 # These are device-capability declarations, not inferred side-effect proofs.
@@ -212,7 +212,11 @@ def batch_light_candidates(args: dict, receipts: list[dict]) -> list[dict] | Non
             continue
         doc = _original(row)
         if row.get("name") in ("hub_list_devices", "hub_get_room"):
-            for item in (doc or {}).get("devices") or []:
+            listed_rows = (doc or {}).get("devices")
+            if not listed_rows and isinstance(doc, dict) and isinstance(doc.get("summary"), str):
+                # format="context" listings carry a text summary instead of device rows.
+                listed_rows = _context_devices(doc)
+            for item in listed_rows or []:
                 remember(item)
         elif row.get("name") == "hub_get_device" and doc:
             remember(doc)

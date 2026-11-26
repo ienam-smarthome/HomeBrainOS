@@ -737,3 +737,61 @@ class RoutineSourceBootstrapTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SingleCommandFallthroughTests(unittest.IsolatedAsyncioTestCase):
+    """A focused one-tool round that selects nothing must not end the request with nothing sent."""
+
+    async def _run(self, script, *, label="Fictional Office Lamp", initial="on"):
+        hub = BootstrappedHub(label=label, initial=initial)
+        model = BootstrapModel(script)
+        gate = Interaction(require_native_write_approval=True)
+        task = asyncio.create_task(model.answer(
+            "Turn off Fictional Office Lamp", [], hub, 90,
+            before_call=gate.before_call, enable_routine_bootstrap=True))
+        try:
+            for _ in range(1500):
+                if gate.pending or task.done():
+                    break
+                await asyncio.sleep(0.002)
+            pending = gate.pending
+            if pending:
+                gate.decide(pending["id"], True)
+            result = await asyncio.wait_for(task, 5)
+        finally:
+            if not task.done():
+                gate.invalidate()
+                task.cancel()
+            await model.close()
+        return hub, model, pending, result
+
+    async def test_no_tool_call_continues_once_on_the_normal_path_with_all_tools(self):
+        hub, model, pending, result = await self._run([
+            {"content": ""},
+            tool("hub_call_device_command", deviceId="LAB-LAMP-1", command="off"),
+        ])
+        self.assertEqual(model.rounds_seen, 2)
+        self.assertEqual(model.tool_names[0], ["hub_call_device_command"])
+        self.assertGreater(len(model.tool_names[1]), 1)
+        self.assertIn("hub_list_devices", model.tool_names[1])
+        self.assertEqual(model.prompts[1][0]["role"], "system")
+        self.assertNotIn("You are handling ONE ordinary", model.prompts[1][0]["content"])
+        self.assertIsNotNone(pending, "the fall-through write still needs a real approval")
+        self.assertEqual(result["routine_action_fastpath"]["single_command_fallthrough"], "no_tool_call")
+        self.assertFalse(result["routine_action_fastpath"]["model_led_single_command_mode"])
+        self.assertEqual(result["action_lifecycle"]["status"], "native_accepted")
+        self.assertEqual([n for n, _ in hub.calls].count("hub_call_device_command"), 1)
+
+    async def test_model_that_still_selects_nothing_ends_without_any_write(self):
+        hub, model, pending, result = await self._run(
+            [{"content": ""}] + [{"content": "Nothing to do."}] * 6)
+        self.assertGreaterEqual(model.rounds_seen, 2)
+        self.assertIsNone(pending)
+        self.assertNotIn("hub_call_device_command", [n for n, _ in hub.calls])
+        self.assertEqual(result["action_lifecycle"]["native_write_submitted"], False)
+
+    async def test_normal_selection_does_not_fall_through(self):
+        hub, model, pending, result = await self._run([
+            tool("hub_call_device_command", deviceId="LAB-LAMP-1", command="off")])
+        self.assertEqual(model.rounds_seen, 1)
+        self.assertIsNone(result["routine_action_fastpath"]["single_command_fallthrough"])
